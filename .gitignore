@@ -1,0 +1,41 @@
+# Firebase設定（本番環境用）
+# 注意: GitHub Pagesの場合、firebase-config.jsは公開されます
+# Firebase APIキー自体は公開前提の値ですが、念のため環境別設定を分離する場合
+firebase-config.local.js
+.env
+.env.local
+.env.development
+.env.production
+
+# Node.js関連（オプション：Node環境を使う場合）
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ビルド出力（Viteなどを使う場合）
+dist/
+build/
+
+# エディタ設定
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ログファイル
+*.log
+
+# テスト関連
+coverage/
+.nyc_output/
+
+# その他
+.cache/
+temp/
+tmp/

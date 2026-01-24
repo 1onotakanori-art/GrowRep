@@ -1,0 +1,86 @@
+# Firebaseセキュリティルール
+
+## Cloud Firestore Rules
+
+Firebase Console > Firestore Database > ルール タブで以下を設定してください。
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // posts コレクション
+    match /posts/{postId} {
+      // 認証済みユーザーのみ読み取り可能
+      allow read: if request.auth != null;
+      
+      // 認証済みユーザーは投稿作成可能
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.userEmail == request.auth.token.email;
+      
+      // 投稿者本人のみ更新・削除可能
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.userId;
+                    
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.userId;
+    }
+  }
+}
+```
+
+## ルールの説明
+
+### 読み取り（read）
+- ログインしているユーザーのみが投稿を閲覧可能
+
+### 作成（create）
+- ログインしているユーザーのみが投稿を作成可能
+- 投稿の userId は自分の UID と一致している必要がある
+- 投稿の userEmail は自分のメールアドレスと一致している必要がある
+
+### 更新（update）
+- 投稿者本人のみが自分の投稿を更新可能（いいね・コメントの追加など）
+
+### 削除（delete）
+- 投稿者本人のみが自分の投稿を削除可能
+
+## テスト方法
+
+Firebase Console の「ルール」タブで「ルールプレイグラウンド」を使用してテストできます。
+
+### テスト例
+
+**読み取りテスト（成功するべき）**
+```
+場所: /posts/test123
+認証済み: はい
+操作: get
+```
+
+**作成テスト（成功するべき）**
+```
+場所: /posts/test123
+認証済み: はい（uid: user123）
+操作: create
+データ:
+{
+  "userId": "user123",
+  "userEmail": "test@example.com",
+  "exerciseType": "pushup",
+  "value": 50
+}
+```
+
+**他人の投稿削除テスト（失敗するべき）**
+```
+場所: /posts/test123
+認証済み: はい（uid: user456）
+操作: delete
+既存データ:
+{
+  "userId": "user123",
+  "userEmail": "test@example.com"
+}
+```

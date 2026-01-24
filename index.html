@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GrowRep - 筋トレ成果報告アプリ</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- ログイン画面 -->
+    <div id="login-container" class="container">
+        <div class="login-box">
+            <h1>🏋️ GrowRep</h1>
+            <p>筋トレ成果報告アプリ</p>
+            <div id="login-form">
+                <input type="email" id="email" placeholder="メールアドレス" required>
+                <input type="password" id="password" placeholder="パスワード" required>
+                <button id="login-btn" class="btn-primary">ログイン</button>
+                <button id="signup-btn" class="btn-secondary">新規登録</button>
+                <p id="auth-error" class="error-message"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- メイン画面 -->
+    <div id="main-container" class="container" style="display: none;">
+        <header>
+            <h1>🏋️ GrowRep</h1>
+            <div class="user-info">
+                <span id="user-name"></span>
+                <button id="logout-btn" class="btn-secondary">ログアウト</button>
+            </div>
+        </header>
+
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="post">投稿</button>
+            <button class="tab-btn" data-tab="board">掲示板</button>
+            <button class="tab-btn" data-tab="ranking">ランキング</button>
+            <button class="tab-btn" data-tab="progress">成長グラフ</button>
+        </nav>
+
+        <!-- 投稿タブ -->
+        <div id="post-tab" class="tab-content active">
+            <div class="post-form">
+                <h2>トレーニング記録を投稿</h2>
+                <select id="exercise-type" required>
+                    <option value="">種目を選択</option>
+                    <option value="pushup">腕立て伏せ</option>
+                    <option value="situp">腹筋</option>
+                    <option value="squat">スクワット</option>
+                    <option value="plank">プランク(秒)</option>
+                    <option value="pullup">懸垂(セット)</option>
+                </select>
+                <input type="number" id="exercise-value" placeholder="回数または秒数" min="0" required>
+                <button id="submit-post-btn" class="btn-primary">投稿する</button>
+                <p id="post-error" class="error-message"></p>
+            </div>
+        </div>
+
+        <!-- 掲示板タブ -->
+        <div id="board-tab" class="tab-content">
+            <h2>みんなの投稿</h2>
+            <div id="posts-list" class="posts-list"></div>
+        </div>
+
+        <!-- ランキングタブ -->
+        <div id="ranking-tab" class="tab-content">
+            <h2>種目別ランキング</h2>
+            <div id="ranking-list" class="ranking-list"></div>
+        </div>
+
+        <!-- 成長グラフタブ -->
+        <div id="progress-tab" class="tab-content">
+            <h2>あなたの成長グラフ</h2>
+            <select id="graph-exercise-type">
+                <option value="pushup">腕立て伏せ</option>
+                <option value="situp">腹筋</option>
+                <option value="squat">スクワット</option>
+                <option value="plank">プランク（秒）</option>
+                <option value="pullup">懸垂</option>
+            </select>
+            <canvas id="progress-chart"></canvas>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <!-- Chart.js for graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- App scripts -->
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
