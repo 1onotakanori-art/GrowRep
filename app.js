@@ -40,10 +40,10 @@ const graphExerciseType = document.getElementById('graph-exercise-type');
 // 種目名の日本語マッピング
 const exerciseNames = {
     'pushup': '腕立て伏せ',
-    'situp': '腹筋',
-    'squat': 'スクワット',
-    'plank': 'プランク',
-    'pullup': '懸垂'
+    'dips': '顎付けディップス',
+    'squat': '片足スクワット(左右合計)',
+    'Lsit': 'Lシット(秒)',
+    'pullup': '懸垂(セット)'
 };
 
 // グローバル変数
@@ -219,7 +219,7 @@ function createPostElement(postId, post) {
         </div>
         <div class="post-content">
             <span class="post-exercise">${safeExerciseName}</span>
-            <span class="post-value">${safeValue} ${post.exerciseType === 'plank' ? '秒' : '回'}</span>
+            <span class="post-value">${safeValue} ${post.exerciseType === 'Lsit' ? '秒' : post.exerciseType === 'pullup' ? 'セット' : '回'}</span>
         </div>
         <div class="post-actions">
             <button class="like-btn ${isLiked ? 'liked' : ''}" onclick="toggleLike('${safePostId}')">
@@ -374,7 +374,7 @@ async function loadRanking() {
                     <div class="ranking-item">
                         <div class="ranking-position ${positionClass}">${position}</div>
                         <div class="ranking-user">${data.email}</div>
-                        <div class="ranking-value">${data.value} ${type === 'plank' ? '秒' : '回'}</div>
+                        <div class="ranking-value">${data.value} ${type === 'Lsit' ? '秒' : type === 'pullup' ? 'セット' : '回'}</div>
                     </div>
                 `;
             });
@@ -440,7 +440,7 @@ async function loadProgressChart() {
                     beginAtZero: true,
                     title: {
                         display: true,
-                        text: selectedType === 'plank' ? '秒数' : '回数'
+                        text: selectedType === 'Lsit' ? '秒数' : selectedType === 'pullup' ? 'セット数' : '回数'
                     }
                 },
                 x: {
