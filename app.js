@@ -24,6 +24,7 @@ const mainContainer = document.getElementById('main-container');
 const loginBtn = document.getElementById('login-btn');
 const signupBtn = document.getElementById('signup-btn');
 const logoutBtn = document.getElementById('logout-btn');
+const profileBtn = document.getElementById('profile-btn');
 const emailInput = document.getElementById('email');
 const passwordInput = document.getElementById('password');
 const authError = document.getElementById('auth-error');
@@ -37,6 +38,20 @@ const rankingList = document.getElementById('ranking-list');
 const progressChart = document.getElementById('progress-chart');
 const graphExerciseType = document.getElementById('graph-exercise-type');
 
+// プロフィールモーダル関連
+const profileModal = document.getElementById('profile-modal');
+const closeModal = document.querySelector('.close-modal');
+const profileEmail = document.getElementById('profile-email');
+const currentUsername = document.getElementById('current-username');
+const newUsernameInput = document.getElementById('new-username');
+const updateUsernameBtn = document.getElementById('update-username-btn');
+const usernameError = document.getElementById('username-error');
+const currentPasswordInput = document.getElementById('current-password');
+const newPasswordInput = document.getElementById('new-password');
+const confirmPasswordInput = document.getElementById('confirm-password');
+const updatePasswordBtn = document.getElementById('update-password-btn');
+const passwordError = document.getElementById('password-error');
+
 // 種目名の日本語マッピング
 const exerciseNames = {
     'pushup': '腕立て伏せ',
@@ -48,19 +63,93 @@ const exerciseNames = {
 
 // グローバル変数
 let currentUser = null;
+let currentUserData = null;  // ユーザー情報（usersコレクションから取得）
 let myChart = null;
 
+// ====================================================================
+// Firestoreユーティリティ関数
+// ====================================================================
+
+/**
+ * ユーザー名の重複チェック
+ * @param {string} userName - チェックするユーザー名
+ * @returns {Promise<boolean>} 重複していればtrue
+ */
+async function checkUsernameExists(userName) {
+    const snapshot = await db.collection('users')
+        .where('userName', '==', userName)
+        .get();
+    return !snapshot.empty;
+}
+
+/**
+ * ユーザー情報を取得
+ * @param {string} userId - ユーザーID
+ * @returns {Promise<Object|null>} ユーザー情報
+ */
+async function getUserData(userId) {
+    const doc = await db.collection('users').doc(userId).get();
+    return doc.exists ? doc.data() : null;
+}
+
+/**
+ * ユーザー情報を作成
+ * @param {string} userId - ユーザーID
+ * @param {string} userName - ユーザー名
+ * @param {string} email - メールアドレス
+ */
+async function createUserData(userId, userName, email) {
+    await db.collection('users').doc(userId).set({
+        userId: userId,
+        userName: userName,
+        email: email,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+}
+
+/**
+ * ユーザー名を更新
+ * @param {string} userId - ユーザーID
+ * @param {string} newUserName - 新しいユーザー名
+ */
+async function updateUserName(userId, newUserName) {
+    await db.collection('users').doc(userId).update({
+        userName: newUserName,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+}
+
+// ====================================================================
 // 認証状態の監視
-auth.onAuthStateChanged((user) => {
+// ====================================================================
+auth.onAuthStateChanged(async (user) => {
     if (user) {
         currentUser = user;
-        userName.textContent = user.email;
+        
+        // ユーザー情報を取得
+        currentUserData = await getUserData(user.uid);
+        
+        // ユーザー情報が存在しない場合（既存ユーザーの初回ログイン）
+        if (!currentUserData) {
+            await createUserData(user.uid, user.email, user.email);
+            currentUserData = await getUserData(user.uid);
+        }
+        
+        // ユーザー名を表示（メールアドレスと同じ場合は未設定と表示）
+        if (currentUserData.userName && currentUserData.userName !== user.email) {
+            userName.textContent = currentUserData.userName;
+        } else {
+            userName.textContent = user.email + ' (ユーザー名未設定)';
+        }
+        
         loginContainer.style.display = 'none';
         mainContainer.style.display = 'block';
         loadPosts();
         loadRanking();
     } else {
         currentUser = null;
+        currentUserData = null;
         loginContainer.style.display = 'block';
         mainContainer.style.display = 'none';
     }
@@ -95,7 +184,11 @@ signupBtn.addEventListener('click', async () => {
     }
     
     try {
-        await auth.createUserWithEmailAndPassword(email, password);
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        
+        // ユーザー情報を作成（初期ユーザー名はメールアドレス）
+        await createUserData(userCredential.user.uid, email, email);
+        
         authError.textContent = '';
     } catch (error) {
         authError.textContent = getErrorMessage(error.code);
@@ -107,7 +200,147 @@ logoutBtn.addEventListener('click', () => {
     auth.signOut();
 });
 
+// ====================================================================
+// プロフィールモーダル
+// ====================================================================
+
+// プロフィールボタンクリック
+profileBtn.addEventListener('click', () => {
+    if (currentUser && currentUserData) {
+        profileEmail.textContent = currentUser.email;
+        
+        // 現在のユーザー名を表示
+        if (currentUserData.userName && currentUserData.userName !== currentUser.email) {
+            currentUsername.textContent = currentUserData.userName;
+        } else {
+            currentUsername.textContent = '未設定';
+        }
+        
+        newUsernameInput.value = '';
+        usernameError.textContent = '';
+        currentPasswordInput.value = '';
+        newPasswordInput.value = '';
+        confirmPasswordInput.value = '';
+        passwordError.textContent = '';
+        profileModal.style.display = 'block';
+    }
+});
+
+// モーダルを閉じる
+closeModal.addEventListener('click', () => {
+    profileModal.style.display = 'none';
+});
+
+// モーダル外クリックで閉じる
+window.addEventListener('click', (event) => {
+    if (event.target === profileModal) {
+        profileModal.style.display = 'none';
+    }
+});
+
+// ユーザー名更新
+updateUsernameBtn.addEventListener('click', async () => {
+    const newUsername = newUsernameInput.value.trim();
+    
+    if (!newUsername) {
+        usernameError.textContent = 'ユーザー名を入力してください';
+        return;
+    }
+    
+    if (newUsername.length < 2 || newUsername.length > 20) {
+        usernameError.textContent = 'ユーザー名は2〜20文字で入力してください';
+        return;
+    }
+    
+    // 現在のユーザー名と同じかチェック
+    if (currentUserData.userName === newUsername) {
+        usernameError.textContent = '現在と同じユーザー名です';
+        return;
+    }
+    
+    try {
+        // 重複チェック
+        const exists = await checkUsernameExists(newUsername);
+        if (exists) {
+            usernameError.textContent = 'このユーザー名は既に使用されています';
+            return;
+        }
+        
+        // ユーザー名更新
+        await updateUserName(currentUser.uid, newUsername);
+        
+        // ローカル情報更新
+        currentUserData = await getUserData(currentUser.uid);
+        userName.textContent = newUsername;
+        currentUsername.textContent = newUsername;
+        
+        usernameError.textContent = '';
+        newUsernameInput.value = '';
+        alert('ユーザー名を更新しました！');
+    } catch (error) {
+        usernameError.textContent = 'エラーが発生しました: ' + error.message;
+    }
+});
+
+// パスワード変更
+updatePasswordBtn.addEventListener('click', async () => {
+    const currentPassword = currentPasswordInput.value;
+    const newPassword = newPasswordInput.value;
+    const confirmPassword = confirmPasswordInput.value;
+    
+    // バリデーション
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        passwordError.textContent = 'すべての項目を入力してください';
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        passwordError.textContent = '新しいパスワードは6文字以上で入力してください';
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        passwordError.textContent = '新しいパスワードが一致しません';
+        return;
+    }
+    
+    if (currentPassword === newPassword) {
+        passwordError.textContent = '現在のパスワードと同じパスワードは使用できません';
+        return;
+    }
+    
+    try {
+        // 現在のパスワードで再認証
+        const credential = firebase.auth.EmailAuthProvider.credential(
+            currentUser.email,
+            currentPassword
+        );
+        await currentUser.reauthenticateWithCredential(credential);
+        
+        // パスワード更新
+        await currentUser.updatePassword(newPassword);
+        
+        // 入力欄をクリア
+        currentPasswordInput.value = '';
+        newPasswordInput.value = '';
+        confirmPasswordInput.value = '';
+        passwordError.textContent = '';
+        
+        alert('パスワードを変更しました！');
+    } catch (error) {
+        if (error.code === 'auth/wrong-password') {
+            passwordError.textContent = '現在のパスワードが間違っています';
+        } else if (error.code === 'auth/weak-password') {
+            passwordError.textContent = 'パスワードが弱すぎます';
+        } else {
+            passwordError.textContent = 'エラーが発生しました: ' + error.message;
+        }
+    }
+});
+
+// ====================================================================
 // タブ切り替え
+// ====================================================================
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const tabName = btn.dataset.tab;
@@ -176,10 +409,10 @@ submitPostBtn.addEventListener('click', async () => {
 });
 
 // 投稿の読み込み
-function loadPosts() {
+async function loadPosts() {
     db.collection('posts')
         .orderBy('timestamp', 'desc')
-        .onSnapshot((snapshot) => {
+        .onSnapshot(async (snapshot) => {
             postsList.innerHTML = '';
             
             if (snapshot.empty) {
@@ -187,9 +420,21 @@ function loadPosts() {
                 return;
             }
             
-            snapshot.forEach((doc) => {
+            // 各投稿のユーザー名を取得
+            const posts = [];
+            for (const doc of snapshot.docs) {
                 const post = doc.data();
-                const postElement = createPostElement(doc.id, post);
+                const userData = await getUserData(post.userId);
+                posts.push({
+                    id: doc.id,
+                    data: post,
+                    userName: userData && userData.userName ? userData.userName : post.userEmail
+                });
+            }
+            
+            // 投稿を表示
+            posts.forEach(({ id, data, userName }) => {
+                const postElement = createPostElement(id, data, userName);
                 postsList.appendChild(postElement);
             });
         });
@@ -197,7 +442,7 @@ function loadPosts() {
 
 // 投稿要素の作成
 // XSS対策: ユーザー入力値は必ずエスケープ
-function createPostElement(postId, post) {
+function createPostElement(postId, post, userName) {
     const div = document.createElement('div');
     div.className = 'post-item';
     
@@ -207,14 +452,14 @@ function createPostElement(postId, post) {
     const isOwner = post.userId === currentUser.uid;
     
     // XSS対策: エスケープ処理を適用
-    const safeEmail = escapeHtml(post.userEmail);
+    const safeUserName = escapeHtml(userName);
     const safeExerciseName = escapeHtml(exerciseNames[post.exerciseType] || post.exerciseType);
     const safeValue = parseInt(post.value) || 0; // 数値として扱う
     const safePostId = escapeHtml(postId);
     
     div.innerHTML = `
         <div class="post-header">
-            <span class="post-user">${safeEmail}</span>
+            <span class="post-user">${safeUserName}</span>
             <span class="post-date">${escapeHtml(date)}</span>
         </div>
         <div class="post-content">
@@ -231,7 +476,7 @@ function createPostElement(postId, post) {
             ${isOwner ? `<button class="delete-btn" onclick="deletePost('${safePostId}')">🗑️ 削除</button>` : ''}
         </div>
         <div id="comments-${safePostId}" class="comments-section" style="display: none;">
-            ${renderComments(post.comments || [])}
+            <div id="comments-list-${safePostId}"></div>
             <div class="comment-input">
                 <input type="text" id="comment-input-${safePostId}" placeholder="コメントを入力...">
                 <button onclick="addComment('${safePostId}')">送信</button>
@@ -239,22 +484,39 @@ function createPostElement(postId, post) {
         </div>
     `;
     
+    // コメントを非同期で読み込んで表示
+    if (post.comments && post.comments.length > 0) {
+        renderComments(post.comments).then(html => {
+            const commentsList = div.querySelector(`#comments-list-${postId}`);
+            if (commentsList) {
+                commentsList.innerHTML = html;
+            }
+        });
+    }
+    
     return div;
 }
 
 // コメントの表示
 // XSS対策: コメント内容をエスケープ
-function renderComments(comments) {
+async function renderComments(comments) {
     if (!comments || comments.length === 0) {
         return '';
     }
     
-    return comments.map(comment => `
-        <div class="comment-item">
-            <div class="comment-author">${escapeHtml(comment.userEmail)}</div>
-            <div class="comment-text">${escapeHtml(comment.text)}</div>
-        </div>
-    `).join('');
+    const commentElements = [];
+    for (const comment of comments) {
+        const userData = await getUserData(comment.userId);
+        const userName = userData && userData.userName ? userData.userName : comment.userEmail;
+        commentElements.push(`
+            <div class="comment-item">
+                <div class="comment-author">${escapeHtml(userName)}</div>
+                <div class="comment-text">${escapeHtml(comment.text)}</div>
+            </div>
+        `);
+    }
+    
+    return commentElements.join('');
 }
 
 // いいねの切り替え
@@ -278,9 +540,25 @@ async function toggleLike(postId) {
 }
 
 // コメント表示の切り替え
-function toggleComments(postId) {
+async function toggleComments(postId) {
     const commentsSection = document.getElementById(`comments-${postId}`);
-    commentsSection.style.display = commentsSection.style.display === 'none' ? 'block' : 'none';
+    const isVisible = commentsSection.style.display !== 'none';
+    
+    if (!isVisible) {
+        // コメントを表示する前に最新のコメントを取得
+        const doc = await db.collection('posts').doc(postId).get();
+        const post = doc.data();
+        const commentsList = document.getElementById(`comments-list-${postId}`);
+        
+        if (post.comments && post.comments.length > 0) {
+            const html = await renderComments(post.comments);
+            commentsList.innerHTML = html;
+        } else {
+            commentsList.innerHTML = '';
+        }
+    }
+    
+    commentsSection.style.display = isVisible ? 'none' : 'block';
 }
 
 // コメントの追加
@@ -346,6 +624,7 @@ async function loadRanking() {
         if (!rankings[type][userId] || rankings[type][userId].value < value) {
             rankings[type][userId] = {
                 value: value,
+                userId: userId,
                 email: post.userEmail
             };
         }
@@ -354,13 +633,22 @@ async function loadRanking() {
     // ランキング表示
     rankingList.innerHTML = '';
     
-    Object.keys(exerciseNames).forEach(type => {
+    for (const type of Object.keys(exerciseNames)) {
         const categoryDiv = document.createElement('div');
         categoryDiv.className = 'ranking-category';
         
-        const sorted = Object.entries(rankings[type])
-            .map(([userId, data]) => data)
-            .sort((a, b) => b.value - a.value);
+        // 各ユーザーのユーザー名を取得
+        const entries = [];
+        for (const [userId, data] of Object.entries(rankings[type])) {
+            const userData = await getUserData(userId);
+            const userName = userData && userData.userName ? userData.userName : data.email;
+            entries.push({
+                userName: userName,
+                value: data.value
+            });
+        }
+        
+        const sorted = entries.sort((a, b) => b.value - a.value);
         
         let rankingHTML = `<h3>${exerciseNames[type]}</h3>`;
         
@@ -373,7 +661,7 @@ async function loadRanking() {
                 rankingHTML += `
                     <div class="ranking-item">
                         <div class="ranking-position ${positionClass}">${position}</div>
-                        <div class="ranking-user">${data.email}</div>
+                        <div class="ranking-user">${escapeHtml(data.userName)}</div>
                         <div class="ranking-value">${data.value} ${type === 'Lsit' ? '秒' : type === 'pullup' ? 'セット' : '回'}</div>
                     </div>
                 `;
@@ -382,7 +670,7 @@ async function loadRanking() {
         
         categoryDiv.innerHTML = rankingHTML;
         rankingList.appendChild(categoryDiv);
-    });
+    }
 }
 
 // 成長グラフの読み込み

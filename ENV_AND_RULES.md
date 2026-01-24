@@ -57,22 +57,33 @@
 ## 対応種目
 
 1. **腕立て伏せ** (pushup) - 回数
-2. **腹筋** (situp) - 回数
-3. **スクワット** (squat) - 回数
-4. **プランク** (plank) - 秒数
-5. **懸垂** (pullup) - 回数
+2. **ディップス** (dips) - 回数
+3. **片足スクワット(左右合計)** (squat) - 回数
+4. **Lシット** (Lsit) - 秒数
+5. **懸垂** (pullup) - セット数
 
 ## データ構造
 
 ### 現在の実装（配列ベース）
+
+#### users コレクション
+```javascript
+{
+  userId: string,           // ユーザーID（認証UIDと同じ）
+  email: string,            // メールアドレス
+  userName: string,         // ユーザー名（2〜20文字、一意）
+  createdAt: Timestamp,     // アカウント作成日時
+  updatedAt: Timestamp      // 最終更新日時
+}
+```
 
 #### posts コレクション
 ```javascript
 {
   userId: string,           // ユーザーID
   userEmail: string,        // ユーザーのメールアドレス
-  exerciseType: string,     // 種目（pushup, situp, squat, plank, pullup）
-  value: number,            // 回数または秒数（1〜10000）
+  exerciseType: string,     // 種目（pushup, dips, squat, Lsit, pullup）
+  value: number,            // 回数または秒数またはセット数（1〜10000）
   timestamp: Timestamp,     // 投稿日時
   likes: [string],          // いいねしたユーザーIDの配列
   comments: [               // コメントの配列（最大500文字）

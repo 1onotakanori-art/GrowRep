@@ -2,6 +2,19 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // users コレクション
+    match /users/{userId} {
+      // 認証済みユーザーのみ読み取り可能
+      allow read: if request.auth != null;
+      
+      // 本人のみ作成・更新可能
+      allow create, update: if request.auth != null 
+                            && request.auth.uid == userId;
+      
+      // 削除は禁止
+      allow delete: if false;
+    }
+    
     // posts コレクション
     match /posts/{postId} {
       // 認証済みユーザーのみ読み取り可能

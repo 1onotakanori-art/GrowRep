@@ -413,6 +413,150 @@ header h1 {
     font-size: 16px;
 }
 
+/* プロフィールモーダル */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal-content {
+    background-color: white;
+    margin: 5% auto;
+    padding: 30px;
+    border-radius: 16px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: slideDown 0.3s ease;
+    position: relative;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.close-modal {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+    color: #aaa;
+    font-size: 32px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.3s;
+    line-height: 1;
+}
+
+.close-modal:hover,
+.close-modal:focus {
+    color: #333;
+}
+
+.modal-content h2 {
+    color: #667eea;
+    font-size: 2em;
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+    border-bottom: 3px solid #667eea;
+}
+
+.profile-section {
+    margin-bottom: 35px;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 12px;
+    border-left: 4px solid #667eea;
+}
+
+.profile-section h3 {
+    color: #333;
+    font-size: 1.3em;
+    margin-bottom: 10px;
+}
+
+.profile-description {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 15px;
+    line-height: 1.5;
+}
+
+.profile-info {
+    display: inline-block;
+    padding: 8px 15px;
+    background: white;
+    border-radius: 6px;
+    color: #667eea;
+    font-weight: bold;
+    border: 2px solid #667eea;
+}
+
+.profile-current {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.profile-current label {
+    font-weight: bold;
+    color: #555;
+}
+
+.profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.profile-form input {
+    padding: 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 16px;
+    transition: border-color 0.3s;
+}
+
+.profile-form input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.profile-form button {
+    margin-top: 5px;
+}
+
+.profile-section .error-message {
+    margin-top: 10px;
+    padding: 10px;
+    background: #ffe6e6;
+    border-radius: 6px;
+    border-left: 4px solid #e74c3c;
+}
+
 /* レスポンシブ */
 @media (max-width: 768px) {
     .tab-nav {
@@ -431,5 +575,27 @@ header h1 {
     .user-info {
         width: 100%;
         justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    .modal-content {
+        margin: 10% auto;
+        padding: 20px;
+        width: 95%;
+        max-height: 90vh;
+    }
+    
+    .modal-content h2 {
+        font-size: 1.5em;
+    }
+    
+    .close-modal {
+        right: 15px;
+        top: 15px;
+        font-size: 28px;
+    }
+    
+    .profile-section {
+        padding: 15px;
     }
 }

@@ -28,6 +28,7 @@
             <h1>🏋️ GrowRep</h1>
             <div class="user-info">
                 <span id="user-name"></span>
+                <button id="profile-btn" class="btn-secondary">👤 プロフィール</button>
                 <button id="logout-btn" class="btn-secondary">ログアウト</button>
             </div>
         </header>
@@ -46,9 +47,9 @@
                 <select id="exercise-type" required>
                     <option value="">種目を選択</option>
                     <option value="pushup">腕立て伏せ</option>
-                    <option value="situp">腹筋</option>
-                    <option value="squat">スクワット</option>
-                    <option value="plank">プランク(秒)</option>
+                    <option value="dips">顔付けディップス</option>
+                    <option value="squat">片足スクワット(左右合計)</option>
+                    <option value="Lsit">Lシット(秒)</option>
                     <option value="pullup">懸垂(セット)</option>
                 </select>
                 <input type="number" id="exercise-value" placeholder="回数または秒数" min="0" required>
@@ -74,12 +75,51 @@
             <h2>あなたの成長グラフ</h2>
             <select id="graph-exercise-type">
                 <option value="pushup">腕立て伏せ</option>
-                <option value="situp">腹筋</option>
-                <option value="squat">スクワット</option>
-                <option value="plank">プランク（秒）</option>
-                <option value="pullup">懸垂</option>
+                <option value="dips">ディップス</option>
+                <option value="squat">片足スクワット(左右合計)</option>
+                <option value="Lsit">Lシット（秒）</option>
+                <option value="pullup">懸垂(セット)</option>
             </select>
             <canvas id="progress-chart"></canvas>
+        </div>
+    </div>
+
+    <!-- プロフィールモーダル -->
+    <div id="profile-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>👤 プロフィール設定</h2>
+            
+            <div class="profile-section">
+                <h3>メールアドレス</h3>
+                <p id="profile-email" class="profile-info"></p>
+            </div>
+
+            <div class="profile-section">
+                <h3>ユーザー名</h3>
+                <p class="profile-description">他のユーザーに表示される名前です（2〜20文字）</p>
+                <div class="profile-current">
+                    <label>現在のユーザー名:</label>
+                    <span id="current-username" class="profile-info">未設定</span>
+                </div>
+                <div class="profile-form">
+                    <input type="text" id="new-username" placeholder="新しいユーザー名" minlength="2" maxlength="20">
+                    <button id="update-username-btn" class="btn-primary">ユーザー名を更新</button>
+                </div>
+                <p id="username-error" class="error-message"></p>
+            </div>
+
+            <div class="profile-section">
+                <h3>パスワード変更</h3>
+                <p class="profile-description">セキュリティのため定期的な変更を推奨します</p>
+                <div class="profile-form">
+                    <input type="password" id="current-password" placeholder="現在のパスワード">
+                    <input type="password" id="new-password" placeholder="新しいパスワード" minlength="6">
+                    <input type="password" id="confirm-password" placeholder="新しいパスワード（確認）" minlength="6">
+                    <button id="update-password-btn" class="btn-primary">パスワードを変更</button>
+                </div>
+                <p id="password-error" class="error-message"></p>
+            </div>
         </div>
     </div>
 
