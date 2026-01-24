@@ -65,6 +65,7 @@ const exerciseNames = {
 let currentUser = null;
 let currentUserData = null;  // ユーザー情報（usersコレクションから取得）
 let myChart = null;
+let unsubscribePosts = null;  // 投稿リスナーの解除用
 
 // ====================================================================
 // Firestoreユーティリティ関数
@@ -148,8 +149,22 @@ auth.onAuthStateChanged(async (user) => {
         loadPosts();
         loadRanking();
     } else {
+        // ログアウト時の処理
         currentUser = null;
         currentUserData = null;
+        
+        // 投稿リスナーを解除
+        if (unsubscribePosts) {
+            unsubscribePosts();
+            unsubscribePosts = null;
+        }
+        
+        // グラフをクリア
+        if (myChart) {
+            myChart.destroy();
+            myChart = null;
+        }
+        
         loginContainer.style.display = 'block';
         mainContainer.style.display = 'none';
     }
@@ -410,7 +425,13 @@ submitPostBtn.addEventListener('click', async () => {
 
 // 投稿の読み込み
 async function loadPosts() {
-    db.collection('posts')
+    // 既存のリスナーを解除
+    if (unsubscribePosts) {
+        unsubscribePosts();
+    }
+    
+    // 新しいリスナーを設定
+    unsubscribePosts = db.collection('posts')
         .orderBy('timestamp', 'desc')
         .onSnapshot(async (snapshot) => {
             postsList.innerHTML = '';
@@ -437,6 +458,9 @@ async function loadPosts() {
                 const postElement = createPostElement(id, data, userName);
                 postsList.appendChild(postElement);
             });
+        }, (error) => {
+            console.error('投稿の読み込みエラー:', error);
+            postsList.innerHTML = '<p style="text-align: center; color: #e74c3c;">投稿の読み込みに失敗しました</p>';
         });
 }
 
