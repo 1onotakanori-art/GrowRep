@@ -90,7 +90,10 @@ body {
     color: #e74c3c;
     font-size: 14px;
     margin-top: 10px;
-    min-height: 20px;
+}
+
+.error-message:empty {
+    display: none;
 }
 
 /* メイン画面 */
@@ -555,6 +558,12 @@ header h1 {
     background: #ffe6e6;
     border-radius: 6px;
     border-left: 4px solid #e74c3c;
+}
+
+.profile-section .error-message:empty {
+    display: none;
+    padding: 0;
+    margin: 0;
 }
 
 /* レスポンシブ */
