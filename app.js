@@ -677,9 +677,10 @@ async function loadRanking() {
 async function loadProgressChart() {
     const selectedType = graphExerciseType.value;
     
+    // userIdでフィルタリングし、timestampでソート
+    // exerciseTypeのフィルタリングはクライアント側で実施（複合インデックス不要）
     const snapshot = await db.collection('posts')
         .where('userId', '==', currentUser.uid)
-        .where('exerciseType', '==', selectedType)
         .orderBy('timestamp', 'asc')
         .get();
     
@@ -688,7 +689,8 @@ async function loadProgressChart() {
     
     snapshot.forEach((doc) => {
         const post = doc.data();
-        if (post.timestamp) {
+        // 選択された種目のみを抽出
+        if (post.exerciseType === selectedType && post.timestamp) {
             const date = new Date(post.timestamp.toDate());
             labels.push(date.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' }));
             data.push(post.value);
@@ -698,6 +700,17 @@ async function loadProgressChart() {
     // 既存のチャートを破棄
     if (myChart) {
         myChart.destroy();
+    }
+    
+    // データがない場合のメッセージ
+    if (data.length === 0) {
+        const ctx = progressChart.getContext('2d');
+        ctx.clearRect(0, 0, progressChart.width, progressChart.height);
+        ctx.font = '16px Arial';
+        ctx.fillStyle = '#999';
+        ctx.textAlign = 'center';
+        ctx.fillText('この種目の記録がまだありません', progressChart.width / 2, progressChart.height / 2);
+        return;
     }
     
     // 新しいチャートを作成
