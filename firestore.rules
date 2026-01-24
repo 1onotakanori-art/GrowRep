@@ -19,10 +19,11 @@ service cloud.firestore {
                     && request.resource.data.userId == request.auth.uid
                     && request.resource.data.userEmail == request.auth.token.email;
       
-      // 投稿者本人のみ更新・削除可能
-      allow update: if request.auth != null
-                    && request.auth.uid == resource.data.userId;
+      // 誰でも更新可能（いいね・コメント追加）
+      // ただし認証済みユーザーのみ
+      allow update: if request.auth != null;
                     
+      // 投稿者本人のみ削除可能
       allow delete: if request.auth != null
                     && request.auth.uid == resource.data.userId;
     }
@@ -41,7 +42,8 @@ service cloud.firestore {
 - 投稿の userEmail は自分のメールアドレスと一致している必要がある
 
 ### 更新（update）
-- 投稿者本人のみが自分の投稿を更新可能（いいね・コメントの追加など）
+- 認証済みユーザーなら誰でも更新可能（いいね・コメントの追加など）
+- 他人の投稿にもいいね・コメントができる
 
 ### 削除（delete）
 - 投稿者本人のみが自分の投稿を削除可能
