@@ -38,6 +38,15 @@ const rankingList = document.getElementById('ranking-list');
 const progressChart = document.getElementById('progress-chart');
 const graphExerciseType = document.getElementById('graph-exercise-type');
 
+// パスワードリセット関連
+const forgotPasswordLink = document.getElementById('forgot-password-link');
+const resetPasswordModal = document.getElementById('reset-password-modal');
+const closeResetModal = document.querySelector('.close-reset-modal');
+const resetEmailInput = document.getElementById('reset-email');
+const sendResetBtn = document.getElementById('send-reset-btn');
+const resetError = document.getElementById('reset-error');
+const resetSuccess = document.getElementById('reset-success');
+
 // プロフィールモーダル関連
 const profileModal = document.getElementById('profile-modal');
 const closeModal = document.querySelector('.close-modal');
@@ -213,6 +222,74 @@ signupBtn.addEventListener('click', async () => {
 // ログアウト
 logoutBtn.addEventListener('click', () => {
     auth.signOut();
+});
+
+// ====================================================================
+// パスワードリセット機能
+// ====================================================================
+
+// パスワードリセットリンククリック
+forgotPasswordLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    resetEmailInput.value = '';
+    resetError.textContent = '';
+    resetSuccess.textContent = '';
+    resetPasswordModal.style.display = 'block';
+});
+
+// リセットモーダルを閉じる
+closeResetModal.addEventListener('click', () => {
+    resetPasswordModal.style.display = 'none';
+});
+
+// モーダル外クリックで閉じる
+window.addEventListener('click', (event) => {
+    if (event.target === resetPasswordModal) {
+        resetPasswordModal.style.display = 'none';
+    }
+});
+
+// パスワードリセットメール送信
+sendResetBtn.addEventListener('click', async () => {
+    const email = resetEmailInput.value.trim();
+    
+    if (!email) {
+        resetError.textContent = 'メールアドレスを入力してください';
+        resetSuccess.textContent = '';
+        return;
+    }
+    
+    // メールアドレスの形式チェック
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        resetError.textContent = '有効なメールアドレスを入力してください';
+        resetSuccess.textContent = '';
+        return;
+    }
+    
+    try {
+        await auth.sendPasswordResetEmail(email);
+        resetError.textContent = '';
+        resetSuccess.textContent = `パスワードリセットメールを ${email} に送信しました。メールをご確認ください。`;
+        resetEmailInput.value = '';
+        
+        // 3秒後にモーダルを閉じる
+        setTimeout(() => {
+            resetPasswordModal.style.display = 'none';
+            resetSuccess.textContent = '';
+        }, 3000);
+    } catch (error) {
+        resetSuccess.textContent = '';
+        if (error.code === 'auth/user-not-found') {
+            resetError.textContent = 'このメールアドレスは登録されていません';
+        } else if (error.code === 'auth/invalid-email') {
+            resetError.textContent = '無効なメールアドレスです';
+        } else if (error.code === 'auth/too-many-requests') {
+            resetError.textContent = 'リクエストが多すぎます。しばらく待ってから再度お試しください';
+        } else {
+            resetError.textContent = 'エラーが発生しました: ' + error.message;
+        }
+    }
 });
 
 // ====================================================================

@@ -96,6 +96,64 @@ body {
     display: none;
 }
 
+.success-message {
+    color: #27ae60;
+    font-size: 14px;
+    margin-top: 10px;
+    padding: 10px;
+    background: #d5f4e6;
+    border-radius: 6px;
+    border-left: 4px solid #27ae60;
+}
+
+.success-message:empty {
+    display: none;
+}
+
+.forgot-password-link {
+    margin-top: 15px;
+    text-align: center;
+}
+
+.forgot-password-link a {
+    color: #667eea;
+    text-decoration: none;
+    font-size: 14px;
+    transition: color 0.3s;
+}
+
+.forgot-password-link a:hover {
+    color: #764ba2;
+    text-decoration: underline;
+}
+
+.reset-description {
+    color: #666;
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+.reset-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.reset-form input {
+    padding: 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 16px;
+    transition: border-color 0.3s;
+}
+
+.reset-form input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
 /* メイン画面 */
 header {
     background: white;

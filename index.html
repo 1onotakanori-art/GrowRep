@@ -18,6 +18,9 @@
                 <button id="login-btn" class="btn-primary">ログイン</button>
                 <button id="signup-btn" class="btn-secondary">新規登録</button>
                 <p id="auth-error" class="error-message"></p>
+                <p class="forgot-password-link">
+                    <a href="#" id="forgot-password-link">パスワードを忘れた場合</a>
+                </p>
             </div>
         </div>
     </div>
@@ -81,6 +84,24 @@
                 <option value="pullup">懸垂(セット)</option>
             </select>
             <canvas id="progress-chart"></canvas>
+        </div>
+    </div>
+
+    <!-- パスワードリセットモーダル -->
+    <div id="reset-password-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close-reset-modal">&times;</span>
+            <h2>🔑 パスワードリセット</h2>
+            <p class="reset-description">
+                登録済みのメールアドレスを入力してください。<br>
+                パスワードリセット用のリンクを送信します。
+            </p>
+            <div class="reset-form">
+                <input type="email" id="reset-email" placeholder="メールアドレス" required>
+                <button id="send-reset-btn" class="btn-primary">リセットメールを送信</button>
+            </div>
+            <p id="reset-error" class="error-message"></p>
+            <p id="reset-success" class="success-message"></p>
         </div>
     </div>
 
