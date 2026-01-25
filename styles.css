@@ -239,6 +239,47 @@ header h1 {
     font-size: 1.5em;
 }
 
+/* タブヘッダー（タイトルと更新ボタン） */
+.tab-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.tab-header h2 {
+    margin-bottom: 0;
+}
+
+.refresh-btn {
+    padding: 8px 16px;
+    background: #f0f0f0;
+    color: #333;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.refresh-btn:hover {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+}
+
+.refresh-btn:active {
+    transform: translateY(0);
+}
+
+.refresh-btn.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
 /* 投稿フォーム */
 .post-form {
     max-width: 500px;

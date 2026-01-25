@@ -95,6 +95,14 @@ let myChart = null;
 let myScoreChart = null;  // 得点レーダーチャート用
 let unsubscribePosts = null;  // 投稿リスナーの解除用
 
+// キャッシュ用変数（Firebase読み取り削減）
+let rankingCache = null;
+let rankingCacheTime = null;
+let scoreCache = null;
+let scoreCacheTime = null;
+let progressCache = {};  // 種目ごとにキャッシュ
+const CACHE_DURATION = 5 * 60 * 1000;  // キャッシュ有効期間: 5分
+
 // ====================================================================
 // Firestoreユーティリティ関数
 // ====================================================================
@@ -208,11 +216,19 @@ async function loadMultipliers() {
 // ====================================================================
 
 /**
- * 各ユーザーの種目別最高記録と得点を取得
+ * 各ユーザーの種目別最高記録と得点を取得（キャッシュ対応）
+ * @param {boolean} forceRefresh - キャッシュを無視して再取得するか
  * @returns {Promise<Object>} ユーザーIDをキーとした得点データ
  */
-async function getAllUsersScores() {
+async function getAllUsersScores(forceRefresh = false) {
     try {
+        const now = Date.now();
+        
+        // キャッシュが有効な場合はキャッシュを使用
+        if (!forceRefresh && scoreCache && scoreCacheTime && (now - scoreCacheTime < CACHE_DURATION)) {
+            return scoreCache;
+        }
+        
         const multipliers = await getMultipliers();
         const postsSnapshot = await db.collection('posts').get();
         const usersSnapshot = await db.collection('users').get();
@@ -264,6 +280,10 @@ async function getAllUsersScores() {
                 user.totalScore += score;
             });
         }
+        
+        // キャッシュを更新
+        scoreCache = userRecords;
+        scoreCacheTime = now;
         
         return userRecords;
         
@@ -420,11 +440,11 @@ function displayTotalScores(usersScores) {
 }
 
 /**
- * ユーザー選択チェックボックスを作成
+ * ユーザー選択チェックボックスを作成（キャッシュ対応）
  */
-async function loadUserCheckboxes() {
+async function loadUserCheckboxes(forceRefresh = false) {
     try {
-        const usersScores = await getAllUsersScores();
+        const usersScores = await getAllUsersScores(forceRefresh);
         
         let html = '';
         Object.keys(usersScores).forEach(userId => {
@@ -777,9 +797,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.add('active');
         document.getElementById(`${tabName}-tab`).classList.add('active');
         
-        // ランキングタブの場合は再読み込み
+        // ランキングタブの場合はキャッシュを使用
         if (tabName === 'ranking') {
-            loadRanking();
+            loadRanking(false);  // キャッシュ使用
         }
         
         // グラフタブの場合は描画
@@ -792,11 +812,56 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
             loadMultipliers();
         }
         
-        // 得点タブの場合はチェックボックスとチャートをロード
+        // 得点タブの場合はキャッシュを使用
         if (tabName === 'score') {
-            loadUserCheckboxes();
+            loadUserCheckboxes(false);  // キャッシュ使用
         }
     });
+});
+
+// ====================================================================
+// 更新ボタンのイベントリスナー
+// ====================================================================
+
+// ランキング更新ボタン
+document.getElementById('refresh-ranking-btn').addEventListener('click', async function() {
+    this.classList.add('loading');
+    this.textContent = '⏳ 更新中...';
+    
+    try {
+        await loadRanking(true);  // 強制更新
+    } finally {
+        this.classList.remove('loading');
+        this.textContent = '🔄 更新';
+    }
+});
+
+// 成長グラフ更新ボタン
+document.getElementById('refresh-progress-btn').addEventListener('click', async function() {
+    this.classList.add('loading');
+    this.textContent = '⏳ 更新中...';
+    
+    try {
+        // グラフのキャッシュをクリアして再読み込み
+        progressCache = {};
+        await loadProgressChart();
+    } finally {
+        this.classList.remove('loading');
+        this.textContent = '🔄 更新';
+    }
+});
+
+// 得点更新ボタン
+document.getElementById('refresh-score-btn').addEventListener('click', async function() {
+    this.classList.add('loading');
+    this.textContent = '⏳ 更新中...';
+    
+    try {
+        await loadUserCheckboxes(true);  // 強制更新
+    } finally {
+        this.classList.remove('loading');
+        this.textContent = '🔄 更新';
+    }
 });
 
 // 投稿の送信
@@ -827,6 +892,13 @@ submitPostBtn.addEventListener('click', async () => {
             likes: [],
             comments: []
         });
+        
+        // 投稿後、キャッシュをクリア（新しいデータを反映させるため）
+        rankingCache = null;
+        rankingCacheTime = null;
+        scoreCache = null;
+        scoreCacheTime = null;
+        progressCache = {};
         
         exerciseType.value = '';
         exerciseValue.value = '';
@@ -1048,8 +1120,17 @@ async function deletePost(postId) {
     }
 }
 
-// ランキングの読み込み
-async function loadRanking() {
+// ランキングの読み込み（キャッシュ対応）
+async function loadRanking(forceRefresh = false) {
+    const now = Date.now();
+    
+    // キャッシュが有効な場合はキャッシュを使用
+    if (!forceRefresh && rankingCache && rankingCacheTime && (now - rankingCacheTime < CACHE_DURATION)) {
+        renderRanking(rankingCache);
+        return;
+    }
+    
+    // Firestoreからデータを取得
     const snapshot = await db.collection('posts').get();
     const rankings = {};
     
@@ -1073,7 +1154,16 @@ async function loadRanking() {
         }
     });
     
-    // ランキング表示
+    // キャッシュを更新
+    rankingCache = rankings;
+    rankingCacheTime = now;
+    
+    // レンダリング
+    await renderRanking(rankings);
+}
+
+// ランキングの表示
+async function renderRanking(rankings) {
     rankingList.innerHTML = '';
     
     for (const type of Object.keys(exerciseNames)) {
