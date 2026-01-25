@@ -1057,7 +1057,7 @@ async function toggleLike(postId) {
 // コメント表示の切り替え
 async function toggleComments(postId) {
     const commentsSection = document.getElementById(`comments-${postId}`);
-    const isVisible = commentsSection.style.display !== 'none';
+    const isVisible = commentsSection.style.display === 'block';
     
     if (!isVisible) {
         // コメントを表示する前に最新のコメントを取得
@@ -1065,15 +1065,17 @@ async function toggleComments(postId) {
         const post = doc.data();
         const commentsList = document.getElementById(`comments-list-${postId}`);
         
-        if (post.comments && post.comments.length > 0) {ß
+        if (post.comments && post.comments.length > 0) {
             const html = await renderComments(post.comments);
             commentsList.innerHTML = html;
         } else {
-            commentsList.innerHTML = '';
+            commentsList.innerHTML = '<p style="color: #999; padding: 10px;">まだコメントがありません</p>';
         }
+        
+        commentsSection.style.display = 'block';
+    } else {
+        commentsSection.style.display = 'none';
     }
-    
-    commentsSection.style.display = isVisible ? 'none' : 'block';
 }
 
 // コメントの追加
@@ -1104,6 +1106,22 @@ async function addComment(postId) {
         });
         
         input.value = '';
+        
+        // コメントリストを更新
+        const doc = await postRef.get();
+        const post = doc.data();
+        const commentsList = document.getElementById(`comments-list-${postId}`);
+        
+        if (post.comments && post.comments.length > 0) {
+            const html = await renderComments(post.comments);
+            commentsList.innerHTML = html;
+        }
+        
+        // コメント数を更新
+        const commentBtn = document.querySelector(`button[onclick="toggleComments('${postId}')"]`);
+        if (commentBtn) {
+            commentBtn.innerHTML = `💬 ${post.comments.length}`;
+        }
         
         // 成功メッセージを表示
         alert('💬 コメントが送信されました！');
