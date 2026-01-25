@@ -1119,15 +1119,15 @@ async function addComment(postId) {
         // コメントリストを更新
         const doc = await postRef.get();
         const post = doc.data();
-        const commentsList = document.getElementById(`comments-list-${postId}`);
+        const commentsSection = document.getElementById(`comments-${postId}`);
+        const commentsList = commentsSection ? commentsSection.querySelector(`#comments-list-${postId}`) : null;
         
-        if (post.comments && post.comments.length > 0) {
+        if (commentsList && post.comments && post.comments.length > 0) {
             const html = await renderComments(post.comments, postId);
             commentsList.innerHTML = html;
         }
         
         // コメント数を更新
-        const commentsSection = document.getElementById(`comments-${postId}`);
         if (commentsSection) {
             const postElement = commentsSection.closest('.post-item');
             const commentBtn = postElement ? postElement.querySelector('.comment-btn') : null;
@@ -1184,16 +1184,19 @@ async function deleteComment(postId, commentIndex) {
         });
         
         // コメントリストを更新
-        const commentsList = document.getElementById(`comments-list-${postId}`);
-        if (updatedComments.length > 0) {
-            const html = await renderComments(updatedComments, postId);
-            commentsList.innerHTML = html;
-        } else {
-            commentsList.innerHTML = '<p style="color: #999; padding: 10px;">まだコメントがありません</p>';
+        const commentsSection = document.getElementById(`comments-${postId}`);
+        const commentsList = commentsSection ? commentsSection.querySelector(`#comments-list-${postId}`) : null;
+        
+        if (commentsList) {
+            if (updatedComments.length > 0) {
+                const html = await renderComments(updatedComments, postId);
+                commentsList.innerHTML = html;
+            } else {
+                commentsList.innerHTML = '<p style="color: #999; padding: 10px;">まだコメントがありません</p>';
+            }
         }
         
         // コメント数を更新
-        const commentsSection = document.getElementById(`comments-${postId}`);
         if (commentsSection) {
             const postElement = commentsSection.closest('.post-item');
             const commentBtn = postElement ? postElement.querySelector('.comment-btn') : null;
