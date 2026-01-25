@@ -346,7 +346,7 @@ async function loadScoreChart(selectedUserIds = []) {
                 labels: [
                     'プッシュアップ',
                     'ディップス',
-                    '片足スクワット(左右)',
+                    '片足スクワット',
                     'Lシット',
                     '懸垂'
                 ],

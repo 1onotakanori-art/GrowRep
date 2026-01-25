@@ -42,7 +42,7 @@
             <button class="tab-btn" data-tab="ranking">ランキング</button>
             <button class="tab-btn" data-tab="progress">成長グラフ</button>
             <button class="tab-btn" data-tab="rules">ルール</button>
-            <button class="tab-btn" data-tab="score">得点</button>
+            <button class="tab-btn" data-tab="score">総合得点</button>
         </nav>
 
         <!-- 投稿タブ -->
@@ -53,7 +53,7 @@
                     <option value="">種目を選択</option>
                     <option value="pushup">プッシュアップ</option>
                     <option value="dips">ディップス</option>
-                    <option value="squat">片足スクワット(左右)</option>
+                    <option value="squat">片足スクワット</option>
                     <option value="Lsit">Lシット(秒)</option>
                     <option value="pullup">懸垂(セット)</option>
                 </select>
@@ -81,7 +81,7 @@
             <select id="graph-exercise-type">
                 <option value="pushup">プッシュアップ</option>
                 <option value="dips">ディップス</option>
-                <option value="squat">片足スクワット(左右)</option>
+                <option value="squat">片足スクワット</option>
                 <option value="Lsit">Lシット（秒）</option>
                 <option value="pullup">懸垂(セット)</option>
             </select>
@@ -92,14 +92,14 @@
         <div id="rules-tab" class="tab-content">
             <h2>📋 種目ルール & 得点倍率</h2>
             <div class="rules-description">
-                <p>各種目の得点は「<strong>回数(秒数/セット数) × 倍率</strong>」で計算されます。</p>
-                <p>倍率を変更して、各種目の難易度を調整できます。</p>
+                <p>得点＝ <strong>回数/秒数/セット数 × 倍率</strong></p>
+                <p>種目ごとの倍率は任意で変更可能</p>
             </div>
             <div class="rules-list">
                 <div class="rule-item">
                     <div class="rule-info">
                         <h3>💪 プッシュアップ</h3>
-                        <p class="rule-detail">足をベンチ等に上げ胸が床につくまで下げる。顎は上げない。</p>
+                        <p class="rule-detail">プッシュアップバーを使用。顎がマットにつくまで下げる。</p>
                     </div>
                     <div class="rule-multiplier">
                         <label>倍率：</label>
@@ -109,7 +109,7 @@
                 <div class="rule-item">
                     <div class="rule-info">
                         <h3>🔥 ディップス</h3>
-                        <p class="rule-detail">顎がバーと同じ高さまで下げる。</p>
+                        <p class="rule-detail">顎がストレッチポールにタッチするまで下げる。幅、ポール位置は自由。</p>
                     </div>
                     <div class="rule-multiplier">
                         <label>倍率：</label>
@@ -118,8 +118,8 @@
                 </div>
                 <div class="rule-item">
                     <div class="rule-info">
-                        <h3>🦵 片足スクワット(左右合計)</h3>
-                        <p class="rule-detail">片足で膝が90度になるまでしゃがむ。左右の合計回数。</p>
+                        <h3>🦵 片足スクワット</h3>
+                        <p class="rule-detail">マット3段重ねの上で、片足でしゃがんで立ち上がる。左右の合計回数。</p>
                     </div>
                     <div class="rule-multiplier">
                         <label>倍率：</label>
@@ -129,7 +129,7 @@
                 <div class="rule-item">
                     <div class="rule-info">
                         <h3>⏱️ Lシット(秒)</h3>
-                        <p class="rule-detail">足を地面と平行に保つ。秒数で記録。</p>
+                        <p class="rule-detail">プッシュアップバー/ダンベルを使用。秒数で記録。</p>
                     </div>
                     <div class="rule-multiplier">
                         <label>倍率：</label>
@@ -139,7 +139,7 @@
                 <div class="rule-item">
                     <div class="rule-info">
                         <h3>🏃 懸垂(セット)</h3>
-                        <p class="rule-detail">顎がバーより上まで。セット数で記録。</p>
+                        <p class="rule-detail">顎をバーより上に上げる。セット数で記録。1~10セット：5rep、11~20セット：6rep、21~セット：7回。</p>
                     </div>
                     <div class="rule-multiplier">
                         <label>倍率：</label>
@@ -157,7 +157,7 @@
             <h2>🏆 総合得点 & レーダーチャート</h2>
             <div class="score-description">
                 <p>各種目の最高記録から得点を計算し、レーダーチャートで視覚化します。</p>
-                <p>計算式：<strong>得点 = 回数(秒数/セット数) × 倍率</strong></p>
+                <p><strong>得点 = 回数/秒数/セット数 × 倍率</strong></p>
             </div>
             
             <div class="user-selection">
