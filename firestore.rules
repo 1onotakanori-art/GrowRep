@@ -32,5 +32,17 @@ service cloud.firestore {
       allow delete: if request.auth != null
                     && request.auth.uid == resource.data.userId;
     }
+    
+    // settings コレクション
+    match /settings/{docId} {
+      // 認証済みユーザーのみ読み取り可能
+      allow read: if request.auth != null;
+      
+      // 認証済みユーザーのみ更新可能（6人グループなので全員が管理者）
+      allow create, update: if request.auth != null;
+      
+      // 削除は禁止
+      allow delete: if false;
+    }
   }
 }

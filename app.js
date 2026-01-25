@@ -47,6 +47,24 @@ const sendResetBtn = document.getElementById('send-reset-btn');
 const resetError = document.getElementById('reset-error');
 const resetSuccess = document.getElementById('reset-success');
 
+// ルールタブ関連
+const updateMultipliersBtn = document.getElementById('update-multipliers-btn');
+const rulesMessage = document.getElementById('rules-message');
+const rulesError = document.getElementById('rules-error');
+const multiplierInputs = {
+    pushup: document.getElementById('multiplier-pushup'),
+    dips: document.getElementById('multiplier-dips'),
+    squat: document.getElementById('multiplier-squat'),
+    Lsit: document.getElementById('multiplier-Lsit'),
+    pullup: document.getElementById('multiplier-pullup')
+};
+
+// 得点タブ関連
+const userCheckboxes = document.getElementById('user-checkboxes');
+const scoreChart = document.getElementById('score-chart');
+const totalScoresList = document.getElementById('total-scores-list');
+const scoreError = document.getElementById('score-error');
+
 // プロフィールモーダル関連
 const profileModal = document.getElementById('profile-modal');
 const closeModal = document.querySelector('.close-modal');
@@ -74,6 +92,7 @@ const exerciseNames = {
 let currentUser = null;
 let currentUserData = null;  // ユーザー情報（usersコレクションから取得）
 let myChart = null;
+let myScoreChart = null;  // 得点レーダーチャート用
 let unsubscribePosts = null;  // 投稿リスナーの解除用
 
 // ====================================================================
@@ -128,6 +147,319 @@ async function updateUserName(userId, newUserName) {
         userName: newUserName,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+}
+
+// ====================================================================
+// ルール管理機能
+// ====================================================================
+
+/**
+ * 種目倍率の設定を取得
+ * @returns {Promise<Object>} 倍率設定オブジェクト
+ */
+async function getMultipliers() {
+    const doc = await db.collection('settings').doc('multipliers').get();
+    if (doc.exists) {
+        return doc.data();
+    } else {
+        // デフォルト値を返す
+        return {
+            pushup: 1.0,
+            dips: 1.0,
+            squat: 1.0,
+            Lsit: 1.0,
+            pullup: 1.0
+        };
+    }
+}
+
+/**
+ * 種目倍率の設定を更新
+ * @param {Object} multipliers - 倍率設定オブジェクト
+ */
+async function updateMultipliers(multipliers) {
+    await db.collection('settings').doc('multipliers').set({
+        ...multipliers,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+}
+
+/**
+ * 倍率設定をUIにロード
+ */
+async function loadMultipliers() {
+    try {
+        const multipliers = await getMultipliers();
+        
+        // 各入力フィールドに値をセット
+        for (const [exercise, value] of Object.entries(multipliers)) {
+            if (multiplierInputs[exercise]) {
+                multiplierInputs[exercise].value = value;
+            }
+        }
+    } catch (error) {
+        console.error('倍率の取得に失敗しました:', error);
+        rulesError.textContent = '倍率の取得に失敗しました';
+    }
+}
+
+// ====================================================================
+// 得点計算機能
+// ====================================================================
+
+/**
+ * 各ユーザーの種目別最高記録と得点を取得
+ * @returns {Promise<Object>} ユーザーIDをキーとした得点データ
+ */
+async function getAllUsersScores() {
+    try {
+        const multipliers = await getMultipliers();
+        const postsSnapshot = await db.collection('posts').get();
+        const usersSnapshot = await db.collection('users').get();
+        
+        // ユーザー情報を格納
+        const usersData = {};
+        usersSnapshot.forEach(doc => {
+            const data = doc.data();
+            usersData[doc.id] = data.userName || data.email;
+        });
+        
+        // ユーザーごと、種目ごとの最高記録を集計
+        const userRecords = {};
+        
+        postsSnapshot.forEach(doc => {
+            const post = doc.data();
+            const userId = post.userId;
+            const exerciseType = post.exerciseType;
+            const value = post.value;
+            
+            if (!userRecords[userId]) {
+                userRecords[userId] = {
+                    userName: usersData[userId] || 'Unknown',
+                    exercises: {}
+                };
+            }
+            
+            // 種目ごとの最高記録を更新
+            if (!userRecords[userId].exercises[exerciseType] || 
+                userRecords[userId].exercises[exerciseType] < value) {
+                userRecords[userId].exercises[exerciseType] = value;
+            }
+        });
+        
+        // 得点を計算
+        const exerciseTypes = ['pushup', 'dips', 'squat', 'Lsit', 'pullup'];
+        
+        for (const userId in userRecords) {
+            const user = userRecords[userId];
+            user.scores = {};
+            user.totalScore = 0;
+            
+            exerciseTypes.forEach(exercise => {
+                const record = user.exercises[exercise] || 0;
+                const multiplier = multipliers[exercise] || 1.0;
+                const score = record * multiplier;
+                
+                user.scores[exercise] = score;
+                user.totalScore += score;
+            });
+        }
+        
+        return userRecords;
+        
+    } catch (error) {
+        console.error('得点の取得に失敗しました:', error);
+        throw error;
+    }
+}
+
+/**
+ * 得点レーダーチャートを描画
+ * @param {Array} selectedUserIds - 表示するユーザーIDの配列
+ */
+async function loadScoreChart(selectedUserIds = []) {
+    try {
+        scoreError.textContent = '';
+        
+        const usersScores = await getAllUsersScores();
+        
+        // 選択されたユーザーがいない場合は全ユーザー表示
+        if (selectedUserIds.length === 0) {
+            selectedUserIds = Object.keys(usersScores);
+        }
+        
+        // Chart.jsのデータセットを作成
+        const datasets = selectedUserIds.map((userId, index) => {
+            const user = usersScores[userId];
+            if (!user) return null;
+            
+            const colors = [
+                'rgba(102, 126, 234, 0.6)',
+                'rgba(237, 100, 166, 0.6)',
+                'rgba(255, 159, 64, 0.6)',
+                'rgba(75, 192, 192, 0.6)',
+                'rgba(153, 102, 255, 0.6)',
+                'rgba(255, 205, 86, 0.6)'
+            ];
+            
+            const borderColors = [
+                'rgb(102, 126, 234)',
+                'rgb(237, 100, 166)',
+                'rgb(255, 159, 64)',
+                'rgb(75, 192, 192)',
+                'rgb(153, 102, 255)',
+                'rgb(255, 205, 86)'
+            ];
+            
+            const color = colors[index % colors.length];
+            const borderColor = borderColors[index % borderColors.length];
+            
+            return {
+                label: user.userName,
+                data: [
+                    user.scores.pushup || 0,
+                    user.scores.dips || 0,
+                    user.scores.squat || 0,
+                    user.scores.Lsit || 0,
+                    user.scores.pullup || 0
+                ],
+                backgroundColor: color,
+                borderColor: borderColor,
+                borderWidth: 2,
+                pointBackgroundColor: borderColor,
+                pointBorderColor: '#fff',
+                pointHoverBackgroundColor: '#fff',
+                pointHoverBorderColor: borderColor
+            };
+        }).filter(dataset => dataset !== null);
+        
+        // 既存のチャートを破棄
+        if (myScoreChart) {
+            myScoreChart.destroy();
+        }
+        
+        // レーダーチャートを描画
+        const ctx = scoreChart.getContext('2d');
+        myScoreChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: [
+                    'プッシュアップ',
+                    'ディップス',
+                    '片足スクワット(左右)',
+                    'Lシット',
+                    '懸垂'
+                ],
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 10
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: {
+                                size: 14
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + 
+                                       context.parsed.r.toFixed(1) + '点';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // 総合得点ランキングを表示
+        displayTotalScores(usersScores);
+        
+    } catch (error) {
+        console.error('得点チャートの描画に失敗しました:', error);
+        scoreError.textContent = '得点チャートの描画に失敗しました';
+    }
+}
+
+/**
+ * 総合得点ランキングを表示
+ * @param {Object} usersScores - ユーザー得点データ
+ */
+function displayTotalScores(usersScores) {
+    // 総得点でソート
+    const sortedUsers = Object.entries(usersScores)
+        .sort((a, b) => b[1].totalScore - a[1].totalScore);
+    
+    let html = '';
+    sortedUsers.forEach(([userId, user], index) => {
+        const rank = index + 1;
+        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+        
+        html += `
+            <div class="total-score-item">
+                <span class="score-rank">${medal}</span>
+                <span class="score-username">${escapeHtml(user.userName)}</span>
+                <span class="score-value">${user.totalScore.toFixed(1)}点</span>
+            </div>
+        `;
+    });
+    
+    totalScoresList.innerHTML = html;
+}
+
+/**
+ * ユーザー選択チェックボックスを作成
+ */
+async function loadUserCheckboxes() {
+    try {
+        const usersScores = await getAllUsersScores();
+        
+        let html = '';
+        Object.keys(usersScores).forEach(userId => {
+            const user = usersScores[userId];
+            const isCurrentUser = userId === currentUser.uid;
+            const checked = isCurrentUser ? 'checked' : '';
+            
+            html += `
+                <label class="user-checkbox">
+                    <input type="checkbox" value="${userId}" ${checked}>
+                    <span>${escapeHtml(user.userName)}</span>
+                </label>
+            `;
+        });
+        
+        userCheckboxes.innerHTML = html;
+        
+        // チェックボックス変更時のイベントリスナー
+        userCheckboxes.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                const selectedIds = Array.from(
+                    userCheckboxes.querySelectorAll('input[type="checkbox"]:checked')
+                ).map(cb => cb.value);
+                
+                loadScoreChart(selectedIds);
+            });
+        });
+        
+        // 初期表示（現在のユーザーのみ）
+        loadScoreChart([currentUser.uid]);
+        
+    } catch (error) {
+        console.error('ユーザーチェックボックスの作成に失敗しました:', error);
+        scoreError.textContent = 'ユーザーリストの取得に失敗しました';
+    }
 }
 
 // ====================================================================
@@ -453,6 +785,16 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         // グラフタブの場合は描画
         if (tabName === 'progress') {
             loadProgressChart();
+        }
+        
+        // ルールタブの場合は倍率をロード
+        if (tabName === 'rules') {
+            loadMultipliers();
+        }
+        
+        // 得点タブの場合はチェックボックスとチャートをロード
+        if (tabName === 'score') {
+            loadUserCheckboxes();
         }
     });
 });
@@ -858,3 +1200,43 @@ async function loadProgressChart() {
 
 // グラフの種目変更時
 graphExerciseType.addEventListener('change', loadProgressChart);
+
+// ====================================================================
+// ルールタブのイベントリスナー
+// ====================================================================
+
+// 倍率の更新
+updateMultipliersBtn.addEventListener('click', async () => {
+    try {
+        // エラーメッセージをクリア
+        rulesError.textContent = '';
+        rulesMessage.textContent = '';
+        
+        // 各入力値を取得してバリデーション
+        const multipliers = {};
+        for (const [exercise, input] of Object.entries(multiplierInputs)) {
+            const value = parseFloat(input.value);
+            
+            if (isNaN(value) || value < 0.1) {
+                rulesError.textContent = '倍率は0.1以上で入力してください';
+                return;
+            }
+            
+            multipliers[exercise] = value;
+        }
+        
+        // Firestoreに保存
+        await updateMultipliers(multipliers);
+        
+        rulesMessage.textContent = '倍率を更新しました！';
+        
+        // 3秒後にメッセージを消す
+        setTimeout(() => {
+            rulesMessage.textContent = '';
+        }, 3000);
+        
+    } catch (error) {
+        console.error('倍率の更新に失敗しました:', error);
+        rulesError.textContent = '倍率の更新に失敗しました';
+    }
+});
