@@ -63,9 +63,9 @@ const passwordError = document.getElementById('password-error');
 
 // 種目名の日本語マッピング
 const exerciseNames = {
-    'pushup': '腕立て伏せ',
-    'dips': '顎付けディップス',
-    'squat': '片足スクワット(左右合計)',
+    'pushup': 'プッシュアップ',
+    'dips': 'ディップス',
+    'squat': '片足スクワット(左右)',
     'Lsit': 'Lシット(秒)',
     'pullup': '懸垂(セット)'
 };
