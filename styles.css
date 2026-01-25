@@ -405,6 +405,14 @@ header h1 {
     padding: 10px;
     border-radius: 6px;
     margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.comment-content {
+    flex: 1;
 }
 
 .comment-author {
@@ -417,6 +425,24 @@ header h1 {
     color: #333;
     font-size: 14px;
     margin-top: 5px;
+}
+
+.comment-delete-btn {
+    padding: 4px 8px;
+    background: #ffebe0;
+    color: #e67e22;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.3s;
+    flex-shrink: 0;
+}
+
+.comment-delete-btn:hover {
+    background: #e67e22;
+    color: white;
+    transform: scale(1.1);
 }
 
 .comment-input {

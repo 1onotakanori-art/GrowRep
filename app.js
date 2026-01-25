@@ -1001,7 +1001,7 @@ function createPostElement(postId, post, userName) {
     
     // コメントを非同期で読み込んで表示
     if (post.comments && post.comments.length > 0) {
-        renderComments(post.comments).then(html => {
+        renderComments(post.comments, postId).then(html => {
             const commentsList = div.querySelector(`#comments-list-${postId}`);
             if (commentsList) {
                 commentsList.innerHTML = html;
@@ -1014,19 +1014,28 @@ function createPostElement(postId, post, userName) {
 
 // コメントの表示
 // XSS対策: コメント内容をエスケープ
-async function renderComments(comments) {
+async function renderComments(comments, postId) {
     if (!comments || comments.length === 0) {
         return '';
     }
     
     const commentElements = [];
-    for (const comment of comments) {
+    for (let i = 0; i < comments.length; i++) {
+        const comment = comments[i];
         const userData = await getUserData(comment.userId);
         const userName = userData && userData.userName ? userData.userName : comment.userEmail;
+        const isOwner = comment.userId === currentUser.uid;
+        
+        // コメントのインデックスとタイムスタンプを使って一意のIDを生成
+        const commentId = `${comment.timestamp}_${i}`;
+        
         commentElements.push(`
             <div class="comment-item">
-                <div class="comment-author">${escapeHtml(userName)}</div>
-                <div class="comment-text">${escapeHtml(comment.text)}</div>
+                <div class="comment-content">
+                    <div class="comment-author">${escapeHtml(userName)}</div>
+                    <div class="comment-text">${escapeHtml(comment.text)}</div>
+                </div>
+                ${isOwner ? `<button class="comment-delete-btn" onclick="deleteComment('${escapeHtml(postId)}', ${i})">🗑️</button>` : ''}
             </div>
         `);
     }
@@ -1066,7 +1075,7 @@ async function toggleComments(postId) {
         const commentsList = document.getElementById(`comments-list-${postId}`);
         
         if (post.comments && post.comments.length > 0) {
-            const html = await renderComments(post.comments);
+            const html = await renderComments(post.comments, postId);
             commentsList.innerHTML = html;
         } else {
             commentsList.innerHTML = '<p style="color: #999; padding: 10px;">まだコメントがありません</p>';
@@ -1113,7 +1122,7 @@ async function addComment(postId) {
         const commentsList = document.getElementById(`comments-list-${postId}`);
         
         if (post.comments && post.comments.length > 0) {
-            const html = await renderComments(post.comments);
+            const html = await renderComments(post.comments, postId);
             commentsList.innerHTML = html;
         }
         
@@ -1143,6 +1152,52 @@ async function deletePost(postId) {
     } catch (error) {
         alert('削除に失敗しました');
         console.error('削除エラー:', error);
+    }
+}
+
+// コメントの削除
+async function deleteComment(postId, commentIndex) {
+    if (!confirm('本当にこのコメントを削除しますか？')) {
+        return;
+    }
+    
+    try {
+        const postRef = db.collection('posts').doc(postId);
+        const doc = await postRef.get();
+        const post = doc.data();
+        
+        if (!post.comments || !post.comments[commentIndex]) {
+            alert('コメントが見つかりませんでした');
+            return;
+        }
+        
+        // コメント配列から該当のコメントを削除
+        const updatedComments = [...post.comments];
+        updatedComments.splice(commentIndex, 1);
+        
+        await postRef.update({
+            comments: updatedComments
+        });
+        
+        // コメントリストを更新
+        const commentsList = document.getElementById(`comments-list-${postId}`);
+        if (updatedComments.length > 0) {
+            const html = await renderComments(updatedComments, postId);
+            commentsList.innerHTML = html;
+        } else {
+            commentsList.innerHTML = '<p style="color: #999; padding: 10px;">まだコメントがありません</p>';
+        }
+        
+        // コメント数を更新
+        const commentBtn = document.querySelector(`button[onclick="toggleComments('${postId}')"]`);
+        if (commentBtn) {
+            commentBtn.innerHTML = `💬 ${updatedComments.length > 0 ? updatedComments.length : ''}`;
+        }
+        
+        alert('🗑️ コメントを削除しました');
+    } catch (error) {
+        console.error('コメント削除エラー:', error);
+        alert('❌ コメントの削除に失敗しました');
     }
 }
 
