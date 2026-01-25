@@ -31,6 +31,7 @@
             <h1>💪 GrowRep 🏋️</h1>
             <div class="user-info">
                 <span id="user-name"></span>
+                <button id="refresh-all-btn" class="btn-refresh">🔄 更新</button>
                 <button id="profile-btn" class="btn-secondary">👤 プロフィール</button>
                 <button id="logout-btn" class="btn-secondary">ログアウト</button>
             </div>
@@ -71,19 +72,13 @@
 
         <!-- ランキングタブ -->
         <div id="ranking-tab" class="tab-content">
-            <div class="tab-header">
-                <h2>種目別ランキング</h2>
-                <button id="refresh-ranking-btn" class="refresh-btn">🔄 更新</button>
-            </div>
+            <h2>種目別ランキング</h2>
             <div id="ranking-list" class="ranking-list"></div>
         </div>
 
         <!-- 成長グラフタブ -->
         <div id="progress-tab" class="tab-content">
-            <div class="tab-header">
-                <h2>あなたの成長グラフ</h2>
-                <button id="refresh-progress-btn" class="refresh-btn">🔄 更新</button>
-            </div>
+            <h2>あなたの成長グラフ</h2>
             <select id="graph-exercise-type">
                 <option value="pushup">プッシュアップ</option>
                 <option value="dips">ディップス</option>
@@ -160,10 +155,7 @@
 
         <!-- 得点タブ -->
         <div id="score-tab" class="tab-content">
-            <div class="tab-header">
-                <h2>🏆 総合得点 & レーダーチャート</h2>
-                <button id="refresh-score-btn" class="refresh-btn">🔄 更新</button>
-            </div>
+            <h2>🏆 総合得点 & レーダーチャート</h2>
             <div class="score-description">
                 <p>各種目の最高記録から得点を計算し、レーダーチャートで視覚化します。</p>
                 <p><strong>得点 = 回数/秒数/セット数 × 倍率</strong></p>

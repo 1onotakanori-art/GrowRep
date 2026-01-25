@@ -86,6 +86,35 @@ body {
     background: #e0e0e0;
 }
 
+/* ヘッダーの更新ボタン */
+.btn-refresh {
+    padding: 8px 16px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+    white-space: nowrap;
+}
+
+.btn-refresh:hover {
+    background: #5568d3;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+}
+
+.btn-refresh:active {
+    transform: translateY(0);
+}
+
+.btn-refresh.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
 .error-message {
     color: #e74c3c;
     font-size: 14px;

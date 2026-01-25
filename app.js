@@ -820,47 +820,41 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 // ====================================================================
-// 更新ボタンのイベントリスナー
+// 統合更新ボタンのイベントリスナー
 // ====================================================================
 
-// ランキング更新ボタン
-document.getElementById('refresh-ranking-btn').addEventListener('click', async function() {
+// 統合更新ボタン（現在のタブに応じて更新処理を実行）
+document.getElementById('refresh-all-btn').addEventListener('click', async function() {
     this.classList.add('loading');
+    const originalText = this.textContent;
     this.textContent = '⏳ 更新中...';
     
     try {
-        await loadRanking(true);  // 強制更新
+        // 現在アクティブなタブを取得
+        const activeTab = document.querySelector('.tab-content.active');
+        const tabId = activeTab ? activeTab.id : null;
+        
+        switch(tabId) {
+            case 'ranking-tab':
+                await loadRanking(true);  // 強制更新
+                break;
+            case 'progress-tab':
+                progressCache = {};  // グラフのキャッシュをクリア
+                await loadProgressChart();
+                break;
+            case 'score-tab':
+                await loadUserCheckboxes(true);  // 強制更新
+                break;
+            case 'board-tab':
+                // 掲示板はリアルタイム更新なので何もしない
+                break;
+            default:
+                // その他のタブでは特に何もしない
+                break;
+        }
     } finally {
         this.classList.remove('loading');
-        this.textContent = '🔄 更新';
-    }
-});
-
-// 成長グラフ更新ボタン
-document.getElementById('refresh-progress-btn').addEventListener('click', async function() {
-    this.classList.add('loading');
-    this.textContent = '⏳ 更新中...';
-    
-    try {
-        // グラフのキャッシュをクリアして再読み込み
-        progressCache = {};
-        await loadProgressChart();
-    } finally {
-        this.classList.remove('loading');
-        this.textContent = '🔄 更新';
-    }
-});
-
-// 得点更新ボタン
-document.getElementById('refresh-score-btn').addEventListener('click', async function() {
-    this.classList.add('loading');
-    this.textContent = '⏳ 更新中...';
-    
-    try {
-        await loadUserCheckboxes(true);  // 強制更新
-    } finally {
-        this.classList.remove('loading');
-        this.textContent = '🔄 更新';
+        this.textContent = originalText;
     }
 });
 
