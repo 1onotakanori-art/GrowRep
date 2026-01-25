@@ -83,7 +83,7 @@ const passwordError = document.getElementById('password-error');
 const exerciseNames = {
     'pushup': 'プッシュアップ',
     'dips': 'ディップス',
-    'squat': '片足スクワット(左右)',
+    'squat': '片足スクワット',
     'Lsit': 'Lシット(秒)',
     'pullup': '懸垂(セット)'
 };
@@ -1127,9 +1127,13 @@ async function addComment(postId) {
         }
         
         // コメント数を更新
-        const commentBtn = document.querySelector(`button[onclick="toggleComments('${postId}')"]`);
-        if (commentBtn) {
-            commentBtn.innerHTML = `💬 ${post.comments.length}`;
+        const commentsSection = document.getElementById(`comments-${postId}`);
+        if (commentsSection) {
+            const postElement = commentsSection.closest('.post-item');
+            const commentBtn = postElement ? postElement.querySelector('.comment-btn') : null;
+            if (commentBtn) {
+                commentBtn.innerHTML = `💬 ${post.comments.length}`;
+            }
         }
         
         // 成功メッセージを表示
@@ -1189,9 +1193,13 @@ async function deleteComment(postId, commentIndex) {
         }
         
         // コメント数を更新
-        const commentBtn = document.querySelector(`button[onclick="toggleComments('${postId}')"]`);
-        if (commentBtn) {
-            commentBtn.innerHTML = `💬 ${updatedComments.length > 0 ? updatedComments.length : ''}`;
+        const commentsSection = document.getElementById(`comments-${postId}`);
+        if (commentsSection) {
+            const postElement = commentsSection.closest('.post-item');
+            const commentBtn = postElement ? postElement.querySelector('.comment-btn') : null;
+            if (commentBtn) {
+                commentBtn.innerHTML = `💬 ${updatedComments.length > 0 ? updatedComments.length : ''}`;
+            }
         }
         
         alert('🗑️ コメントを削除しました');
