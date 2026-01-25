@@ -1061,23 +1061,50 @@ async function renderComments(comments, postId) {
     return commentElements.join('');
 }
 
-// いいねの切り替え
+// いいねの切り替え（楽観的UI更新）
 async function toggleLike(postId) {
-    const postRef = db.collection('posts').doc(postId);
-    const doc = await postRef.get();
-    const post = doc.data();
-    const likes = post.likes || [];
-    
-    if (likes.includes(currentUser.uid)) {
-        // いいねを取り消し
-        await postRef.update({
-            likes: firebase.firestore.FieldValue.arrayRemove(currentUser.uid)
-        });
-    } else {
-        // いいねを追加
-        await postRef.update({
-            likes: firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
-        });
+    try {
+        // いいねボタン要素を取得
+        const likeBtn = document.querySelector(`button[onclick="toggleLike('${postId}')"]`);
+        if (!likeBtn) return;
+        
+        // 現在の状態を取得
+        const isLiked = likeBtn.classList.contains('liked');
+        const currentText = likeBtn.textContent.trim();
+        const currentCount = parseInt(currentText.replace('💪', '').trim()) || 0;
+        
+        // UIを即座に更新（楽観的更新）
+        if (isLiked) {
+            // いいねを取り消す場合
+            likeBtn.classList.remove('liked');
+            const newCount = Math.max(0, currentCount - 1);
+            likeBtn.innerHTML = `💪 ${newCount > 0 ? newCount : ''}`;
+        } else {
+            // いいねを追加する場合
+            likeBtn.classList.add('liked');
+            const newCount = currentCount + 1;
+            likeBtn.innerHTML = `💪 ${newCount}`;
+        }
+        
+        // 裏でFirestoreを更新
+        const postRef = db.collection('posts').doc(postId);
+        
+        if (isLiked) {
+            // いいねを取り消し
+            await postRef.update({
+                likes: firebase.firestore.FieldValue.arrayRemove(currentUser.uid)
+            });
+        } else {
+            // いいねを追加
+            await postRef.update({
+                likes: firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
+            });
+        }
+        
+    } catch (error) {
+        console.error('いいねの更新エラー:', error);
+        // エラー時は再読み込みして正しい状態に戻す
+        await loadPosts(true);
     }
 }
 
