@@ -101,6 +101,8 @@ let rankingCacheTime = null;
 let scoreCache = null;
 let scoreCacheTime = null;
 let progressCache = {};  // 種目ごとにキャッシュ
+let postsCache = null;  // 掲示板用キャッシュ
+let postsCacheTime = null;
 const CACHE_DURATION = 5 * 60 * 1000;  // キャッシュ有効期間: 5分
 
 // ====================================================================
@@ -514,12 +516,6 @@ auth.onAuthStateChanged(async (user) => {
         currentUser = null;
         currentUserData = null;
         
-        // 投稿リスナーを解除
-        if (unsubscribePosts) {
-            unsubscribePosts();
-            unsubscribePosts = null;
-        }
-        
         // グラフをクリア
         if (myChart) {
             myChart.destroy();
@@ -797,6 +793,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.add('active');
         document.getElementById(`${tabName}-tab`).classList.add('active');
         
+        // 掲示板タブの場合はキャッシュを使用
+        if (tabName === 'board') {
+            loadPosts(false);  // キャッシュ使用
+        }
+        
         // ランキングタブの場合はキャッシュを使用
         if (tabName === 'ranking') {
             loadRanking(false);  // キャッシュ使用
@@ -846,7 +847,7 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
                 await loadUserCheckboxes(true);  // 強制更新
                 break;
             case 'board-tab':
-                // 掲示板はリアルタイム更新なので何もしない
+                await loadPosts(true);  // 掲示板を強制更新
                 break;
             default:
                 // その他のタブでは特に何もしない
@@ -893,6 +894,8 @@ submitPostBtn.addEventListener('click', async () => {
         scoreCache = null;
         scoreCacheTime = null;
         progressCache = {};
+        postsCache = null;
+        postsCacheTime = null;
         
         exerciseType.value = '';
         exerciseValue.value = '';
@@ -908,45 +911,66 @@ submitPostBtn.addEventListener('click', async () => {
     }
 });
 
-// 投稿の読み込み
-async function loadPosts() {
-    // 既存のリスナーを解除
-    if (unsubscribePosts) {
-        unsubscribePosts();
+// 投稿の読み込み（キャッシュ対応）
+async function loadPosts(forceRefresh = false) {
+    const now = Date.now();
+    
+    // キャッシュが有効な場合はキャッシュを使用
+    if (!forceRefresh && postsCache && postsCacheTime && (now - postsCacheTime < CACHE_DURATION)) {
+        renderPosts(postsCache);
+        return;
     }
     
-    // 新しいリスナーを設定
-    unsubscribePosts = db.collection('posts')
-        .orderBy('timestamp', 'desc')
-        .onSnapshot(async (snapshot) => {
-            postsList.innerHTML = '';
-            
-            if (snapshot.empty) {
-                postsList.innerHTML = '<p style="text-align: center; color: #999;">まだ投稿がありません</p>';
-                return;
-            }
-            
-            // 各投稿のユーザー名を取得
-            const posts = [];
-            for (const doc of snapshot.docs) {
-                const post = doc.data();
-                const userData = await getUserData(post.userId);
-                posts.push({
-                    id: doc.id,
-                    data: post,
-                    userName: userData && userData.userName ? userData.userName : post.userEmail
-                });
-            }
-            
-            // 投稿を表示
-            posts.forEach(({ id, data, userName }) => {
-                const postElement = createPostElement(id, data, userName);
-                postsList.appendChild(postElement);
+    try {
+        const snapshot = await db.collection('posts')
+            .orderBy('timestamp', 'desc')
+            .get();
+        
+        if (snapshot.empty) {
+            postsList.innerHTML = '<p style="text-align: center; color: #999;">まだ投稿がありません</p>';
+            postsCache = [];
+            postsCacheTime = now;
+            return;
+        }
+        
+        // 各投稿のユーザー名を取得
+        const posts = [];
+        for (const doc of snapshot.docs) {
+            const post = doc.data();
+            const userData = await getUserData(post.userId);
+            posts.push({
+                id: doc.id,
+                data: post,
+                userName: userData && userData.userName ? userData.userName : post.userEmail
             });
-        }, (error) => {
-            console.error('投稿の読み込みエラー:', error);
-            postsList.innerHTML = '<p style="text-align: center; color: #e74c3c;">投稿の読み込みに失敗しました</p>';
-        });
+        }
+        
+        // キャッシュを更新
+        postsCache = posts;
+        postsCacheTime = now;
+        
+        // 投稿を表示
+        renderPosts(posts);
+        
+    } catch (error) {
+        console.error('投稿の読み込みエラー:', error);
+        postsList.innerHTML = '<p style="text-align: center; color: #e74c3c;">投稿の読み込みに失敗しました</p>';
+    }
+}
+
+// 投稿を表示する関数
+function renderPosts(posts) {
+    postsList.innerHTML = '';
+    
+    if (posts.length === 0) {
+        postsList.innerHTML = '<p style="text-align: center; color: #999;">まだ投稿がありません</p>';
+        return;
+    }
+    
+    posts.forEach(({ id, data, userName }) => {
+        const postElement = createPostElement(id, data, userName);
+        postsList.appendChild(postElement);
+    });
 }
 
 // 投稿要素の作成
