@@ -1320,82 +1320,103 @@ async function renderRanking(rankings) {
 async function loadProgressChart() {
     const selectedType = graphExerciseType.value;
     
-    // userIdでフィルタリングし、timestampでソート
-    // exerciseTypeのフィルタリングはクライアント側で実施（複合インデックス不要）
-    const snapshot = await db.collection('posts')
-        .where('userId', '==', currentUser.uid)
-        .orderBy('timestamp', 'asc')
-        .get();
-    
-    const labels = [];
-    const data = [];
-    
-    snapshot.forEach((doc) => {
-        const post = doc.data();
-        // 選択された種目のみを抽出
-        if (post.exerciseType === selectedType && post.timestamp) {
+    try {
+        // 全投稿を取得してクライアント側でフィルタリング（複合インデックス不要）
+        const snapshot = await db.collection('posts').get();
+        
+        const labels = [];
+        const data = [];
+        const userPosts = [];
+        
+        // 現在のユーザーかつ選択された種目の投稿を抽出
+        snapshot.forEach((doc) => {
+            const post = doc.data();
+            if (post.userId === currentUser.uid && 
+                post.exerciseType === selectedType && 
+                post.timestamp) {
+                userPosts.push({
+                    timestamp: post.timestamp,
+                    value: post.value
+                });
+            }
+        });
+        
+        // タイムスタンプでソート
+        userPosts.sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+        
+        // ラベルとデータを作成
+        userPosts.forEach(post => {
             const date = new Date(post.timestamp.toDate());
             labels.push(date.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' }));
             data.push(post.value);
+        });
+        
+        // 既存のチャートを破棄
+        if (myChart) {
+            myChart.destroy();
         }
-    });
-    
-    // 既存のチャートを破棄
-    if (myChart) {
-        myChart.destroy();
-    }
-    
-    // データがない場合のメッセージ
-    if (data.length === 0) {
+        
+        // データがない場合のメッセージ
+        if (data.length === 0) {
+            const ctx = progressChart.getContext('2d');
+            ctx.clearRect(0, 0, progressChart.width, progressChart.height);
+            ctx.font = '16px Arial';
+            ctx.fillStyle = '#999';
+            ctx.textAlign = 'center';
+            ctx.fillText('この種目の記録がまだありません', progressChart.width / 2, progressChart.height / 2);
+            return;
+        }
+        
+        // 新しいチャートを作成
         const ctx = progressChart.getContext('2d');
-        ctx.clearRect(0, 0, progressChart.width, progressChart.height);
-        ctx.font = '16px Arial';
-        ctx.fillStyle = '#999';
-        ctx.textAlign = 'center';
-        ctx.fillText('この種目の記録がまだありません', progressChart.width / 2, progressChart.height / 2);
-        return;
-    }
-    
-    // 新しいチャートを作成
-    const ctx = progressChart.getContext('2d');
-    myChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: exerciseNames[selectedType],
-                data: data,
-                borderColor: '#667eea',
-                backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                tension: 0.4,
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: true
-                }
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: exerciseNames[selectedType],
+                    data: data,
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: selectedType === 'Lsit' ? '秒数' : selectedType === 'pullup' ? 'セット数' : '回数'
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true
                     }
                 },
-                x: {
-                    title: {
-                        display: true,
-                        text: '日付'
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: selectedType === 'Lsit' ? '秒数' : selectedType === 'pullup' ? 'セット数' : '回数'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: '日付'
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+        
+    } catch (error) {
+        console.error('成長グラフの読み込みエラー:', error);
+        const ctx = progressChart.getContext('2d');
+        ctx.clearRect(0, 0, progressChart.width, progressChart.height);
+        ctx.font = '16px Arial';
+        ctx.fillStyle = '#e74c3c';
+        ctx.textAlign = 'center';
+        ctx.fillText('グラフの読み込みに失敗しました', progressChart.width / 2, progressChart.height / 2);
+    }
 }
 
 // グラフの種目変更時
