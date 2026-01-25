@@ -1092,17 +1092,25 @@ async function addComment(postId) {
         return;
     }
     
-    const postRef = db.collection('posts').doc(postId);
-    await postRef.update({
-        comments: firebase.firestore.FieldValue.arrayUnion({
-            userId: currentUser.uid,
-            userEmail: currentUser.email,
-            text: text,
-            timestamp: new Date().toISOString()
-        })
-    });
-    
-    input.value = '';
+    try {
+        const postRef = db.collection('posts').doc(postId);
+        await postRef.update({
+            comments: firebase.firestore.FieldValue.arrayUnion({
+                userId: currentUser.uid,
+                userEmail: currentUser.email,
+                text: text,
+                timestamp: new Date().toISOString()
+            })
+        });
+        
+        input.value = '';
+        
+        // 成功メッセージを表示
+        alert('💬 コメントが送信されました！');
+    } catch (error) {
+        console.error('コメント送信エラー:', error);
+        alert('❌ コメントの送信に失敗しました');
+    }
 }
 
 // 投稿の削除
