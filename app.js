@@ -569,12 +569,12 @@ function createPostElement(postId, post, userName) {
         </div>
         <div class="post-actions">
             <button class="like-btn ${isLiked ? 'liked' : ''}" onclick="toggleLike('${safePostId}')">
-                ❤️ いいね ${likeCount > 0 ? likeCount : ''}
+                💪 ${likeCount > 0 ? likeCount : ''}
             </button>
             <button class="comment-btn" onclick="toggleComments('${safePostId}')">
-                💬 コメント ${post.comments && post.comments.length > 0 ? post.comments.length : ''}
+                💬 ${post.comments && post.comments.length > 0 ? post.comments.length : ''}
             </button>
-            ${isOwner ? `<button class="delete-btn" onclick="deletePost('${safePostId}')">🗑️ 削除</button>` : ''}
+            ${isOwner ? `<button class="delete-btn" onclick="deletePost('${safePostId}')">🗑️ </button>` : ''}
         </div>
         <div id="comments-${safePostId}" class="comments-section" style="display: none;">
             <div id="comments-list-${safePostId}"></div>
@@ -651,7 +651,7 @@ async function toggleComments(postId) {
         const post = doc.data();
         const commentsList = document.getElementById(`comments-list-${postId}`);
         
-        if (post.comments && post.comments.length > 0) {
+        if (post.comments && post.comments.length > 0) {ß
             const html = await renderComments(post.comments);
             commentsList.innerHTML = html;
         } else {
