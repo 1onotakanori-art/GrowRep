@@ -56,10 +56,10 @@ body {
 /* ボタン */
 .btn-primary, .btn-secondary {
     width: 100%;
-    padding: 12px;
+    padding:  8px 16px;
     border: none;
     border-radius: 8px;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: bold;
     cursor: pointer;
     transition: all 0.3s;
@@ -84,35 +84,6 @@ body {
 
 .btn-secondary:hover {
     background: #e0e0e0;
-}
-
-/* ヘッダーの更新ボタン */
-.btn-refresh {
-    padding: 8px 16px;
-    background: #667eea;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: all 0.3s;
-    white-space: nowrap;
-}
-
-.btn-refresh:hover {
-    background: #5568d3;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
-}
-
-.btn-refresh:active {
-    transform: translateY(0);
-}
-
-.btn-refresh.loading {
-    opacity: 0.6;
-    pointer-events: none;
 }
 
 .error-message {
@@ -200,20 +171,70 @@ header h1 {
     font-size: 2em;
 }
 
+/* ユーザー情報エリア */
 .user-info {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
-.user-info span {
+/* ユーザー名ボックス */
+.user-name-box {
+    background: white;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 8px 16px;
     font-weight: bold;
     color: #333;
+    font-size: 14px;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 200px;
+    min-width: 150px;
+    max-width: 250px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.user-info button {
-    width: auto;
-    padding: 8px 20px;
+/* ヘッダーボタン統一スタイル */
+.header-btn {
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+    white-space: nowrap;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 120px;
+    min-width: 120px;
+    max-width: 180px;
+}
+
+.header-btn:hover {
+    background: #5568d3;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+}
+
+.header-btn:active {
+    transform: translateY(0);
+}
+
+.header-btn.loading {
+    opacity: 0.6;
+    pointer-events: none;
 }
 
 /* タブナビゲーション */
@@ -737,8 +758,19 @@ header h1 {
     
     .user-info {
         width: 100%;
-        justify-content: center;
-        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .user-name-box {
+        flex: 1 1 calc(50% - 4px);
+        max-width: none;
+        min-width: calc(50% - 4px);
+    }
+    
+    .header-btn {
+        flex: 1 1 calc(33.333% - 6px);
+        max-width: none;
+        min-width: calc(33.333% - 6px);
     }
     
     .modal-content {
