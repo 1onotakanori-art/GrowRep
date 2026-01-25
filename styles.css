@@ -950,12 +950,16 @@ header h1 {
     padding: 30px;
     margin-bottom: 30px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 #score-chart {
-    max-width: 600px;
-    max-height: 600px;
-    margin: 0 auto;
+    max-width: 650px;
+    max-height: 650px;
+    width: 100%;
+    height: auto;
 }
 
 .total-scores {

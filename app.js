@@ -377,6 +377,15 @@ async function loadScoreChart(selectedUserIds = []) {
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
+                aspectRatio: 1.2,
+                layout: {
+                    padding: {
+                        top: 10,
+                        bottom: 10,
+                        left: 20,
+                        right: 20
+                    }
+                },
                 scales: {
                     r: {
                         beginAtZero: true,
@@ -387,11 +396,15 @@ async function loadScoreChart(selectedUserIds = []) {
                 },
                 plugins: {
                     legend: {
-                        position: 'top',
+                        position: 'bottom',
+                        align: 'center',
                         labels: {
                             font: {
-                                size: 14
-                            }
+                                size: 13
+                            },
+                            padding: 15,
+                            boxWidth: 15,
+                            boxHeight: 15
                         }
                     },
                     tooltip: {
