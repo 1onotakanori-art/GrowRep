@@ -192,9 +192,8 @@ header h1 {
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 1 1 200px;
-    min-width: 150px;
-    max-width: 250px;
+    flex: 1 1 0;
+    min-width: 0;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
@@ -217,9 +216,8 @@ header h1 {
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 1 1 120px;
-    min-width: 120px;
-    max-width: 180px;
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 .header-btn:hover {
