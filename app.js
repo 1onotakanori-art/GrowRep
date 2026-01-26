@@ -388,8 +388,7 @@ async function loadScoreChart(selectedUserIds = []) {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: true,
-                aspectRatio: 1.2,
+                maintainAspectRatio: false,
                 layout: {
                     padding: {
                         top: 10,
