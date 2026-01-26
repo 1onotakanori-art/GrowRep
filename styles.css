@@ -1012,17 +1012,22 @@ header h1 {
 }
 
 .total-score-item {
-    display: flex;
-    align-items: center;
-    padding: 15px 20px;
     background: #f9f9f9;
     border-radius: 6px;
     transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+    overflow: hidden;
 }
 
 .total-score-item:hover {
     transform: translateX(5px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.score-header {
+    display: flex;
+    align-items: center;
+    padding: 15px 20px;
 }
 
 .score-rank {
@@ -1045,6 +1050,62 @@ header h1 {
     color: #667eea;
 }
 
+/* 得点詳細（展開部分） */
+.score-details {
+    border-top: 1px solid #e0e0e0;
+    background: white;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        max-height: 0;
+    }
+    to {
+        opacity: 1;
+        max-height: 500px;
+    }
+}
+
+.score-breakdown {
+    padding: 15px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.breakdown-item {
+    display: grid;
+    grid-template-columns: 150px 80px 80px auto;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 0;
+    font-size: 14px;
+}
+
+.breakdown-label {
+    color: #666;
+    font-weight: 500;
+}
+
+.breakdown-value {
+    color: #333;
+    font-weight: bold;
+    text-align: right;
+}
+
+.breakdown-mult {
+    color: #999;
+    text-align: center;
+}
+
+.breakdown-result {
+    color: #667eea;
+    font-weight: bold;
+    text-align: right;
+}
+
 /* レスポンシブ対応：得点タブ */
 @media (max-width: 768px) {
     .checkbox-group {
@@ -1063,7 +1124,7 @@ header h1 {
         max-width: 100%;
     }
     
-    .total-score-item {
+    .score-header {
         padding: 12px 15px;
     }
     
@@ -1078,5 +1139,15 @@ header h1 {
     
     .score-value {
         font-size: 1.1em;
+    }
+    
+    .breakdown-item {
+        grid-template-columns: 120px 60px 60px auto;
+        gap: 5px;
+        font-size: 13px;
+    }
+    
+    .breakdown-label {
+        font-size: 13px;
     }
 }

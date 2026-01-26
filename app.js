@@ -432,26 +432,82 @@ async function loadScoreChart(selectedUserIds = []) {
  * 総合得点ランキングを表示
  * @param {Object} usersScores - ユーザー得点データ
  */
-function displayTotalScores(usersScores) {
+async function displayTotalScores(usersScores) {
     // 総得点でソート
     const sortedUsers = Object.entries(usersScores)
         .sort((a, b) => b[1].totalScore - a[1].totalScore);
+    
+    // 倍率を取得
+    const multipliers = await getMultipliers();
     
     let html = '';
     sortedUsers.forEach(([userId, user], index) => {
         const rank = index + 1;
         const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
         
+        // 詳細内訳を作成
+        const details = `
+            <div class="score-details" id="score-details-${escapeHtml(userId)}" style="display: none;">
+                <div class="score-breakdown">
+                    <div class="breakdown-item">
+                        <span class="breakdown-label">プッシュアップ</span>
+                        <span class="breakdown-value">${user.exercises.pushup || 0}回</span>
+                        <span class="breakdown-mult">× ${multipliers.pushup}</span>
+                        <span class="breakdown-result">= ${(user.scores.pushup || 0).toFixed(1)}点</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="breakdown-label">ディップス</span>
+                        <span class="breakdown-value">${user.exercises.dips || 0}回</span>
+                        <span class="breakdown-mult">× ${multipliers.dips}</span>
+                        <span class="breakdown-result">= ${(user.scores.dips || 0).toFixed(1)}点</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="breakdown-label">片足スクワット</span>
+                        <span class="breakdown-value">${user.exercises.squat || 0}回</span>
+                        <span class="breakdown-mult">× ${multipliers.squat}</span>
+                        <span class="breakdown-result">= ${(user.scores.squat || 0).toFixed(1)}点</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="breakdown-label">Lシット</span>
+                        <span class="breakdown-value">${user.exercises.Lsit || 0}秒</span>
+                        <span class="breakdown-mult">× ${multipliers.Lsit}</span>
+                        <span class="breakdown-result">= ${(user.scores.Lsit || 0).toFixed(1)}点</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="breakdown-label">懸垂</span>
+                        <span class="breakdown-value">${user.exercises.pullup || 0}セット</span>
+                        <span class="breakdown-mult">× ${multipliers.pullup}</span>
+                        <span class="breakdown-result">= ${(user.scores.pullup || 0).toFixed(1)}点</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
         html += `
-            <div class="total-score-item">
-                <span class="score-rank">${medal}</span>
-                <span class="score-username">${escapeHtml(user.userName)}</span>
-                <span class="score-value">${user.totalScore.toFixed(1)}点</span>
+            <div class="total-score-item" onclick="toggleScoreDetails('${escapeHtml(userId)}')">
+                <div class="score-header">
+                    <span class="score-rank">${medal}</span>
+                    <span class="score-username">${escapeHtml(user.userName)}</span>
+                    <span class="score-value">${user.totalScore.toFixed(1)}点</span>
+                </div>
+                ${details}
             </div>
         `;
     });
     
     totalScoresList.innerHTML = html;
+}
+
+/**
+ * 得点詳細の表示切り替え
+ * @param {string} userId - ユーザーID
+ */
+function toggleScoreDetails(userId) {
+    const detailsElement = document.getElementById(`score-details-${userId}`);
+    if (detailsElement) {
+        const isVisible = detailsElement.style.display === 'block';
+        detailsElement.style.display = isVisible ? 'none' : 'block';
+    }
 }
 
 /**
