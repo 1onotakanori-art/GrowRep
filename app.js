@@ -534,7 +534,18 @@ function toggleScoreDetails(userId) {
     const detailsElement = document.getElementById(`score-details-${userId}`);
     if (detailsElement) {
         const isVisible = detailsElement.style.display === 'block';
-        detailsElement.style.display = isVisible ? 'none' : 'block';
+        
+        if (isVisible) {
+            // 閉じる時：slideUpアニメーションを適用してから非表示
+            detailsElement.style.animation = 'slideUp 0.3s ease';
+            setTimeout(() => {
+                detailsElement.style.display = 'none';
+                detailsElement.style.animation = 'slideDown 0.3s ease'; // 次回開く時用にリセット
+            }, 300);
+        } else {
+            // 開く時：slideDownアニメーション（既存のCSS）
+            detailsElement.style.display = 'block';
+        }
     }
 }
 
