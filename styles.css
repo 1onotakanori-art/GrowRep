@@ -1077,8 +1077,8 @@ header h1 {
 
 .breakdown-item {
     display: grid;
-    grid-template-columns: 150px 80px 80px auto;
-    gap: 10px;
+    grid-template-columns: 120px 50px 60px 20px 50px 20px 50px 30px;
+    gap: 8px;
     align-items: center;
     padding: 8px 0;
     font-size: 14px;
@@ -1089,21 +1089,40 @@ header h1 {
     font-weight: 500;
 }
 
-.breakdown-value {
+.breakdown-num {
     color: #333;
     font-weight: bold;
     text-align: right;
 }
 
-.breakdown-mult {
+.breakdown-unit {
+    color: #666;
+}
+
+.breakdown-times {
     color: #999;
     text-align: center;
 }
 
-.breakdown-result {
+.breakdown-mult {
+    color: #333;
+    font-weight: bold;
+    text-align: right;
+}
+
+.breakdown-equals {
+    color: #999;
+    text-align: center;
+}
+
+.breakdown-score {
     color: #667eea;
     font-weight: bold;
     text-align: right;
+}
+
+.breakdown-point {
+    color: #667eea;
 }
 
 /* レスポンシブ対応：得点タブ */
@@ -1142,8 +1161,8 @@ header h1 {
     }
     
     .breakdown-item {
-        grid-template-columns: 120px 60px 60px auto;
-        gap: 5px;
+        grid-template-columns: 100px 40px 50px 18px 40px 18px 40px 26px;
+        gap: 4px;
         font-size: 13px;
     }
     

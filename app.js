@@ -451,33 +451,53 @@ async function displayTotalScores(usersScores) {
                 <div class="score-breakdown">
                     <div class="breakdown-item">
                         <span class="breakdown-label">プッシュアップ</span>
-                        <span class="breakdown-value">${user.exercises.pushup || 0}回</span>
-                        <span class="breakdown-mult">× ${multipliers.pushup}</span>
-                        <span class="breakdown-result">= ${(user.scores.pushup || 0).toFixed(1)}点</span>
+                        <span class="breakdown-num">${user.exercises.pushup || 0}</span>
+                        <span class="breakdown-unit">回</span>
+                        <span class="breakdown-times">×</span>
+                        <span class="breakdown-mult">${multipliers.pushup}</span>
+                        <span class="breakdown-equals">=</span>
+                        <span class="breakdown-score">${(user.scores.pushup || 0).toFixed(1)}</span>
+                        <span class="breakdown-point">点</span>
                     </div>
                     <div class="breakdown-item">
                         <span class="breakdown-label">ディップス</span>
-                        <span class="breakdown-value">${user.exercises.dips || 0}回</span>
-                        <span class="breakdown-mult">× ${multipliers.dips}</span>
-                        <span class="breakdown-result">= ${(user.scores.dips || 0).toFixed(1)}点</span>
+                        <span class="breakdown-num">${user.exercises.dips || 0}</span>
+                        <span class="breakdown-unit">回</span>
+                        <span class="breakdown-times">×</span>
+                        <span class="breakdown-mult">${multipliers.dips}</span>
+                        <span class="breakdown-equals">=</span>
+                        <span class="breakdown-score">${(user.scores.dips || 0).toFixed(1)}</span>
+                        <span class="breakdown-point">点</span>
                     </div>
                     <div class="breakdown-item">
                         <span class="breakdown-label">片足スクワット</span>
-                        <span class="breakdown-value">${user.exercises.squat || 0}回</span>
-                        <span class="breakdown-mult">× ${multipliers.squat}</span>
-                        <span class="breakdown-result">= ${(user.scores.squat || 0).toFixed(1)}点</span>
+                        <span class="breakdown-num">${user.exercises.squat || 0}</span>
+                        <span class="breakdown-unit">回</span>
+                        <span class="breakdown-times">×</span>
+                        <span class="breakdown-mult">${multipliers.squat}</span>
+                        <span class="breakdown-equals">=</span>
+                        <span class="breakdown-score">${(user.scores.squat || 0).toFixed(1)}</span>
+                        <span class="breakdown-point">点</span>
                     </div>
                     <div class="breakdown-item">
                         <span class="breakdown-label">Lシット</span>
-                        <span class="breakdown-value">${user.exercises.Lsit || 0}秒</span>
-                        <span class="breakdown-mult">× ${multipliers.Lsit}</span>
-                        <span class="breakdown-result">= ${(user.scores.Lsit || 0).toFixed(1)}点</span>
+                        <span class="breakdown-num">${user.exercises.Lsit || 0}</span>
+                        <span class="breakdown-unit">秒</span>
+                        <span class="breakdown-times">×</span>
+                        <span class="breakdown-mult">${multipliers.Lsit}</span>
+                        <span class="breakdown-equals">=</span>
+                        <span class="breakdown-score">${(user.scores.Lsit || 0).toFixed(1)}</span>
+                        <span class="breakdown-point">点</span>
                     </div>
                     <div class="breakdown-item">
                         <span class="breakdown-label">懸垂</span>
-                        <span class="breakdown-value">${user.exercises.pullup || 0}セット</span>
-                        <span class="breakdown-mult">× ${multipliers.pullup}</span>
-                        <span class="breakdown-result">= ${(user.scores.pullup || 0).toFixed(1)}点</span>
+                        <span class="breakdown-num">${user.exercises.pullup || 0}</span>
+                        <span class="breakdown-unit">セット</span>
+                        <span class="breakdown-times">×</span>
+                        <span class="breakdown-mult">${multipliers.pullup}</span>
+                        <span class="breakdown-equals">=</span>
+                        <span class="breakdown-score">${(user.scores.pullup || 0).toFixed(1)}</span>
+                        <span class="breakdown-point">点</span>
                     </div>
                 </div>
             </div>
