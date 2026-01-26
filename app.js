@@ -441,9 +441,17 @@ async function displayTotalScores(usersScores) {
     const multipliers = await getMultipliers();
     
     let html = '';
+    let currentRank = 1;
+    let previousScore = null;
+    
     sortedUsers.forEach(([userId, user], index) => {
-        const rank = index + 1;
-        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+        // 前の人と同じ得点でなければ順位を更新
+        if (previousScore !== null && user.totalScore !== previousScore) {
+            currentRank = index + 1;
+        }
+        previousScore = user.totalScore;
+        
+        const medal = currentRank === 1 ? '🥇' : currentRank === 2 ? '🥈' : currentRank === 3 ? '🥉' : `${currentRank}.`;
         
         // 詳細内訳を作成
         const details = `
@@ -1414,12 +1422,20 @@ async function renderRanking(rankings) {
         if (sorted.length === 0) {
             rankingHTML += '<p style="color: #999;">まだ記録がありません</p>';
         } else {
+            let currentRank = 1;
+            let previousValue = null;
+            
             sorted.forEach((data, index) => {
-                const position = index + 1;
-                const positionClass = position === 1 ? 'first' : position === 2 ? 'second' : position === 3 ? 'third' : '';
+                // 前の人と同じ値でなければ順位を更新
+                if (previousValue !== null && data.value !== previousValue) {
+                    currentRank = index + 1;
+                }
+                previousValue = data.value;
+                
+                const positionClass = currentRank === 1 ? 'first' : currentRank === 2 ? 'second' : currentRank === 3 ? 'third' : '';
                 rankingHTML += `
                     <div class="ranking-item">
-                        <div class="ranking-position ${positionClass}">${position}</div>
+                        <div class="ranking-position ${positionClass}">${currentRank}</div>
                         <div class="ranking-user">${escapeHtml(data.userName)}</div>
                         <div class="ranking-value">${data.value} ${type === 'Lsit' ? '秒' : type === 'pullup' ? 'セット' : '回'}</div>
                     </div>
