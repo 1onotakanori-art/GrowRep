@@ -310,14 +310,14 @@ async function loadScoreChart(selectedUserIds = []) {
             selectedUserIds = Object.keys(usersScores);
         }
         
-        // ユーザーIDから固定の色インデックスを生成する関数
+        // 全ユーザーIDをソートして固定順序を作成（色の衝突を防ぐ）
+        const allUserIds = Object.keys(usersScores).sort();
+        
+        // ユーザーIDから固定の色インデックスを取得する関数
         const getUserColorIndex = (userId) => {
-            // userIdの文字列から数値ハッシュを生成
-            let hash = 0;
-            for (let i = 0; i < userId.length; i++) {
-                hash = userId.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            return Math.abs(hash);
+            // ソートされた全ユーザーリスト内での位置を色インデックスとする
+            const index = allUserIds.indexOf(userId);
+            return index >= 0 ? index : 0;
         };
         
         // Chart.jsのデータセットを作成
@@ -343,7 +343,7 @@ async function loadScoreChart(selectedUserIds = []) {
                 'rgb(255, 205, 86)'
             ];
             
-            // userIdに基づいて色を固定
+            // userIdの固定順序に基づいて色を割り当て
             const colorIndex = getUserColorIndex(userId) % colors.length;
             const color = colors[colorIndex];
             const borderColor = borderColors[colorIndex];
