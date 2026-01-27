@@ -161,6 +161,14 @@
                 <p><strong>得点 = 回数/秒数/セット数 × 倍率</strong></p>
             </div>
             
+            <div class="scoring-method-selector">
+                <label for="scoring-method">集計方法：</label>
+                <select id="scoring-method">
+                    <option value="sum">各種目の得点を合計</option>
+                    <option value="deviation">偏差値の合計</option>
+                </select>
+            </div>
+            
             <div class="total-scores">
                 <h3>📊 総合得点ランキング</h3>
                 <div id="total-scores-list" class="total-scores-list"></div>

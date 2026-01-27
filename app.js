@@ -440,13 +440,101 @@ async function loadScoreChart(selectedUserIds = []) {
 }
 
 /**
+ * 偏差値を計算する
+ * @param {number} score - 個人の得点
+ * @param {number} mean - 平均値
+ * @param {number} stdDev - 標準偏差
+ * @returns {number} 偏差値
+ */
+function calculateDeviation(score, mean, stdDev) {
+    if (stdDev === 0) return 50; // 全員同じ点数の場合は50
+    return 50 + (10 * (score - mean) / stdDev);
+}
+
+/**
+ * 種目ごとの偏差値を計算
+ * @param {Object} usersScores - ユーザー得点データ
+ * @returns {Object} ユーザーごとの偏差値データ
+ */
+function calculateDeviationScores(usersScores) {
+    const exercises = ['pushup', 'dips', 'squat', 'Lsit', 'pullup'];
+    const deviationData = {};
+    
+    // 種目ごとに平均と標準偏差を計算
+    exercises.forEach(exercise => {
+        const scores = [];
+        const userIds = [];
+        
+        // 記録があるユーザーのみを対象
+        Object.entries(usersScores).forEach(([userId, user]) => {
+            const score = user.scores[exercise] || 0;
+            if (score > 0) {
+                scores.push(score);
+                userIds.push(userId);
+            }
+        });
+        
+        if (scores.length === 0) return;
+        
+        // 平均を計算
+        const mean = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+        
+        // 標準偏差を計算
+        const variance = scores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / scores.length;
+        const stdDev = Math.sqrt(variance);
+        
+        // 各ユーザーの偏差値を計算
+        Object.entries(usersScores).forEach(([userId, user]) => {
+            if (!deviationData[userId]) {
+                deviationData[userId] = {
+                    userName: user.userName,
+                    exercises: {},
+                    deviations: {},
+                    totalDeviation: 0
+                };
+            }
+            
+            const score = user.scores[exercise] || 0;
+            const exerciseValue = user.exercises[exercise] || 0;
+            
+            if (score > 0) {
+                const deviation = calculateDeviation(score, mean, stdDev);
+                deviationData[userId].deviations[exercise] = deviation;
+                deviationData[userId].exercises[exercise] = exerciseValue;
+                deviationData[userId].totalDeviation += deviation;
+            } else {
+                deviationData[userId].deviations[exercise] = 0;
+                deviationData[userId].exercises[exercise] = 0;
+            }
+        });
+    });
+    
+    return deviationData;
+}
+
+/**
  * 総合得点ランキングを表示
  * @param {Object} usersScores - ユーザー得点データ
  */
 async function displayTotalScores(usersScores) {
-    // 総得点でソート
-    const sortedUsers = Object.entries(usersScores)
-        .sort((a, b) => b[1].totalScore - a[1].totalScore);
+    // 集計方法を取得
+    const scoringMethod = document.getElementById('scoring-method').value;
+    
+    let sortedUsers;
+    let dataToDisplay;
+    
+    if (scoringMethod === 'deviation') {
+        // 偏差値方式
+        const deviationData = calculateDeviationScores(usersScores);
+        sortedUsers = Object.entries(deviationData)
+            .sort((a, b) => b[1].totalDeviation - a[1].totalDeviation);
+        dataToDisplay = 'deviation';
+    } else {
+        // 合計方式（デフォルト）
+        sortedUsers = Object.entries(usersScores)
+            .sort((a, b) => b[1].totalScore - a[1].totalScore);
+        dataToDisplay = 'sum';
+    }
     
     // 倍率を取得
     const multipliers = await getMultipliers();
@@ -455,79 +543,125 @@ async function displayTotalScores(usersScores) {
     let currentRank = 1;
     let previousScore = null;
     
-    sortedUsers.forEach(([userId, user], index) => {
+    sortedUsers.forEach(([userId, userData], index) => {
+        // 総合得点を取得
+        const totalScore = dataToDisplay === 'deviation' ? userData.totalDeviation : userData.totalScore;
+        
         // 前の人と同じ得点でなければ順位を更新
-        if (previousScore !== null && user.totalScore !== previousScore) {
+        if (previousScore !== null && totalScore !== previousScore) {
             currentRank = index + 1;
         }
-        previousScore = user.totalScore;
+        previousScore = totalScore;
         
         const medal = currentRank === 1 ? '🥇' : currentRank === 2 ? '🥈' : currentRank === 3 ? '🥉' : `${currentRank}.`;
         
-        // 詳細内訳を作成
-        const details = `
-            <div class="score-details" id="score-details-${escapeHtml(userId)}" style="display: none;">
-                <div class="score-breakdown">
-                    <div class="breakdown-item">
-                        <span class="breakdown-label">プッシュアップ</span>
-                        <span class="breakdown-num">${user.exercises.pushup || 0}</span>
-                        <span class="breakdown-unit">回</span>
-                        <span class="breakdown-times">×</span>
-                        <span class="breakdown-mult">${multipliers.pushup}</span>
-                        <span class="breakdown-equals">=</span>
-                        <span class="breakdown-score">${(user.scores.pushup || 0).toFixed(1)}</span>
-                        <span class="breakdown-point">点</span>
-                    </div>
-                    <div class="breakdown-item">
-                        <span class="breakdown-label">ディップス</span>
-                        <span class="breakdown-num">${user.exercises.dips || 0}</span>
-                        <span class="breakdown-unit">回</span>
-                        <span class="breakdown-times">×</span>
-                        <span class="breakdown-mult">${multipliers.dips}</span>
-                        <span class="breakdown-equals">=</span>
-                        <span class="breakdown-score">${(user.scores.dips || 0).toFixed(1)}</span>
-                        <span class="breakdown-point">点</span>
-                    </div>
-                    <div class="breakdown-item">
-                        <span class="breakdown-label">片足スクワット</span>
-                        <span class="breakdown-num">${user.exercises.squat || 0}</span>
-                        <span class="breakdown-unit">回</span>
-                        <span class="breakdown-times">×</span>
-                        <span class="breakdown-mult">${multipliers.squat}</span>
-                        <span class="breakdown-equals">=</span>
-                        <span class="breakdown-score">${(user.scores.squat || 0).toFixed(1)}</span>
-                        <span class="breakdown-point">点</span>
-                    </div>
-                    <div class="breakdown-item">
-                        <span class="breakdown-label">Lシット</span>
-                        <span class="breakdown-num">${user.exercises.Lsit || 0}</span>
-                        <span class="breakdown-unit">秒</span>
-                        <span class="breakdown-times">×</span>
-                        <span class="breakdown-mult">${multipliers.Lsit}</span>
-                        <span class="breakdown-equals">=</span>
-                        <span class="breakdown-score">${(user.scores.Lsit || 0).toFixed(1)}</span>
-                        <span class="breakdown-point">点</span>
-                    </div>
-                    <div class="breakdown-item">
-                        <span class="breakdown-label">懸垂</span>
-                        <span class="breakdown-num">${user.exercises.pullup || 0}</span>
-                        <span class="breakdown-unit">セット</span>
-                        <span class="breakdown-times">×</span>
-                        <span class="breakdown-mult">${multipliers.pullup}</span>
-                        <span class="breakdown-equals">=</span>
-                        <span class="breakdown-score">${(user.scores.pullup || 0).toFixed(1)}</span>
-                        <span class="breakdown-point">点</span>
+        // 詳細内訳を作成（集計方法によって異なる）
+        let details;
+        if (dataToDisplay === 'deviation') {
+            // 偏差値方式：種目名、回数、得点、偏差値
+            details = `
+                <div class="score-details" id="score-details-${escapeHtml(userId)}" style="display: none;">
+                    <div class="score-breakdown">
+                        <div class="breakdown-item breakdown-deviation">
+                            <span class="breakdown-label">プッシュアップ</span>
+                            <span class="breakdown-num">${userData.exercises.pushup || 0}回</span>
+                            <span class="breakdown-score">${(usersScores[userId].scores.pushup || 0).toFixed(1)}点</span>
+                            <span class="breakdown-dev">${userData.deviations.pushup ? userData.deviations.pushup.toFixed(1) : '0.0'}</span>
+                        </div>
+                        <div class="breakdown-item breakdown-deviation">
+                            <span class="breakdown-label">ディップス</span>
+                            <span class="breakdown-num">${userData.exercises.dips || 0}回</span>
+                            <span class="breakdown-score">${(usersScores[userId].scores.dips || 0).toFixed(1)}点</span>
+                            <span class="breakdown-dev">${userData.deviations.dips ? userData.deviations.dips.toFixed(1) : '0.0'}</span>
+                        </div>
+                        <div class="breakdown-item breakdown-deviation">
+                            <span class="breakdown-label">片足スクワット</span>
+                            <span class="breakdown-num">${userData.exercises.squat || 0}回</span>
+                            <span class="breakdown-score">${(usersScores[userId].scores.squat || 0).toFixed(1)}点</span>
+                            <span class="breakdown-dev">${userData.deviations.squat ? userData.deviations.squat.toFixed(1) : '0.0'}</span>
+                        </div>
+                        <div class="breakdown-item breakdown-deviation">
+                            <span class="breakdown-label">Lシット</span>
+                            <span class="breakdown-num">${userData.exercises.Lsit || 0}秒</span>
+                            <span class="breakdown-score">${(usersScores[userId].scores.Lsit || 0).toFixed(1)}点</span>
+                            <span class="breakdown-dev">${userData.deviations.Lsit ? userData.deviations.Lsit.toFixed(1) : '0.0'}</span>
+                        </div>
+                        <div class="breakdown-item breakdown-deviation">
+                            <span class="breakdown-label">懸垂</span>
+                            <span class="breakdown-num">${userData.exercises.pullup || 0}セット</span>
+                            <span class="breakdown-score">${(usersScores[userId].scores.pullup || 0).toFixed(1)}点</span>
+                            <span class="breakdown-dev">${userData.deviations.pullup ? userData.deviations.pullup.toFixed(1) : '0.0'}</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-        `;
+            `;
+        } else {
+            // 合計方式：従来の表示
+            const user = userData;
+            details = `
+                <div class="score-details" id="score-details-${escapeHtml(userId)}" style="display: none;">
+                    <div class="score-breakdown">
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">プッシュアップ</span>
+                            <span class="breakdown-num">${user.exercises.pushup || 0}</span>
+                            <span class="breakdown-unit">回</span>
+                            <span class="breakdown-times">×</span>
+                            <span class="breakdown-mult">${multipliers.pushup}</span>
+                            <span class="breakdown-equals">=</span>
+                            <span class="breakdown-score">${(user.scores.pushup || 0).toFixed(1)}</span>
+                            <span class="breakdown-point">点</span>
+                        </div>
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">ディップス</span>
+                            <span class="breakdown-num">${user.exercises.dips || 0}</span>
+                            <span class="breakdown-unit">回</span>
+                            <span class="breakdown-times">×</span>
+                            <span class="breakdown-mult">${multipliers.dips}</span>
+                            <span class="breakdown-equals">=</span>
+                            <span class="breakdown-score">${(user.scores.dips || 0).toFixed(1)}</span>
+                            <span class="breakdown-point">点</span>
+                        </div>
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">片足スクワット</span>
+                            <span class="breakdown-num">${user.exercises.squat || 0}</span>
+                            <span class="breakdown-unit">回</span>
+                            <span class="breakdown-times">×</span>
+                            <span class="breakdown-mult">${multipliers.squat}</span>
+                            <span class="breakdown-equals">=</span>
+                            <span class="breakdown-score">${(user.scores.squat || 0).toFixed(1)}</span>
+                            <span class="breakdown-point">点</span>
+                        </div>
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">Lシット</span>
+                            <span class="breakdown-num">${user.exercises.Lsit || 0}</span>
+                            <span class="breakdown-unit">秒</span>
+                            <span class="breakdown-times">×</span>
+                            <span class="breakdown-mult">${multipliers.Lsit}</span>
+                            <span class="breakdown-equals">=</span>
+                            <span class="breakdown-score">${(user.scores.Lsit || 0).toFixed(1)}</span>
+                            <span class="breakdown-point">点</span>
+                        </div>
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">懸垂</span>
+                            <span class="breakdown-num">${user.exercises.pullup || 0}</span>
+                            <span class="breakdown-unit">セット</span>
+                            <span class="breakdown-times">×</span>
+                            <span class="breakdown-mult">${multipliers.pullup}</span>
+                            <span class="breakdown-equals">=</span>
+                            <span class="breakdown-score">${(user.scores.pullup || 0).toFixed(1)}</span>
+                            <span class="breakdown-point">点</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
         
         html += `
             <div class="total-score-item" onclick="toggleScoreDetails('${escapeHtml(userId)}')">
                 <div class="score-header">
                     <span class="score-rank">${medal}</span>
-                    <span class="score-username">${escapeHtml(user.userName)}</span>
-                    <span class="score-value">${user.totalScore.toFixed(1)}点</span>
+                    <span class="score-username">${escapeHtml(userData.userName)}</span>
+                    <span class="score-value">${totalScore.toFixed(1)}${dataToDisplay === 'deviation' ? '' : '点'}</span>
                 </div>
                 ${details}
             </div>
@@ -1575,6 +1709,12 @@ async function loadProgressChart() {
 
 // グラフの種目変更時
 graphExerciseType.addEventListener('change', loadProgressChart);
+
+// 集計方法の変更時
+document.getElementById('scoring-method').addEventListener('change', async () => {
+    const usersScores = await getAllUsersScores();
+    await displayTotalScores(usersScores);
+});
 
 // ====================================================================
 // ルールタブのイベントリスナー
