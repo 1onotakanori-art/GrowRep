@@ -157,8 +157,13 @@
         <div id="score-tab" class="tab-content">
             <h2>🏆 総合得点</h2>
             <div class="score-description">
-                <p>最高記録から得点を計算・レーダーチャート表示</p>
+                <p>最高記録から得点を計算</p>
                 <p><strong>得点 = 回数/秒数/セット数 × 倍率</strong></p>
+            </div>
+            
+            <div class="total-scores">
+                <h3>📊 総合得点ランキング</h3>
+                <div id="total-scores-list" class="total-scores-list"></div>
             </div>
             
             <div class="user-selection">
@@ -168,11 +173,6 @@
             
             <div class="score-chart-container">
                 <canvas id="score-chart"></canvas>
-            </div>
-            
-            <div class="total-scores">
-                <h3>📊 総合得点ランキング</h3>
-                <div id="total-scores-list" class="total-scores-list"></div>
             </div>
             
             <p id="score-error" class="error-message"></p>
