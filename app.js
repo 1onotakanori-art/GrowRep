@@ -310,6 +310,16 @@ async function loadScoreChart(selectedUserIds = []) {
             selectedUserIds = Object.keys(usersScores);
         }
         
+        // 集計方法を取得
+        const scoringMethod = document.getElementById('scoring-method').value;
+        const isDeviationMode = scoringMethod === 'deviation';
+        
+        // 偏差値データを取得（偏差値モードの場合）
+        let deviationData = null;
+        if (isDeviationMode) {
+            deviationData = calculateDeviationScores(usersScores);
+        }
+        
         // 全ユーザーIDをソートして固定順序を作成（色の衝突を防ぐ）
         const allUserIds = Object.keys(usersScores).sort();
         
@@ -348,15 +358,31 @@ async function loadScoreChart(selectedUserIds = []) {
             const color = colors[colorIndex];
             const borderColor = borderColors[colorIndex];
             
-            return {
-                label: user.userName,
-                data: [
+            // データを集計方法に応じて取得
+            let chartData;
+            if (isDeviationMode && deviationData && deviationData[userId]) {
+                // 偏差値モード
+                chartData = [
+                    deviationData[userId].deviations.pushup || 0,
+                    deviationData[userId].deviations.dips || 0,
+                    deviationData[userId].deviations.squat || 0,
+                    deviationData[userId].deviations.Lsit || 0,
+                    deviationData[userId].deviations.pullup || 0
+                ];
+            } else {
+                // 通常モード（得点）
+                chartData = [
                     user.scores.pushup || 0,
                     user.scores.dips || 0,
                     user.scores.squat || 0,
                     user.scores.Lsit || 0,
                     user.scores.pullup || 0
-                ],
+                ];
+            }
+            
+            return {
+                label: user.userName,
+                data: chartData,
                 backgroundColor: color,
                 borderColor: borderColor,
                 borderWidth: 2,
@@ -421,8 +447,9 @@ async function loadScoreChart(selectedUserIds = []) {
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return context.dataset.label + ': ' + 
-                                       context.parsed.r.toFixed(1) + '点';
+                                const value = context.parsed.r.toFixed(1);
+                                const unit = isDeviationMode ? '' : '点';
+                                return context.dataset.label + ': ' + value + unit;
                             }
                         }
                     }
@@ -1712,8 +1739,16 @@ graphExerciseType.addEventListener('change', loadProgressChart);
 
 // 集計方法の変更時
 document.getElementById('scoring-method').addEventListener('change', async () => {
+    // ランキングを再表示
     const usersScores = await getAllUsersScores();
     await displayTotalScores(usersScores);
+    
+    // チャートも再描画（現在選択されているユーザーで）
+    const checkboxes = document.querySelectorAll('.user-checkbox input[type="checkbox"]');
+    const selectedIds = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
+    await loadScoreChart(selectedIds);
 });
 
 // ====================================================================
