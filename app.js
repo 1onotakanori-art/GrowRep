@@ -313,11 +313,15 @@ async function loadScoreChart(selectedUserIds = []) {
         // 集計方法を取得
         const scoringMethod = document.getElementById('scoring-method').value;
         const isDeviationMode = scoringMethod === 'deviation';
+        const isPercentageMode = scoringMethod === 'percentage';
         
-        // 偏差値データを取得（偏差値モードの場合）
+        // 偏差値データまたは%データを取得
         let deviationData = null;
+        let percentageData = null;
         if (isDeviationMode) {
             deviationData = calculateDeviationScores(usersScores);
+        } else if (isPercentageMode) {
+            percentageData = calculatePercentageScores(usersScores);
         }
         
         // 全ユーザーIDをソートして固定順序を作成（色の衝突を防ぐ）
@@ -368,6 +372,15 @@ async function loadScoreChart(selectedUserIds = []) {
                     deviationData[userId].deviations.squat || 0,
                     deviationData[userId].deviations.Lsit || 0,
                     deviationData[userId].deviations.pullup || 0
+                ];
+            } else if (isPercentageMode && percentageData && percentageData[userId]) {
+                // %モード
+                chartData = [
+                    percentageData[userId].percentages.pushup || 0,
+                    percentageData[userId].percentages.dips || 0,
+                    percentageData[userId].percentages.squat || 0,
+                    percentageData[userId].percentages.Lsit || 0,
+                    percentageData[userId].percentages.pullup || 0
                 ];
             } else {
                 // 通常モード（得点）
@@ -448,7 +461,12 @@ async function loadScoreChart(selectedUserIds = []) {
                         callbacks: {
                             label: function(context) {
                                 const value = context.parsed.r.toFixed(1);
-                                const unit = isDeviationMode ? '' : '点';
+                                let unit = '点';
+                                if (isDeviationMode) {
+                                    unit = '';
+                                } else if (isPercentageMode) {
+                                    unit = '%';
+                                }
                                 return context.dataset.label + ': ' + value + unit;
                             }
                         }
@@ -540,6 +558,56 @@ function calculateDeviationScores(usersScores) {
 }
 
 /**
+ * 種目ごとの%を計算（最高得点を100%とする）
+ * @param {Object} usersScores - ユーザー得点データ
+ * @returns {Object} ユーザーごとの%データ
+ */
+function calculatePercentageScores(usersScores) {
+    const exercises = ['pushup', 'dips', 'squat', 'Lsit', 'pullup'];
+    const percentageData = {};
+    
+    // 種目ごとに最高得点を計算
+    exercises.forEach(exercise => {
+        let maxScore = 0;
+        
+        // 最高得点を取得
+        Object.entries(usersScores).forEach(([userId, user]) => {
+            const score = user.scores[exercise] || 0;
+            if (score > maxScore) {
+                maxScore = score;
+            }
+        });
+        
+        // 各ユーザーの%を計算
+        Object.entries(usersScores).forEach(([userId, user]) => {
+            if (!percentageData[userId]) {
+                percentageData[userId] = {
+                    userName: user.userName,
+                    exercises: {},
+                    percentages: {},
+                    totalPercentage: 0
+                };
+            }
+            
+            const score = user.scores[exercise] || 0;
+            const exerciseValue = user.exercises[exercise] || 0;
+            
+            if (maxScore > 0 && score > 0) {
+                const percentage = (score / maxScore) * 100;
+                percentageData[userId].percentages[exercise] = percentage;
+                percentageData[userId].exercises[exercise] = exerciseValue;
+                percentageData[userId].totalPercentage += percentage;
+            } else {
+                percentageData[userId].percentages[exercise] = 0;
+                percentageData[userId].exercises[exercise] = 0;
+            }
+        });
+    });
+    
+    return percentageData;
+}
+
+/**
  * 総合得点ランキングを表示
  * @param {Object} usersScores - ユーザー得点データ
  */
@@ -556,6 +624,12 @@ async function displayTotalScores(usersScores) {
         sortedUsers = Object.entries(deviationData)
             .sort((a, b) => b[1].totalDeviation - a[1].totalDeviation);
         dataToDisplay = 'deviation';
+    } else if (scoringMethod === 'percentage') {
+        // %方式
+        const percentageData = calculatePercentageScores(usersScores);
+        sortedUsers = Object.entries(percentageData)
+            .sort((a, b) => b[1].totalPercentage - a[1].totalPercentage);
+        dataToDisplay = 'percentage';
     } else {
         // 合計方式（デフォルト）
         sortedUsers = Object.entries(usersScores)
@@ -572,7 +646,14 @@ async function displayTotalScores(usersScores) {
     
     sortedUsers.forEach(([userId, userData], index) => {
         // 総合得点を取得
-        const totalScore = dataToDisplay === 'deviation' ? userData.totalDeviation : userData.totalScore;
+        let totalScore;
+        if (dataToDisplay === 'deviation') {
+            totalScore = userData.totalDeviation;
+        } else if (dataToDisplay === 'percentage') {
+            totalScore = userData.totalPercentage;
+        } else {
+            totalScore = userData.totalScore;
+        }
         
         // 前の人と同じ得点でなければ順位を更新
         if (previousScore !== null && totalScore !== previousScore) {
@@ -618,6 +699,44 @@ async function displayTotalScores(usersScores) {
                             <span class="breakdown-num">${userData.exercises.pullup || 0}セット</span>
                             <span class="breakdown-score">${(usersScores[userId].scores.pullup || 0).toFixed(1)}点</span>
                             <span class="breakdown-dev">${userData.deviations.pullup ? userData.deviations.pullup.toFixed(1) : '0.0'}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else if (dataToDisplay === 'percentage') {
+            // %方式：種目名、回数、得点、%
+            details = `
+                <div class="score-details" id="score-details-${escapeHtml(userId)}" style="display: none;">
+                    <div class="score-breakdown">
+                        <div class="breakdown-item breakdown-deviation">
+                            <span class="breakdown-label">プッシュアップ</span>
+                            <span class="breakdown-num">${userData.exercises.pushup || 0}回</span>
+                            <span class="breakdown-score">${(usersScores[userId].scores.pushup || 0).toFixed(1)}点</span>
+                            <span class="breakdown-pct">${userData.percentages.pushup ? userData.percentages.pushup.toFixed(1) : '0.0'}%</span>
+                        </div>
+                        <div class="breakdown-item breakdown-deviation">
+                            <span class="breakdown-label">ディップス</span>
+                            <span class="breakdown-num">${userData.exercises.dips || 0}回</span>
+                            <span class="breakdown-score">${(usersScores[userId].scores.dips || 0).toFixed(1)}点</span>
+                            <span class="breakdown-pct">${userData.percentages.dips ? userData.percentages.dips.toFixed(1) : '0.0'}%</span>
+                        </div>
+                        <div class="breakdown-item breakdown-deviation">
+                            <span class="breakdown-label">片足スクワット</span>
+                            <span class="breakdown-num">${userData.exercises.squat || 0}回</span>
+                            <span class="breakdown-score">${(usersScores[userId].scores.squat || 0).toFixed(1)}点</span>
+                            <span class="breakdown-pct">${userData.percentages.squat ? userData.percentages.squat.toFixed(1) : '0.0'}%</span>
+                        </div>
+                        <div class="breakdown-item breakdown-deviation">
+                            <span class="breakdown-label">Lシット</span>
+                            <span class="breakdown-num">${userData.exercises.Lsit || 0}秒</span>
+                            <span class="breakdown-score">${(usersScores[userId].scores.Lsit || 0).toFixed(1)}点</span>
+                            <span class="breakdown-pct">${userData.percentages.Lsit ? userData.percentages.Lsit.toFixed(1) : '0.0'}%</span>
+                        </div>
+                        <div class="breakdown-item breakdown-deviation">
+                            <span class="breakdown-label">懸垂</span>
+                            <span class="breakdown-num">${userData.exercises.pullup || 0}セット</span>
+                            <span class="breakdown-score">${(usersScores[userId].scores.pullup || 0).toFixed(1)}点</span>
+                            <span class="breakdown-pct">${userData.percentages.pullup ? userData.percentages.pullup.toFixed(1) : '0.0'}%</span>
                         </div>
                     </div>
                 </div>
@@ -688,7 +807,7 @@ async function displayTotalScores(usersScores) {
                 <div class="score-header">
                     <span class="score-rank">${medal}</span>
                     <span class="score-username">${escapeHtml(userData.userName)}</span>
-                    <span class="score-value">${totalScore.toFixed(1)}${dataToDisplay === 'deviation' ? '' : '点'}</span>
+                    <span class="score-value">${totalScore.toFixed(1)}${dataToDisplay === 'sum' ? '点' : dataToDisplay === 'percentage' ? '%' : ''}</span>
                 </div>
                 ${details}
             </div>

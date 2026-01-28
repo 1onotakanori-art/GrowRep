@@ -1190,6 +1190,12 @@ header h1 {
     text-align: right;
 }
 
+.breakdown-pct {
+    color: #ff9f40;
+    font-weight: bold;
+    text-align: right;
+}
+
 /* レスポンシブ対応：得点タブ */
 @media (max-width: 768px) {
     .checkbox-group {
