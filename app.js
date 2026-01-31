@@ -2287,24 +2287,25 @@ function playCountdownSound() {
 }
 
 function updateTimerDisplay() {
+    const timeDisplay = document.getElementById('time-display');
+    const timeLabel = document.getElementById('time-label');
+    
     // カウント表示を更新
     timerCount.textContent = currentCount;
     
-    // 経過時間を更新（分:秒形式）
-    const minutes = Math.floor(elapsedSeconds / 60);
-    const seconds = elapsedSeconds % 60;
-    timerElapsed.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-function updateCountdownDisplay() {
-    const countdownDisplay = document.getElementById('countdown-display');
-    const countdownValue = document.getElementById('countdown-value');
-    
     if (isPreparationPhase) {
-        countdownDisplay.style.display = 'block';
-        countdownValue.textContent = preparationCountdown;
+        // 準備時間中
+        timeDisplay.classList.add('preparation');
+        timeLabel.textContent = '準備時間';
+        timerElapsed.textContent = preparationCountdown;
     } else {
-        countdownDisplay.style.display = 'none';
+        // 経過時間中
+        timeDisplay.classList.remove('preparation');
+        timeLabel.textContent = '経過時間';
+        
+        const minutes = Math.floor(elapsedSeconds / 60);
+        const seconds = elapsedSeconds % 60;
+        timerElapsed.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
 }
 
@@ -2330,19 +2331,18 @@ function startTimer() {
     // 準備時間のカウントダウン開始
     isPreparationPhase = true;
     preparationCountdown = 10;
-    updateCountdownDisplay();
+    updateTimerDisplay();
     
     timerInterval = setInterval(() => {
         if (isPreparationPhase) {
             // 準備時間のカウントダウン
             playCountdownSound();
             preparationCountdown--;
-            updateCountdownDisplay();
+            updateTimerDisplay();
             
             if (preparationCountdown <= 0) {
                 // 準備時間終了、メインタイマー開始
                 isPreparationPhase = false;
-                updateCountdownDisplay();
                 elapsedSeconds = 0;
                 currentCount = 0;
                 updateTimerDisplay();
@@ -2378,7 +2378,7 @@ function stopTimer() {
     const intervalInput = document.getElementById('interval-input');
     intervalInput.disabled = false;
     
-    updateCountdownDisplay();
+    updateTimerDisplay();
 }
 
 function resetTimer() {
@@ -2388,7 +2388,6 @@ function resetTimer() {
     elapsedSeconds = 0;
     preparationCountdown = 10;
     updateTimerDisplay();
-    updateCountdownDisplay();
     
     // ボタンの状態を更新
     timerStartBtn.disabled = false;
