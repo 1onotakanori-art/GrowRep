@@ -123,10 +123,6 @@ let myScoreChart = null;  // 得点レーダーチャート用
 let unsubscribePosts = null;  // 投稿リスナーの解除用
 
 // キャッシュ用変数（Firebase読み取り削減）
-let rankingCache = null;
-let rankingCacheTime = null;
-let scoreCache = null;
-let scoreCacheTime = null;
 // モード別キャッシュ
 let postsCache = {
     prototype: null,
