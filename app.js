@@ -971,6 +971,9 @@ auth.onAuthStateChanged(async (user) => {
         loginContainer.style.display = 'none';
         mainContainer.style.display = 'block';
         
+        // モードセレクターの値を現在のモードに同期
+        modeSelect.value = currentMode;
+        
         // モードに応じたタブ表示を初期化
         updateTabsForMode();
         
@@ -985,6 +988,11 @@ auth.onAuthStateChanged(async (user) => {
         if (myChart) {
             myChart.destroy();
             myChart = null;
+        }
+        
+        // タイマーを停止
+        if (timerInterval) {
+            resetTimer();
         }
         
         loginContainer.style.display = 'block';
@@ -1342,7 +1350,17 @@ function changeMode(newMode) {
     if (currentMode === newMode) return;
     
     console.log(`モード切り替え: ${currentMode} → ${newMode}`);
+    
+    // タイマーが実行中なら停止
+    if (timerInterval) {
+        console.log('[モード切り替え] タイマーを停止します');
+        resetTimer();
+    }
+    
     currentMode = newMode;
+    
+    // モードセレクターの値を同期
+    modeSelect.value = newMode;
     
     // タブの表示を更新
     updateTabsForMode();
@@ -2169,39 +2187,54 @@ let currentCount = 0;
 let elapsedSeconds = 0;
 
 // Web Audio APIでビープ音を生成
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let audioContext;
+try {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+} catch (error) {
+    console.error('[3秒タイマー] Web Audio API not supported:', error);
+    audioContext = null;
+}
 
 function playBeep() {
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+    if (!audioContext) {
+        console.warn('[3秒タイマー] AudioContext is not available');
+        return;
+    }
     
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    // ビープ音の設定
-    oscillator.frequency.value = 880; // A5音（高めの音）
-    oscillator.type = 'sine';
-    
-    // 音量の設定（フェードアウト）
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-    
-    // 音を再生
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.1);
-    
-    // 視覚的フィードバック（アニメーション）
-    const countDisplay = document.querySelector('.count-display');
-    const timeDisplay = document.querySelector('.time-display');
-    
-    if (countDisplay && timeDisplay) {
-        countDisplay.classList.add('beep');
-        timeDisplay.classList.add('beep');
+    try {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
         
-        setTimeout(() => {
-            countDisplay.classList.remove('beep');
-            timeDisplay.classList.remove('beep');
-        }, 300);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // ビープ音の設定
+        oscillator.frequency.value = 880; // A5音（高めの音）
+        oscillator.type = 'sine';
+        
+        // 音量の設定（フェードアウト）
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+        
+        // 音を再生
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.1);
+        
+        // 視覚的フィードバック（アニメーション）
+        const countDisplay = document.querySelector('.count-display');
+        const timeDisplay = document.querySelector('.time-display');
+        
+        if (countDisplay && timeDisplay) {
+            countDisplay.classList.add('beep');
+            timeDisplay.classList.add('beep');
+            
+            setTimeout(() => {
+                countDisplay.classList.remove('beep');
+                timeDisplay.classList.remove('beep');
+            }, 300);
+        }
+    } catch (error) {
+        console.error('[3秒タイマー] ビープ音の再生に失敗:', error);
     }
 }
 
@@ -2221,9 +2254,11 @@ function startTimer() {
     console.log('[3秒タイマー] スタート');
     
     // AudioContextを再開（ブラウザのオートプレイポリシー対応）
-    if (audioContext.state === 'suspended') {
+    if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume().then(() => {
             console.log('[3秒タイマー] AudioContext再開');
+        }).catch(error => {
+            console.error('[3秒タイマー] AudioContext再開失敗:', error);
         });
     }
     
