@@ -1414,6 +1414,14 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (tabName === 'score') {
             loadUserCheckboxes(false);  // キャッシュ使用
         }
+        
+        // タイマータブの場合は初期化
+        if (tabName === 'timer') {
+            // タイマーが実行中でなければ表示を初期化
+            if (!timerInterval) {
+                updateTimerDisplay();
+            }
+        }
     });
 });
 
@@ -2150,3 +2158,129 @@ updateMultipliersBtn.addEventListener('click', async () => {
         rulesError.textContent = '倍率の更新に失敗しました';
     }
 });
+
+// ====================================================================
+// 3秒タイマー機能
+// ====================================================================
+
+let timerInterval = null;
+let timerStartTime = null;
+let currentCount = 0;
+let elapsedSeconds = 0;
+
+// Web Audio APIでビープ音を生成
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+function playBeep() {
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    // ビープ音の設定
+    oscillator.frequency.value = 880; // A5音（高めの音）
+    oscillator.type = 'sine';
+    
+    // 音量の設定（フェードアウト）
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+    
+    // 音を再生
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.1);
+    
+    // 視覚的フィードバック（アニメーション）
+    const countDisplay = document.querySelector('.count-display');
+    const timeDisplay = document.querySelector('.time-display');
+    
+    if (countDisplay && timeDisplay) {
+        countDisplay.classList.add('beep');
+        timeDisplay.classList.add('beep');
+        
+        setTimeout(() => {
+            countDisplay.classList.remove('beep');
+            timeDisplay.classList.remove('beep');
+        }, 300);
+    }
+}
+
+function updateTimerDisplay() {
+    // カウント表示を更新
+    timerCount.textContent = currentCount;
+    
+    // 経過時間を更新（分:秒形式）
+    const minutes = Math.floor(elapsedSeconds / 60);
+    const seconds = elapsedSeconds % 60;
+    timerElapsed.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function startTimer() {
+    if (timerInterval) return; // 既に実行中の場合は何もしない
+    
+    console.log('[3秒タイマー] スタート');
+    
+    // AudioContextを再開（ブラウザのオートプレイポリシー対応）
+    if (audioContext.state === 'suspended') {
+        audioContext.resume().then(() => {
+            console.log('[3秒タイマー] AudioContext再開');
+        });
+    }
+    
+    // 初回のビープ音
+    playBeep();
+    currentCount++;
+    updateTimerDisplay();
+    
+    // ボタンの状態を更新
+    timerStartBtn.disabled = true;
+    timerStopBtn.disabled = false;
+    
+    // タイマー開始
+    timerStartTime = Date.now();
+    
+    timerInterval = setInterval(() => {
+        // 3秒経過したのでビープ音を鳴らす
+        playBeep();
+        currentCount++;
+        elapsedSeconds += 3;
+        updateTimerDisplay();
+        
+        console.log(`[3秒タイマー] カウント: ${currentCount}, 経過時間: ${elapsedSeconds}秒`);
+    }, 3000); // 3秒間隔
+}
+
+function stopTimer() {
+    if (!timerInterval) return;
+    
+    console.log('[3秒タイマー] ストップ');
+    
+    clearInterval(timerInterval);
+    timerInterval = null;
+    
+    // ボタンの状態を更新
+    timerStartBtn.disabled = false;
+    timerStopBtn.disabled = true;
+}
+
+function resetTimer() {
+    console.log('[3秒タイマー] リセット');
+    
+    stopTimer();
+    
+    currentCount = 0;
+    elapsedSeconds = 0;
+    updateTimerDisplay();
+    
+    // ボタンの状態を更新
+    timerStartBtn.disabled = false;
+    timerStopBtn.disabled = true;
+}
+
+// タイマーボタンのイベントリスナー
+timerStartBtn.addEventListener('click', startTimer);
+timerStopBtn.addEventListener('click', stopTimer);
+timerResetBtn.addEventListener('click', resetTimer);
+
+// タイマーの初期表示を設定
+updateTimerDisplay();
