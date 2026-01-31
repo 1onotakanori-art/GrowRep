@@ -1384,7 +1384,40 @@ header h1 {
     cursor: not-allowed;
 }
 
+/* モード情報表示 */
+.mode-info {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.mode-info::before {
+    content: "ℹ️";
+    font-size: 18px;
+}
+
+.mode-info.prototype {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.mode-info.three-sec-rule {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
 @media (max-width: 768px) {
+    .mode-info {
+        padding: 10px 15px;
+        font-size: 13px;
+    }
+    
     .header-top {
         flex-direction: column;
         align-items: flex-start;
