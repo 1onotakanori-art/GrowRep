@@ -21,6 +21,18 @@ function escapeHtml(str) {
 // ====================================================================
 let currentMode = 'prototype'; // 'prototype' または '3sec-rule'
 
+/**
+ * モードに応じたコレクション名を取得
+ * @param {string} baseCollection - 基本コレクション名（'posts', 'scores', 'multipliers'）
+ * @returns {string} モード別のコレクション名
+ */
+function getCollectionName(baseCollection) {
+    if (currentMode === '3sec-rule') {
+        return `${baseCollection}_3sec`;
+    }
+    return baseCollection;
+}
+
 // ====================================================================
 // DOM要素の取得
 // ====================================================================
@@ -115,9 +127,35 @@ let rankingCache = null;
 let rankingCacheTime = null;
 let scoreCache = null;
 let scoreCacheTime = null;
-let progressCache = {};  // 種目ごとにキャッシュ
-let postsCache = null;  // 掲示板用キャッシュ
-let postsCacheTime = null;
+// モード別キャッシュ
+let postsCache = {
+    prototype: null,
+    '3sec-rule': null
+};
+let postsCacheTime = {
+    prototype: null,
+    '3sec-rule': null
+};
+let rankingCache = {
+    prototype: null,
+    '3sec-rule': null
+};
+let rankingCacheTime = {
+    prototype: null,
+    '3sec-rule': null
+};
+let scoreCache = {
+    prototype: null,
+    '3sec-rule': null
+};
+let scoreCacheTime = {
+    prototype: null,
+    '3sec-rule': null
+};
+let progressCache = {
+    prototype: {},
+    '3sec-rule': {}
+};  // 種目ごとにキャッシュ
 const CACHE_DURATION = 5 * 60 * 1000;  // キャッシュ有効期間: 5分
 
 // ====================================================================
@@ -183,10 +221,13 @@ async function updateUserName(userId, newUserName) {
  * @returns {Promise<Object>} 倍率設定オブジェクト
  */
 async function getMultipliers() {
-    const doc = await db.collection('settings').doc('multipliers').get();
+    const collectionName = getCollectionName('settings');
+    console.log(`[getMultipliers] モード: ${currentMode}, コレクション: ${collectionName}`);
+    const doc = await db.collection(collectionName).doc('multipliers').get();
     if (doc.exists) {
         return doc.data();
     } else {
+        console.log(`[getMultipliers] デフォルト値を使用 (${currentMode}モードで設定が未作成)`);
         // デフォルト値を返す
         return {
             pushup: 1.0,
@@ -203,10 +244,13 @@ async function getMultipliers() {
  * @param {Object} multipliers - 倍率設定オブジェクト
  */
 async function updateMultipliers(multipliers) {
-    await db.collection('settings').doc('multipliers').set({
+    const collectionName = getCollectionName('settings');
+    console.log(`[updateMultipliers] モード: ${currentMode}, コレクション: ${collectionName}`);
+    await db.collection(collectionName).doc('multipliers').set({
         ...multipliers,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    console.log(`[updateMultipliers] 倍率更新完了 (${currentMode}モード)`);
 }
 
 /**
@@ -240,14 +284,19 @@ async function loadMultipliers() {
 async function getAllUsersScores(forceRefresh = false) {
     try {
         const now = Date.now();
+        const mode = currentMode;
         
         // キャッシュが有効な場合はキャッシュを使用
-        if (!forceRefresh && scoreCache && scoreCacheTime && (now - scoreCacheTime < CACHE_DURATION)) {
-            return scoreCache;
+        if (!forceRefresh && scoreCache[mode] && scoreCacheTime[mode] && (now - scoreCacheTime[mode] < CACHE_DURATION)) {
+            console.log(`[getAllUsersScores] キャッシュを使用 (${mode}モード)`);
+            return scoreCache[mode];
         }
         
+        console.log(`[getAllUsersScores] Firestoreから取得中 (${mode}モード)`);
+        
         const multipliers = await getMultipliers();
-        const postsSnapshot = await db.collection('posts').get();
+        const collectionName = getCollectionName('posts');
+        const postsSnapshot = await db.collection(collectionName).get();
         const usersSnapshot = await db.collection('users').get();
         
         // ユーザー情報を格納
@@ -299,13 +348,15 @@ async function getAllUsersScores(forceRefresh = false) {
         }
         
         // キャッシュを更新
-        scoreCache = userRecords;
-        scoreCacheTime = now;
+        scoreCache[mode] = userRecords;
+        scoreCacheTime[mode] = now;
+        
+        console.log(`[getAllUsersScores] ${Object.keys(userRecords).length}人の得点を計算 (${mode}モード)`);
         
         return userRecords;
         
     } catch (error) {
-        console.error('得点の取得に失敗しました:', error);
+        console.error(`[getAllUsersScores] エラー (${currentMode}モード):`, error);
         throw error;
     }
 }
@@ -1252,15 +1303,30 @@ function changeMode(newMode) {
     // タブの表示を更新
     updateTabsForMode();
     
+    // 現在のモードのプログレスキャッシュをクリア
+    progressCache[newMode] = {};
+    
     // データをリフレッシュ
     if (currentUser) {
-        loadPosts(true);  // 強制リフレッシュ
-        loadRanking(true);  // 強制リフレッシュ
-        
-        // 得点タブの場合も再読み込み
-        const activeTab = document.querySelector('.tab-content.active');
-        if (activeTab && activeTab.id === 'score-tab') {
-            loadUserCheckboxes(true);
+        try {
+            console.log(`${newMode}モードのデータを読み込み中...`);
+            console.log(`使用コレクション: ${getCollectionName('posts')}, ${getCollectionName('settings')}`);
+            
+            loadPosts(true);  // 強制リフレッシュ
+            loadRanking(true);  // 強制リフレッシュ
+            
+            // 得点タブの場合も再読み込み
+            const activeTab = document.querySelector('.tab-content.active');
+            if (activeTab && activeTab.id === 'score-tab') {
+                loadUserCheckboxes(true);
+            } else if (activeTab && activeTab.id === 'progress-tab') {
+                loadProgressChart();
+            }
+            
+            console.log(`${newMode}モードへの切り替え完了`);
+        } catch (error) {
+            console.error('モード切り替え時のデータ読み込みエラー:', error);
+            alert('モード切り替え時にエラーが発生しました。再度お試しください。');
         }
     }
 }
@@ -1318,6 +1384,8 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
     this.textContent = '⏳ 更新中...';
     
     try {
+        const mode = currentMode;
+        
         // 現在アクティブなタブを取得
         const activeTab = document.querySelector('.tab-content.active');
         const tabId = activeTab ? activeTab.id : null;
@@ -1327,7 +1395,7 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
                 await loadRanking(true);  // 強制更新
                 break;
             case 'progress-tab':
-                progressCache = {};  // グラフのキャッシュをクリア
+                progressCache[mode] = {};  // グラフのキャッシュをクリア
                 await loadProgressChart();
                 break;
             case 'score-tab':
@@ -1365,7 +1433,10 @@ submitPostBtn.addEventListener('click', async () => {
     }
     
     try {
-        await db.collection('posts').add({
+        const collectionName = getCollectionName('posts');
+        console.log(`[submitPost] モード: ${currentMode}, コレクション: ${collectionName}`);
+        
+        await db.collection(collectionName).add({
             userId: currentUser.uid,
             userEmail: currentUser.email,
             exerciseType: type,
@@ -1375,14 +1446,17 @@ submitPostBtn.addEventListener('click', async () => {
             comments: []
         });
         
-        // 投稿後、キャッシュをクリア（新しいデータを反映させるため）
-        rankingCache = null;
-        rankingCacheTime = null;
-        scoreCache = null;
-        scoreCacheTime = null;
-        progressCache = {};
-        postsCache = null;
-        postsCacheTime = null;
+        console.log(`[submitPost] 投稿成功: ${exerciseNames[type]} ${value} (${currentMode}モード)`);
+        
+        // 投稿後、現在のモードのキャッシュをクリア（新しいデータを反映させるため）
+        const mode = currentMode;
+        rankingCache[mode] = null;
+        rankingCacheTime[mode] = null;
+        scoreCache[mode] = null;
+        scoreCacheTime[mode] = null;
+        progressCache[mode] = {};
+        postsCache[mode] = null;
+        postsCacheTime[mode] = null;
         
         exerciseType.value = '';
         exerciseValue.value = '';
@@ -1401,22 +1475,29 @@ submitPostBtn.addEventListener('click', async () => {
 // 投稿の読み込み（キャッシュ対応）
 async function loadPosts(forceRefresh = false) {
     const now = Date.now();
+    const mode = currentMode;
     
     // キャッシュが有効な場合はキャッシュを使用
-    if (!forceRefresh && postsCache && postsCacheTime && (now - postsCacheTime < CACHE_DURATION)) {
-        renderPosts(postsCache);
+    if (!forceRefresh && postsCache[mode] && postsCacheTime[mode] && (now - postsCacheTime[mode] < CACHE_DURATION)) {
+        console.log(`[loadPosts] キャッシュを使用 (${mode}モード)`);
+        renderPosts(postsCache[mode]);
         return;
     }
     
     try {
-        const snapshot = await db.collection('posts')
+        const collectionName = getCollectionName('posts');
+        console.log(`[loadPosts] Firestoreから取得中: ${collectionName} (${mode}モード)`);
+        
+        const snapshot = await db.collection(collectionName)
             .orderBy('timestamp', 'desc')
             .get();
         
+        console.log(`[loadPosts] ${snapshot.size}件の投稿を取得 (${mode}モード)`);
+        
         if (snapshot.empty) {
             postsList.innerHTML = '<p style="text-align: center; color: #999;">まだ投稿がありません</p>';
-            postsCache = [];
-            postsCacheTime = now;
+            postsCache[mode] = [];
+            postsCacheTime[mode] = now;
             return;
         }
         
@@ -1433,14 +1514,16 @@ async function loadPosts(forceRefresh = false) {
         }
         
         // キャッシュを更新
-        postsCache = posts;
-        postsCacheTime = now;
+        postsCache[mode] = posts;
+        postsCacheTime[mode] = now;
+        
+        console.log(`[loadPosts] キャッシュ更新完了 (${mode}モード)`);
         
         // 投稿を表示
         renderPosts(posts);
         
     } catch (error) {
-        console.error('投稿の読み込みエラー:', error);
+        console.error(`[loadPosts] エラー (${mode}モード):`, error);
         postsList.innerHTML = '<p style="text-align: center; color: #e74c3c;">投稿の読み込みに失敗しました</p>';
     }
 }
@@ -1574,7 +1657,8 @@ async function toggleLike(postId) {
         }
         
         // 裏でFirestoreを更新
-        const postRef = db.collection('posts').doc(postId);
+        const collectionName = getCollectionName('posts');
+        const postRef = db.collection(collectionName).doc(postId);
         
         if (isLiked) {
             // いいねを取り消し
@@ -1602,7 +1686,8 @@ async function toggleComments(postId) {
     
     if (!isVisible) {
         // コメントを表示する前に最新のコメントを取得
-        const doc = await db.collection('posts').doc(postId).get();
+        const collectionName = getCollectionName('posts');
+        const doc = await db.collection(collectionName).doc(postId).get();
         const post = doc.data();
         const commentsList = document.getElementById(`comments-list-${postId}`);
         
@@ -1636,7 +1721,8 @@ async function addComment(postId) {
     }
     
     try {
-        const postRef = db.collection('posts').doc(postId);
+        const collectionName = getCollectionName('posts');
+        const postRef = db.collection(collectionName).doc(postId);
         await postRef.update({
             comments: firebase.firestore.FieldValue.arrayUnion({
                 userId: currentUser.uid,
@@ -1683,7 +1769,8 @@ async function deletePost(postId) {
     }
     
     try {
-        await db.collection('posts').doc(postId).delete();
+        const collectionName = getCollectionName('posts');
+        await db.collection(collectionName).doc(postId).delete();
         alert('投稿を削除しました');
     } catch (error) {
         alert('削除に失敗しました');
@@ -1698,7 +1785,8 @@ async function deleteComment(postId, commentIndex) {
     }
     
     try {
-        const postRef = db.collection('posts').doc(postId);
+        const collectionName = getCollectionName('posts');
+        const postRef = db.collection(collectionName).doc(postId);
         const doc = await postRef.get();
         const post = doc.data();
         
@@ -1747,15 +1835,24 @@ async function deleteComment(postId, commentIndex) {
 // ランキングの読み込み（キャッシュ対応）
 async function loadRanking(forceRefresh = false) {
     const now = Date.now();
+    const mode = currentMode;
     
     // キャッシュが有効な場合はキャッシュを使用
-    if (!forceRefresh && rankingCache && rankingCacheTime && (now - rankingCacheTime < CACHE_DURATION)) {
-        renderRanking(rankingCache);
+    if (!forceRefresh && rankingCache[mode] && rankingCacheTime[mode] && (now - rankingCacheTime[mode] < CACHE_DURATION)) {
+        console.log(`[loadRanking] キャッシュを使用 (${mode}モード)`);
+        renderRanking(rankingCache[mode]);
         return;
     }
     
-    // Firestoreからデータを取得
-    const snapshot = await db.collection('posts').get();
+    try {
+        // Firestoreからデータを取得
+        const collectionName = getCollectionName('posts');
+        console.log(`[loadRanking] Firestoreから取得中: ${collectionName} (${mode}モード)`);
+        
+        const snapshot = await db.collection(collectionName).get();
+        
+        console.log(`[loadRanking] ${snapshot.size}件の投稿からランキング集計 (${mode}モード)`);
+        
     const rankings = {};
     
     // 種目ごとに最高記録を集計
@@ -1779,11 +1876,17 @@ async function loadRanking(forceRefresh = false) {
     });
     
     // キャッシュを更新
-    rankingCache = rankings;
-    rankingCacheTime = now;
+    rankingCache[mode] = rankings;
+    rankingCacheTime[mode] = now;
+    
+        console.log(`[loadRanking] キャッシュ更新完了 (${mode}モード)`);
     
     // レンダリング
     await renderRanking(rankings);
+    } catch (error) {
+        console.error(`[loadRanking] エラー (${mode}モード):`, error);
+        rankingList.innerHTML = '<p style="text-align: center; color: #e74c3c;">ランキングの読み込みに失敗しました</p>';
+    }
 }
 
 // ランキングの表示
@@ -1844,7 +1947,8 @@ async function loadProgressChart() {
     
     try {
         // 全投稿を取得してクライアント側でフィルタリング（複合インデックス不要）
-        const snapshot = await db.collection('posts').get();
+        const collectionName = getCollectionName('posts');
+        const snapshot = await db.collection(collectionName).get();
         
         const labels = [];
         const data = [];
