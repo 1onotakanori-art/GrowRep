@@ -1400,8 +1400,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const tabName = btn.dataset.tab;
         
-        console.log('[タブ切り替え] タブがクリックされました:', tabName);
-        
         // すべてのタブボタンとコンテンツから active を削除
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -1413,26 +1411,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         
         // インラインスタイルのdisplay: noneを削除（タイマータブ対応）
         targetTab.style.display = '';
-        
-        console.log('[タブ切り替え] タブ表示完了:', {
-            tabName,
-            targetTab,
-            isActive: targetTab.classList.contains('active'),
-            displayStyle: targetTab.style.display,
-            computedDisplay: window.getComputedStyle(targetTab).display
-        });
-        
-        // タイマータブの場合、ボタンの状態を確認
-        if (tabName === 'timer') {
-            console.log('[タイマータブ] 表示されました。ボタンの状態を確認:', {
-                startBtn: timerStartBtn,
-                stopBtn: timerStopBtn,
-                resetBtn: timerResetBtn,
-                startBtnVisible: timerStartBtn?.offsetParent !== null,
-                stopBtnVisible: timerStopBtn?.offsetParent !== null,
-                resetBtnVisible: timerResetBtn?.offsetParent !== null
-            });
-        }
         
         // 掲示板タブの場合はキャッシュを使用
         if (tabName === 'board') {
@@ -2275,14 +2253,7 @@ function updateTimerDisplay() {
 }
 
 function startTimer() {
-    console.log('[3秒タイマー] startTimer関数が呼ばれました');
-    
-    if (timerInterval) {
-        console.log('[3秒タイマー] 既に実行中のため、スキップします');
-        return; // 既に実行中の場合は何もしない
-    }
-    
-    console.log('[3秒タイマー] スタート');
+    if (timerInterval) return; // 既に実行中の場合は何もしない
     
     // AudioContextを再開（ブラウザのオートプレイポリシー対応）
     if (audioContext && audioContext.state === 'suspended') {
@@ -2319,8 +2290,6 @@ function startTimer() {
 function stopTimer() {
     if (!timerInterval) return;
     
-    console.log('[3秒タイマー] ストップ');
-    
     clearInterval(timerInterval);
     timerInterval = null;
     
@@ -2330,8 +2299,6 @@ function stopTimer() {
 }
 
 function resetTimer() {
-    console.log('[3秒タイマー] リセット');
-    
     stopTimer();
     
     currentCount = 0;
@@ -2344,48 +2311,13 @@ function resetTimer() {
 }
 
 // タイマーボタンのイベントリスナー
-console.log('[3秒タイマー] 要素の取得確認:', {
-    timerCount: timerCount,
-    timerElapsed: timerElapsed,
-    timerStartBtn: timerStartBtn,
-    timerStopBtn: timerStopBtn,
-    timerResetBtn: timerResetBtn
-});
-
-console.log('[3秒タイマー] ボタン要素の詳細:', {
-    startBtnElement: timerStartBtn,
-    startBtnId: timerStartBtn?.id,
-    startBtnClass: timerStartBtn?.className,
-    startBtnDisabled: timerStartBtn?.disabled,
-    startBtnVisible: timerStartBtn?.offsetParent !== null
-});
-
 if (timerStartBtn && timerStopBtn && timerResetBtn) {
-    console.log('[3秒タイマー] イベントリスナーを設定します');
-    
-    timerStartBtn.addEventListener('click', (e) => {
-        console.log('[3秒タイマー] スタートボタンがクリックされました', e);
-        startTimer();
-    });
-    
-    timerStopBtn.addEventListener('click', (e) => {
-        console.log('[3秒タイマー] ストップボタンがクリックされました', e);
-        stopTimer();
-    });
-    
-    timerResetBtn.addEventListener('click', (e) => {
-        console.log('[3秒タイマー] リセットボタンがクリックされました', e);
-        resetTimer();
-    });
+    timerStartBtn.addEventListener('click', startTimer);
+    timerStopBtn.addEventListener('click', stopTimer);
+    timerResetBtn.addEventListener('click', resetTimer);
     
     // タイマーの初期表示を設定
     updateTimerDisplay();
-    
-    console.log('[3秒タイマー] イベントリスナー設定完了');
 } else {
-    console.error('[3秒タイマー] ボタン要素が見つかりません', {
-        startBtn: !!timerStartBtn,
-        stopBtn: !!timerStopBtn,
-        resetBtn: !!timerResetBtn
-    });
+    console.error('[3秒タイマー] ボタン要素が見つかりません');
 }
