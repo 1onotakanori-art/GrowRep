@@ -1282,6 +1282,40 @@ header h1 {
     margin-bottom: 0;
 }
 
+.timer-settings {
+    background: #f8f9fa;
+    padding: 20px;
+    margin-bottom: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.timer-settings label {
+    font-weight: 600;
+    color: #333;
+}
+
+.timer-settings input[type="number"] {
+    width: 80px;
+    padding: 8px 12px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    font-size: 16px;
+    text-align: center;
+}
+
+.timer-settings input[type="number"]:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.timer-settings input[type="number"]:disabled {
+    background: #e9ecef;
+    cursor: not-allowed;
+}
+
 .timer-container {
     background: white;
     border-radius: 12px;
@@ -1299,7 +1333,8 @@ header h1 {
 }
 
 .count-display,
-.time-display {
+.time-display,
+.countdown-display {
     flex: 1;
     text-align: center;
     padding: 30px;
@@ -1308,8 +1343,13 @@ header h1 {
     box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
 }
 
+.countdown-display {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
 .count-label,
-.time-label {
+.time-label,
+.countdown-label {
     display: block;
     color: rgba(255, 255, 255, 0.9);
     font-size: 14px;
@@ -1320,7 +1360,8 @@ header h1 {
 }
 
 .count-number,
-.time-number {
+.time-number,
+.countdown-number {
     display: block;
     color: white;
     font-size: 48px;

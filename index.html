@@ -207,10 +207,15 @@
 
         <!-- 3秒タイマータブ -->
         <div id="timer-tab" class="tab-content" data-mode="3sec-rule">
-            <h2>⏱️ 3秒タイマー</h2>
+            <h2>⏱️ インターバルタイマー</h2>
             <div class="timer-description">
-                <p>3秒に1回音が鳴り、カウントが進みます</p>
+                <p>指定した秒数ごとに大きな音が鳴り、回数がカウントされます</p>
                 <p>音に合わせてトレーニングを行ってください</p>
+            </div>
+            
+            <div class="timer-settings">
+                <label for="interval-input">インターバル（秒）:</label>
+                <input type="number" id="interval-input" min="1" max="60" value="3" />
             </div>
             
             <div class="timer-container">
@@ -222,6 +227,10 @@
                     <div class="time-display">
                         <span class="time-label">経過時間</span>
                         <span id="timer-elapsed" class="time-number">0:00</span>
+                    </div>
+                    <div class="countdown-display" id="countdown-display" style="display: none;">
+                        <span class="countdown-label">準備時間</span>
+                        <span id="countdown-value" class="countdown-number">10</span>
                     </div>
                 </div>
                 

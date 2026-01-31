@@ -2182,28 +2182,29 @@ updateMultipliersBtn.addEventListener('click', async () => {
 });
 
 // ====================================================================
-// 3秒タイマー機能
+// インターバルタイマー機能
 // ====================================================================
 
 let timerInterval = null;
 let timerStartTime = null;
 let currentCount = 0;
 let elapsedSeconds = 0;
+let intervalSeconds = 3; // デフォルト3秒
+let isPreparationPhase = false;
+let preparationCountdown = 10;
 
 // Web Audio APIでビープ音を生成
 let audioContext;
 try {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
 } catch (error) {
-    console.error('[3秒タイマー] Web Audio API not supported:', error);
+    console.error('[タイマー] Web Audio API not supported:', error);
     audioContext = null;
 }
 
-function playBeep() {
-    if (!audioContext) {
-        console.warn('[3秒タイマー] AudioContext is not available');
-        return;
-    }
+// 毎秒の小さな音（チック音）
+function playTickSound() {
+    if (!audioContext) return;
     
     try {
         const oscillator = audioContext.createOscillator();
@@ -2212,33 +2213,76 @@ function playBeep() {
         oscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
         
-        // ビープ音の設定
-        oscillator.frequency.value = 880; // A5音（高めの音）
+        // 低めの短い音
+        oscillator.frequency.value = 440; // A4音
         oscillator.type = 'sine';
         
-        // 音量の設定（フェードアウト）
+        // 小さな音量
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.05);
+    } catch (error) {
+        console.error('[タイマー] チック音の再生に失敗:', error);
+    }
+}
+
+// インターバルごとの大きな音（ビープ音）
+function playBeepSound() {
+    if (!audioContext) return;
+    
+    try {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // 高めの大きな音
+        oscillator.frequency.value = 880; // A5音
+        oscillator.type = 'sine';
+        
+        // 大きな音量
+        gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.2);
+        
+        // 視覚的フィードバック
+        const countDisplay = document.querySelector('.count-display');
+        if (countDisplay) {
+            countDisplay.classList.add('beep');
+            setTimeout(() => countDisplay.classList.remove('beep'), 300);
+        }
+    } catch (error) {
+        console.error('[タイマー] ビープ音の再生に失敗:', error);
+    }
+}
+
+// 準備時間のカウントダウン音
+function playCountdownSound() {
+    if (!audioContext) return;
+    
+    try {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // 中程度の音
+        oscillator.frequency.value = 660; // E5音
+        oscillator.type = 'sine';
+        
         gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
         
-        // 音を再生
         oscillator.start(audioContext.currentTime);
         oscillator.stop(audioContext.currentTime + 0.1);
-        
-        // 視覚的フィードバック（アニメーション）
-        const countDisplay = document.querySelector('.count-display');
-        const timeDisplay = document.querySelector('.time-display');
-        
-        if (countDisplay && timeDisplay) {
-            countDisplay.classList.add('beep');
-            timeDisplay.classList.add('beep');
-            
-            setTimeout(() => {
-                countDisplay.classList.remove('beep');
-                timeDisplay.classList.remove('beep');
-            }, 300);
-        }
     } catch (error) {
-        console.error('[3秒タイマー] ビープ音の再生に失敗:', error);
+        console.error('[タイマー] カウントダウン音の再生に失敗:', error);
     }
 }
 
@@ -2252,39 +2296,72 @@ function updateTimerDisplay() {
     timerElapsed.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+function updateCountdownDisplay() {
+    const countdownDisplay = document.getElementById('countdown-display');
+    const countdownValue = document.getElementById('countdown-value');
+    
+    if (isPreparationPhase) {
+        countdownDisplay.style.display = 'block';
+        countdownValue.textContent = preparationCountdown;
+    } else {
+        countdownDisplay.style.display = 'none';
+    }
+}
+
 function startTimer() {
     if (timerInterval) return; // 既に実行中の場合は何もしない
     
+    // インターバル設定を取得
+    const intervalInput = document.getElementById('interval-input');
+    intervalSeconds = parseInt(intervalInput.value) || 3;
+    
     // AudioContextを再開（ブラウザのオートプレイポリシー対応）
     if (audioContext && audioContext.state === 'suspended') {
-        audioContext.resume().then(() => {
-            console.log('[3秒タイマー] AudioContext再開');
-        }).catch(error => {
-            console.error('[3秒タイマー] AudioContext再開失敗:', error);
+        audioContext.resume().catch(error => {
+            console.error('[タイマー] AudioContext再開失敗:', error);
         });
     }
-    
-    // 初回のビープ音
-    playBeep();
-    currentCount++;
-    updateTimerDisplay();
     
     // ボタンの状態を更新
     timerStartBtn.disabled = true;
     timerStopBtn.disabled = false;
+    intervalInput.disabled = true;
     
-    // タイマー開始
-    timerStartTime = Date.now();
+    // 準備時間のカウントダウン開始
+    isPreparationPhase = true;
+    preparationCountdown = 10;
+    updateCountdownDisplay();
     
     timerInterval = setInterval(() => {
-        // 3秒経過したのでビープ音を鳴らす
-        playBeep();
-        currentCount++;
-        elapsedSeconds += 3;
-        updateTimerDisplay();
-        
-        console.log(`[3秒タイマー] カウント: ${currentCount}, 経過時間: ${elapsedSeconds}秒`);
-    }, 3000); // 3秒間隔
+        if (isPreparationPhase) {
+            // 準備時間のカウントダウン
+            playCountdownSound();
+            preparationCountdown--;
+            updateCountdownDisplay();
+            
+            if (preparationCountdown <= 0) {
+                // 準備時間終了、メインタイマー開始
+                isPreparationPhase = false;
+                updateCountdownDisplay();
+                elapsedSeconds = 0;
+                currentCount = 0;
+                updateTimerDisplay();
+            }
+        } else {
+            // メインタイマー
+            elapsedSeconds++;
+            
+            // インターバルごとに回数をカウント
+            if (elapsedSeconds % intervalSeconds === 0) {
+                playBeepSound(); // 大きな音
+                currentCount++;
+            } else {
+                playTickSound(); // 小さな音
+            }
+            
+            updateTimerDisplay();
+        }
+    }, 1000); // 1秒間隔
 }
 
 function stopTimer() {
@@ -2292,10 +2369,16 @@ function stopTimer() {
     
     clearInterval(timerInterval);
     timerInterval = null;
+    isPreparationPhase = false;
     
     // ボタンの状態を更新
     timerStartBtn.disabled = false;
     timerStopBtn.disabled = true;
+    
+    const intervalInput = document.getElementById('interval-input');
+    intervalInput.disabled = false;
+    
+    updateCountdownDisplay();
 }
 
 function resetTimer() {
@@ -2303,7 +2386,9 @@ function resetTimer() {
     
     currentCount = 0;
     elapsedSeconds = 0;
+    preparationCountdown = 10;
     updateTimerDisplay();
+    updateCountdownDisplay();
     
     // ボタンの状態を更新
     timerStartBtn.disabled = false;
