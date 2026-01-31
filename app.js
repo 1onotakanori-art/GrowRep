@@ -2194,35 +2194,49 @@ let isPreparationPhase = false;
 let preparationCountdown = 10;
 
 // Web Audio APIでビープ音を生成
-let audioContext;
-try {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-} catch (error) {
-    console.error('[タイマー] Web Audio API not supported:', error);
-    audioContext = null;
+let audioContext = null;
+
+function initAudioContext() {
+    if (!audioContext) {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            console.log('[タイマー] AudioContext初期化完了:', audioContext.state);
+        } catch (error) {
+            console.error('[タイマー] Web Audio API not supported:', error);
+            audioContext = null;
+        }
+    }
+    return audioContext;
 }
 
 // 毎秒の小さな音（チック音）
 function playTickSound() {
-    if (!audioContext) return;
+    const ctx = initAudioContext();
+    if (!ctx) return;
     
     try {
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+        // AudioContextがsuspendedの場合はスキップ
+        if (ctx.state === 'suspended') {
+            console.log('[タイマー] AudioContext is suspended, skipping tick sound');
+            return;
+        }
+        
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
         
         oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+        gainNode.connect(ctx.destination);
         
         // 低めの短い音
         oscillator.frequency.value = 440; // A4音
         oscillator.type = 'sine';
         
         // 小さな音量
-        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+        gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
         
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.05);
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.05);
     } catch (error) {
         console.error('[タイマー] チック音の再生に失敗:', error);
     }
@@ -2230,25 +2244,31 @@ function playTickSound() {
 
 // インターバルごとの大きな音（ビープ音）
 function playBeepSound() {
-    if (!audioContext) return;
+    const ctx = initAudioContext();
+    if (!ctx) return;
     
     try {
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+        if (ctx.state === 'suspended') {
+            console.log('[タイマー] AudioContext is suspended, skipping beep sound');
+            return;
+        }
+        
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
         
         oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+        gainNode.connect(ctx.destination);
         
         // 高めの大きな音
         oscillator.frequency.value = 880; // A5音
         oscillator.type = 'sine';
         
         // 大きな音量
-        gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
         
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.2);
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.2);
         
         // 視覚的フィードバック
         const countDisplay = document.querySelector('.count-display');
@@ -2263,24 +2283,30 @@ function playBeepSound() {
 
 // 準備時間のカウントダウン音
 function playCountdownSound() {
-    if (!audioContext) return;
+    const ctx = initAudioContext();
+    if (!ctx) return;
     
     try {
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+        if (ctx.state === 'suspended') {
+            console.log('[タイマー] AudioContext is suspended, skipping countdown sound');
+            return;
+        }
+        
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
         
         oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+        gainNode.connect(ctx.destination);
         
         // 中程度の音
         oscillator.frequency.value = 660; // E5音
         oscillator.type = 'sine';
         
-        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
         
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.1);
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.1);
     } catch (error) {
         console.error('[タイマー] カウントダウン音の再生に失敗:', error);
     }
@@ -2312,13 +2338,19 @@ function updateTimerDisplay() {
 function startTimer() {
     if (timerInterval) return; // 既に実行中の場合は何もしない
     
+    console.log('[タイマー] スタートボタンが押されました');
+    
     // インターバル設定を取得
     const intervalInput = document.getElementById('interval-input');
     intervalSeconds = parseInt(intervalInput.value) || 3;
     
-    // AudioContextを再開（ブラウザのオートプレイポリシー対応）
-    if (audioContext && audioContext.state === 'suspended') {
-        audioContext.resume().catch(error => {
+    // AudioContextを初期化して再開（ブラウザのオートプレイポリシー対応）
+    const ctx = initAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+        console.log('[タイマー] AudioContextを再開します:', ctx.state);
+        ctx.resume().then(() => {
+            console.log('[タイマー] AudioContext再開成功:', ctx.state);
+        }).catch(error => {
             console.error('[タイマー] AudioContext再開失敗:', error);
         });
     }
@@ -2332,6 +2364,8 @@ function startTimer() {
     isPreparationPhase = true;
     preparationCountdown = 10;
     updateTimerDisplay();
+    
+    console.log('[タイマー] setIntervalを開始します');
     
     timerInterval = setInterval(() => {
         if (isPreparationPhase) {
