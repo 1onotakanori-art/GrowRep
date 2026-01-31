@@ -17,6 +17,11 @@ function escapeHtml(str) {
 }
 
 // ====================================================================
+// モード管理
+// ====================================================================
+let currentMode = 'prototype'; // 'prototype' または '3sec-rule'
+
+// ====================================================================
 // DOM要素の取得
 // ====================================================================
 const loginContainer = document.getElementById('login-container');
@@ -64,6 +69,16 @@ const userCheckboxes = document.getElementById('user-checkboxes');
 const scoreChart = document.getElementById('score-chart');
 const totalScoresList = document.getElementById('total-scores-list');
 const scoreError = document.getElementById('score-error');
+
+// モード切り替え関連
+const modeSelect = document.getElementById('mode-select');
+
+// 3秒タイマー関連
+const timerCount = document.getElementById('timer-count');
+const timerElapsed = document.getElementById('timer-elapsed');
+const timerStartBtn = document.getElementById('timer-start-btn');
+const timerStopBtn = document.getElementById('timer-stop-btn');
+const timerResetBtn = document.getElementById('timer-reset-btn');
 
 // プロフィールモーダル関連
 const profileModal = document.getElementById('profile-modal');
@@ -908,6 +923,10 @@ auth.onAuthStateChanged(async (user) => {
         
         loginContainer.style.display = 'none';
         mainContainer.style.display = 'block';
+        
+        // モードに応じたタブ表示を初期化
+        updateTabsForMode();
+        
         loadPosts();
         loadRanking();
     } else {
@@ -1176,6 +1195,75 @@ updatePasswordBtn.addEventListener('click', async () => {
         }
     }
 });
+
+// ====================================================================
+// モード切り替え機能
+// ====================================================================
+
+/**
+ * モードに応じてタブの表示/非表示を制御
+ */
+function updateTabsForMode() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    tabButtons.forEach(btn => {
+        const btnMode = btn.dataset.mode;
+        if (btnMode) {
+            // data-mode属性がある場合、そのモードでのみ表示
+            btn.style.display = btnMode === currentMode ? 'block' : 'none';
+        } else {
+            // data-mode属性がない場合、常に表示
+            btn.style.display = 'block';
+        }
+    });
+    
+    tabContents.forEach(content => {
+        const contentMode = content.dataset.mode;
+        if (contentMode && contentMode !== currentMode) {
+            // 表示中のタブがモード専用で、現在のモードと一致しない場合は非表示
+            content.classList.remove('active');
+        }
+    });
+    
+    // 現在表示中のタブがモード専用かつ表示できない場合、投稿タブに戻る
+    const activeTab = document.querySelector('.tab-content.active');
+    if (activeTab) {
+        const activeMode = activeTab.dataset.mode;
+        if (activeMode && activeMode !== currentMode) {
+            // 投稿タブをアクティブに
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector('.tab-btn[data-tab="post"]').classList.add('active');
+            document.getElementById('post-tab').classList.add('active');
+        }
+    }
+}
+
+/**
+ * モード変更処理
+ */
+function changeMode(newMode) {
+    if (currentMode === newMode) return;
+    
+    console.log(`モード切り替え: ${currentMode} → ${newMode}`);
+    currentMode = newMode;
+    
+    // タブの表示を更新
+    updateTabsForMode();
+    
+    // データをリフレッシュ
+    if (currentUser) {
+        loadPosts(true);  // 強制リフレッシュ
+        loadRanking(true);  // 強制リフレッシュ
+        
+        // 得点タブの場合も再読み込み
+        const activeTab = document.querySelector('.tab-content.active');
+        if (activeTab && activeTab.id === 'score-tab') {
+            loadUserCheckboxes(true);
+        }
+    }
+}
 
 // ====================================================================
 // タブ切り替え
@@ -1868,6 +1956,11 @@ document.getElementById('scoring-method').addEventListener('change', async () =>
         .filter(cb => cb.checked)
         .map(cb => cb.value);
     await loadScoreChart(selectedIds);
+});
+
+// モード切り替え
+modeSelect.addEventListener('change', (e) => {
+    changeMode(e.target.value);
 });
 
 // ====================================================================
