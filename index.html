@@ -28,12 +28,23 @@
     <!-- メイン画面 -->
     <div id="main-container" class="container" style="display: none;">
         <header>
-            <h1>💪 GrowRep 🏋️</h1>
-            <div class="user-info">
-                <div id="user-name" class="user-name-box"></div>
-                <button id="refresh-all-btn" class="header-btn">🔄 更新</button>
-                <button id="profile-btn" class="header-btn">👤 プロフィール</button>
-                <button id="logout-btn" class="header-btn">ログアウト</button>
+            <div class="header-top">
+                <h1>💪 GrowRep 🏋️</h1>
+                <div class="mode-selector">
+                    <label for="mode-select">モード：</label>
+                    <select id="mode-select">
+                        <option value="prototype">プロトタイプ</option>
+                        <option value="3sec-rule">3秒ルール</option>
+                    </select>
+                </div>
+            </div>
+            <div class="header-bottom">
+                <div class="user-info">
+                    <div id="user-name" class="user-name-box"></div>
+                    <button id="refresh-all-btn" class="header-btn">🔄 更新</button>
+                    <button id="profile-btn" class="header-btn">👤 プロフィール</button>
+                    <button id="logout-btn" class="header-btn">ログアウト</button>
+                </div>
             </div>
         </header>
 
@@ -44,6 +55,7 @@
             <button class="tab-btn" data-tab="progress">成長グラフ</button>
             <button class="tab-btn" data-tab="rules">ルール</button>
             <button class="tab-btn" data-tab="score">総合得点</button>
+            <button class="tab-btn" data-tab="timer" data-mode="3sec-rule" style="display: none;">⏱️ 3秒タイマー</button>
         </nav>
 
         <!-- 投稿タブ -->
@@ -185,6 +197,34 @@
             </div>
             
             <p id="score-error" class="error-message"></p>
+        </div>
+
+        <!-- 3秒タイマータブ -->
+        <div id="timer-tab" class="tab-content" data-mode="3sec-rule" style="display: none;">
+            <h2>⏱️ 3秒タイマー</h2>
+            <div class="timer-description">
+                <p>3秒に1回音が鳴り、カウントが進みます</p>
+                <p>音に合わせてトレーニングを行ってください</p>
+            </div>
+            
+            <div class="timer-container">
+                <div class="timer-display">
+                    <div class="count-display">
+                        <span class="count-label">回数</span>
+                        <span id="timer-count" class="count-number">0</span>
+                    </div>
+                    <div class="time-display">
+                        <span class="time-label">経過時間</span>
+                        <span id="timer-elapsed" class="time-number">0:00</span>
+                    </div>
+                </div>
+                
+                <div class="timer-controls">
+                    <button id="timer-start-btn" class="timer-btn timer-start">▶️ スタート</button>
+                    <button id="timer-stop-btn" class="timer-btn timer-stop" disabled>⏸️ ストップ</button>
+                    <button id="timer-reset-btn" class="timer-btn timer-reset">🔄 リセット</button>
+                </div>
+            </div>
         </div>
     </div>
 
