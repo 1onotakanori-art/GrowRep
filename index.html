@@ -33,8 +33,8 @@
                 <div class="mode-selector">
                     <label for="mode-select">モード：</label>
                     <select id="mode-select">
-                        <option value="prototype">プロトタイプ</option>
-                        <option value="3sec-rule">3秒ルール</option>
+                        <option value="normal">ノーマルモード</option>
+                        <option value="interval">インターバルモード</option>
                     </select>
                 </div>
             </div>
@@ -55,7 +55,7 @@
             <button class="tab-btn" data-tab="progress">成長グラフ</button>
             <button class="tab-btn" data-tab="rules">ルール</button>
             <button class="tab-btn" data-tab="score">総合得点</button>
-            <button class="tab-btn" data-tab="timer" data-mode="3sec-rule" style="display: none;">⏱️ 3秒タイマー</button>
+            <button class="tab-btn" data-tab="timer" data-mode="interval" style="display: none;">⏱️ インターバルタイマー</button>
         </nav>
 
         <!-- 投稿タブ -->
@@ -206,7 +206,7 @@
         </div>
 
         <!-- 3秒タイマータブ -->
-        <div id="timer-tab" class="tab-content" data-mode="3sec-rule">
+        <div id="timer-tab" class="tab-content" data-mode="interval">
             <h2>⏱️ インターバルタイマー</h2>
             <div class="timer-description">
                 <p>指定した秒数ごとに大きな音が鳴り、回数がカウントされます</p>

@@ -33,8 +33,8 @@ service cloud.firestore {
                     && request.auth.uid == resource.data.userId;
     }
     
-    // posts_3sec コレクション（3秒ルールモード用）
-    match /posts_3sec/{postId} {
+    // posts_interval コレクション（インターバルモード用）
+    match /posts_interval/{postId} {
       // 認証済みユーザーのみ読み取り可能
       allow read: if request.auth != null;
       
@@ -63,8 +63,8 @@ service cloud.firestore {
       allow delete: if false;
     }
     
-    // settings_3sec コレクション（3秒ルールモード用）
-    match /settings_3sec/{docId} {
+    // settings_interval コレクション（インターバルモード用）
+    match /settings_interval/{docId} {
       // 認証済みユーザーのみ読み取り可能
       allow read: if request.auth != null;
       
