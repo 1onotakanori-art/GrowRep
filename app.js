@@ -978,7 +978,7 @@ auth.onAuthStateChanged(async (user) => {
         if (currentMode === 'interval') {
             document.body.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
         } else {
-            document.body.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            document.body.style.background = 'linear-gradient(135deg, #667eea 0%, #f093fb 0%)';
         }
         
         // モードに応じたタブ表示を初期化
