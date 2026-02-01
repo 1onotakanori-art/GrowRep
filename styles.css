@@ -768,6 +768,10 @@ header h1 {
     margin-top: 5px;
 }
 
+.profile-section button:not(.close-modal) {
+    margin-top: 15px;
+}
+
 .profile-section .error-message {
     margin-top: 10px;
     padding: 10px;
