@@ -1465,11 +1465,11 @@ header h1 {
     font-size: 18px;
 }
 
-.mode-info.prototype {
+.mode-info.normal {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
-.mode-info.three-sec-rule {
+.mode-info.interval-mode {
     background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
 }
 

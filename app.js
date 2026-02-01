@@ -141,16 +141,16 @@ let rankingCacheTime = {
     interval: null
 };
 let scoreCache = {
-    prototype: null,
-    '3sec-rule': null
+    normal: null,
+    interval: null
 };
 let scoreCacheTime = {
-    prototype: null,
-    '3sec-rule': null
+    normal: null,
+    interval: null
 };
 let progressCache = {
-    prototype: {},
-    '3sec-rule': {}
+    normal: {},
+    interval: {}
 };  // 種目ごとにキャッシュ
 const CACHE_DURATION = 5 * 60 * 1000;  // キャッシュ有効期間: 5分
 
