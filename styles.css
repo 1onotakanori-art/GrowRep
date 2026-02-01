@@ -158,10 +158,10 @@ body {
 header {
     background: white;
     border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
+    padding: 15px 10px;
+    margin-bottom: 10px;
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
@@ -169,6 +169,43 @@ header {
 header h1 {
     color: #667eea;
     font-size: 2em;
+}
+
+/* モードセレクター */
+.mode-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.mode-selector label {
+    font-weight: 600;
+    color: #333;
+    font-size: 16px;
+    margin: 0;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    height: 38px;
+}
+
+.mode-selector select {
+    padding: 8px 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 16px;
+    cursor: pointer;
+    background: white;
+    color: #333;
+    height: 38px;
+    min-width: 180px;
+    transition: border-color 0.3s;
+}
+
+.mode-selector select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 /* ユーザー情報エリア */
@@ -1480,17 +1517,27 @@ header h1 {
     }
     
     .header-top {
-        flex-direction: column;
-        align-items: flex-start;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         gap: 15px;
-    }
-    
+        padding: 0 10px;  /* ← 左右のパディングを追加/調整 */
+}    
     .mode-selector {
         width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .mode-selector label {
+        height: auto;
+        margin-bottom: 5px;
     }
     
     .mode-selector select {
-        flex: 1;
+        width: 100%;
+        min-width: auto;
+        flex: none;
     }
     
     .timer-display {
