@@ -158,7 +158,7 @@ body {
 header {
     background: white;
     border-radius: 12px;
-    padding: 10px 15px;  /* 外側に余白 */
+    padding: 5px 10px;  /* 外側に余白 */
     margin-bottom: 10px;
     display: flex;
     flex-direction: column;
@@ -179,7 +179,7 @@ header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 20px;
+    gap: 10px;
 }
 
 header h1 {
@@ -823,11 +823,11 @@ header h1 {
     }
     
     .header-top {
-        padding: 15px 20px;
+        padding: 5px 0;
     }
     
     .header-bottom {
-        padding: 15px 20px;
+        padding: 5px 0;
         flex-direction: column;
         gap: 15px;
     }
@@ -1544,7 +1544,7 @@ header h1 {
 
 @media (max-width: 768px) {
     .mode-info {
-        padding: 10px 15px;
+        padding: 5px 5px;
         font-size: 13px;
     }
     
