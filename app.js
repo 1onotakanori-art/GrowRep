@@ -974,12 +974,8 @@ auth.onAuthStateChanged(async (user) => {
         // モードセレクターの値を現在のモードに同期
         modeSelect.value = currentMode;
         
-        // 背景色をモードに応じて設定
-        if (currentMode === 'interval') {
-            document.body.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
-        } else {
-            document.body.style.background = 'linear-gradient(135deg, #667eea 0%, #f093fb 0%)';
-        }
+        // 背景色クラスを設定
+        document.body.classList.add(`mode-${currentMode}`);
         
         // モードに応じたタブ表示を初期化
         updateTabsForMode();
@@ -1369,12 +1365,9 @@ function changeMode(newMode) {
     // モードセレクターの値を同期
     modeSelect.value = newMode;
     
-    // 背景色をモードに応じて変更
-    if (newMode === 'interval') {
-        document.body.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
-    } else {
-        document.body.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-    }
+    // 背景色クラスを切り替え（トランジション付き）
+    document.body.classList.remove('mode-normal', 'mode-interval');
+    document.body.classList.add(`mode-${newMode}`);
     
     // タブの表示を更新
     updateTabsForMode();

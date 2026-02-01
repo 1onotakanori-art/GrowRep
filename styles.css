@@ -1,3 +1,11 @@
+/* ====================================================================
+   CSSカスタムプロパティ（変数）定義
+   ==================================================================== */
+:root {
+    --mode-transition-duration: 2s;
+    --mode-transition-timing: ease;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -9,7 +17,26 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
     padding: 20px;
-    transition: background 0.6s ease;
+    position: relative;
+}
+
+/* インターバルモード用オーバーレイ（グラデーションアニメーション） */
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    opacity: 0;
+    transition: opacity var(--mode-transition-duration) var(--mode-transition-timing);
+    pointer-events: none;
+    z-index: -1;
+}
+
+body.mode-interval::before {
+    opacity: 1;
 }
 
 .container {
@@ -185,9 +212,31 @@ header {
 }
 
 header h1 {
-    color: #667eea;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
     font-size: 2em;
     margin: 0;
+    position: relative;
+}
+
+/* インターバルモード用の文字オーバーレイ */
+header h1::after {
+    content: 'GrowRep';
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    opacity: 0;
+    transition: opacity var(--mode-transition-duration) var(--mode-transition-timing);
+}
+
+body.mode-interval header h1::after {
+    opacity: 1;
 }
 
 /* モードセレクター */
@@ -1543,12 +1592,13 @@ header h1 {
 
 @media (max-width: 768px) {
     .mode-info {
-        padding: 5px 5px;
+        padding: 10px 5px;
         font-size: 13px;
     }
     
     .mode-selector {
-        width: 100%;
+        width: 50%;
+        padding: 2px 5px;
         flex-direction: column;
         align-items: stretch;
     }
