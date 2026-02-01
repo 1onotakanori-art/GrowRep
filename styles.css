@@ -158,17 +158,33 @@ body {
 header {
     background: white;
     border-radius: 12px;
-    padding: 15px 10px;
+    padding: 0;
     margin-bottom: 10px;
     display: flex;
-    justify-content: flex-start;
-    align-items: center;
+    flex-direction: column;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.header-top {
+    padding: 15px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.header-bottom {
+    padding: 15px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    border-top: 1px solid #e0e0e0;
 }
 
 header h1 {
     color: #667eea;
     font-size: 2em;
+    margin: 0;
 }
 
 /* モードセレクター */
@@ -193,7 +209,7 @@ header h1 {
     padding: 8px 12px;
     border: 2px solid #e0e0e0;
     border-radius: 6px;
-    font-size: 16px;
+    font-size: 12px;
     cursor: pointer;
     background: white;
     color: #333;
@@ -221,14 +237,14 @@ header h1 {
     background: #8192df;
     color: white;
     border: none;
-    border-radius: 8px;
+    border-radius: 16px;
     padding: 8px 16px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: bold;
     cursor: pointer;
     transition: all 0.3s;
     white-space: nowrap;
-    min-height: 38px;
+    min-height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -798,7 +814,25 @@ header h1 {
     
     header {
         flex-direction: column;
+    }
+    
+    .header-top {
+        padding: 15px 20px;
+    }
+    
+    .header-bottom {
+        padding: 15px 20px;
+        flex-direction: column;
         gap: 15px;
+    }
+    
+    .mode-selector {
+        width: 100%;
+    }
+    
+    .mode-selector select {
+        width: 100%;
+        min-width: auto;
     }
     
     .user-info {
@@ -807,9 +841,9 @@ header h1 {
     }
     
     .header-btn {
-        flex: 1 1 calc(33.333% - 6px);
+        flex: 1 1 calc(50% - 4px);
         max-width: none;
-        min-width: calc(33.333% - 6px);
+        min-width: calc(50% - 4px);
     }
     
     .modal-content {
@@ -1491,7 +1525,7 @@ header h1 {
 
 .mode-info::before {
     content: "ℹ️";
-    font-size: 18px;
+    font-size: 12px;
 }
 
 .mode-info.normal {
@@ -1508,13 +1542,6 @@ header h1 {
         font-size: 13px;
     }
     
-    .header-top {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 15px;
-        padding: 0 10px;  /* ← 左右のパディングを追加/調整 */
-}    
     .mode-selector {
         width: 100%;
         flex-direction: column;
