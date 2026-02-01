@@ -218,7 +218,6 @@ header h1 {
     height: 38px;
     min-width: 180px;
     transition: border-color 0.3s;
-    -webkit-appearance: none;
     -webkit-border-radius: 6px;
 }
 
@@ -257,7 +256,6 @@ header h1 {
     overflow: hidden;
     text-overflow: ellipsis;
     -webkit-border-radius: 8px;
-    -webkit-appearance: none;
 }
 
 /* プロフィールボタン（白色） */
@@ -265,7 +263,6 @@ header h1 {
     background: white;
     color: #333;
     border: 1px solid #e0e0e0;
-    -webkit-border-radius: 8px;
 }
 
 .header-btn-profile:hover {
