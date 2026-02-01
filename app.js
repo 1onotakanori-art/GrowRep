@@ -45,7 +45,7 @@ const profileBtn = document.getElementById('profile-btn');
 const emailInput = document.getElementById('email');
 const passwordInput = document.getElementById('password');
 const authError = document.getElementById('auth-error');
-const userName = document.getElementById('user-name');
+// const userName = document.getElementById('user-name');  // 削除
 const submitPostBtn = document.getElementById('submit-post-btn');
 const exerciseType = document.getElementById('exercise-type');
 const exerciseValue = document.getElementById('exercise-value');
@@ -961,12 +961,12 @@ auth.onAuthStateChanged(async (user) => {
             currentUserData = await getUserData(user.uid);
         }
         
-        // ユーザー名を表示（メールアドレスと同じ場合は未設定と表示）
+        // ユーザー名をプロフィールボタンに表示
+        let displayName = user.email;
         if (currentUserData.userName && currentUserData.userName !== user.email) {
-            userName.textContent = currentUserData.userName;
-        } else {
-            userName.textContent = user.email + ' (ユーザー名未設定)';
+            displayName = currentUserData.userName;
         }
+        profileBtn.textContent = '👤 ' + displayName;
         
         loginContainer.style.display = 'none';
         mainContainer.style.display = 'block';
