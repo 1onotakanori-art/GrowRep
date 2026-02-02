@@ -2208,6 +2208,36 @@ let preparationCountdown = 10;
 // Web Audio APIでビープ音を生成
 let audioContext = null;
 
+// ====================================================================
+// タイマー音声設定
+// ====================================================================
+// マスターボリューム（すべての音に適用）
+let masterVolume = 1.0; // 0.0 ~ 1.0
+
+// 個別の音量調整（それぞれの音の種類）
+let tickSoundVolume = 1.0;      // チック音（毎秒の小さな音）
+let beepSoundVolume = 1.0;      // ビープ音（インターバルごとの大きな音）
+let countdownSoundVolume = 0.5; // カウントダウン音（準備時間の音）
+
+// 音の周波数設定
+let tickSoundFrequency = 440;      // チック音の周波数（Hz）
+let beepSoundFrequency = 880;      // ビープ音の周波数（Hz）
+let countdownSoundFrequency = 660; // カウントダウン音の周波数（Hz）
+
+// 音の長さ設定（秒）
+let tickSoundDuration = 0.3;      // チック音の長さ
+let beepSoundDuration = 0.6;       // ビープ音の長さ
+let countdownSoundDuration = 0.5;  // カウントダウン音の長さ
+
+/**
+ * 複合音量を計算（マスターボリューム × 個別ボリューム）
+ * @param {number} individualVolume - 個別音量
+ * @returns {number} 計算済み音量
+ */
+function getComputedVolume(individualVolume) {
+    return Math.max(0, Math.min(1, (individualVolume * masterVolume)));
+}
+
 function initAudioContext() {
     if (!audioContext) {
         try {
@@ -2239,16 +2269,19 @@ function playTickSound() {
         oscillator.connect(gainNode);
         gainNode.connect(ctx.destination);
         
-        // 低めの短い音
-        oscillator.frequency.value = 440; // A4音
+        // 周波数設定
+        oscillator.frequency.value = tickSoundFrequency;
         oscillator.type = 'sine';
         
-        // 小さな音量
-        gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
+        // 音量設定（マスターボリューム × 個別ボリューム）
+        const computedVolume = getComputedVolume(tickSoundVolume);
+        const startVolume = computedVolume;
+        const endVolume = Math.max(0.001, computedVolume / 10);
+        gainNode.gain.setValueAtTime(startVolume, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(endVolume, ctx.currentTime + tickSoundDuration);
         
         oscillator.start(ctx.currentTime);
-        oscillator.stop(ctx.currentTime + 0.05);
+        oscillator.stop(ctx.currentTime + tickSoundDuration);
     } catch (error) {
         console.error('[タイマー] チック音の再生に失敗:', error);
     }
@@ -2271,16 +2304,19 @@ function playBeepSound() {
         oscillator.connect(gainNode);
         gainNode.connect(ctx.destination);
         
-        // 高めの大きな音
-        oscillator.frequency.value = 880; // A5音
+        // 周波数設定
+        oscillator.frequency.value = beepSoundFrequency;
         oscillator.type = 'sine';
         
-        // 大きな音量
-        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        // 音量設定（マスターボリューム × 個別ボリューム）
+        const computedVolume = getComputedVolume(beepSoundVolume);
+        const startVolume = computedVolume;
+        const endVolume = Math.max(0.001, computedVolume / 50);
+        gainNode.gain.setValueAtTime(startVolume, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(endVolume, ctx.currentTime + beepSoundDuration);
         
         oscillator.start(ctx.currentTime);
-        oscillator.stop(ctx.currentTime + 0.2);
+        oscillator.stop(ctx.currentTime + beepSoundDuration);
         
         // 視覚的フィードバック
         const countDisplay = document.querySelector('.count-display');
@@ -2310,15 +2346,19 @@ function playCountdownSound() {
         oscillator.connect(gainNode);
         gainNode.connect(ctx.destination);
         
-        // 中程度の音
-        oscillator.frequency.value = 660; // E5音
+        // 周波数設定
+        oscillator.frequency.value = countdownSoundFrequency;
         oscillator.type = 'sine';
         
-        gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+        // 音量設定（マスターボリューム × 個別ボリューム）
+        const computedVolume = getComputedVolume(countdownSoundVolume);
+        const startVolume = computedVolume;
+        const endVolume = Math.max(0.001, computedVolume / 30);
+        gainNode.gain.setValueAtTime(startVolume, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(endVolume, ctx.currentTime + countdownSoundDuration);
         
         oscillator.start(ctx.currentTime);
-        oscillator.stop(ctx.currentTime + 0.1);
+        oscillator.stop(ctx.currentTime + countdownSoundDuration);
     } catch (error) {
         console.error('[タイマー] カウントダウン音の再生に失敗:', error);
     }
@@ -2390,7 +2430,8 @@ function startTimer() {
                 // 準備時間終了、メインタイマー開始
                 isPreparationPhase = false;
                 elapsedSeconds = 0;
-                currentCount = 0;
+                currentCount = 1;  // 0秒時点で1にセット
+                playBeepSound();    // 0秒時点の音を再生
                 updateTimerDisplay();
             }
         } else {

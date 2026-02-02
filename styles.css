@@ -1480,7 +1480,7 @@ body.mode-interval header h1::after {
 .time-number {
     display: block;
     color: white;
-    font-size: 48px;
+    font-size: 100px;
     font-weight: bold;
     font-family: 'Arial', sans-serif;
 }
