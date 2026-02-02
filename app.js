@@ -2227,7 +2227,7 @@ let countdownSoundFrequency = 660; // カウントダウン音の周波数（Hz�
 // 音の長さ設定（秒）
 let tickSoundDuration = 0.3;      // チック音の長さ
 let beepSoundDuration = 0.6;       // ビープ音の長さ
-let countdownSoundDuration = 0.5;  // カウントダウン音の長さ
+let countdownSoundDuration = 0.3;  // カウントダウン音の長さ
 
 /**
  * 複合音量を計算（マスターボリューム × 個別ボリューム）

@@ -1436,7 +1436,7 @@ body.mode-interval header h1::after {
 .timer-container {
     background: white;
     border-radius: 12px;
-    padding: 40px;
+    padding: 10px;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
     max-width: 600px;
     margin: 0 auto;
