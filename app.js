@@ -30,6 +30,9 @@ function getCollectionName(baseCollection) {
     if (currentMode === 'interval') {
         return `${baseCollection}_interval`;
     }
+    if (currentMode === 'free') {
+        return `${baseCollection}_free`;
+    }
     return baseCollection;
 }
 
@@ -126,31 +129,38 @@ let unsubscribePosts = null;  // 投稿リスナーの解除用
 // モード別キャッシュ
 let postsCache = {
     normal: null,
-    interval: null
+    interval: null,
+    free: null
 };
 let postsCacheTime = {
     normal: null,
-    interval: null
+    interval: null,
+    free: null
 };
 let rankingCache = {
     normal: null,
-    interval: null
+    interval: null,
+    free: null
 };
 let rankingCacheTime = {
     normal: null,
-    interval: null
+    interval: null,
+    free: null
 };
 let scoreCache = {
     normal: null,
-    interval: null
+    interval: null,
+    free: null
 };
 let scoreCacheTime = {
     normal: null,
-    interval: null
+    interval: null,
+    free: null
 };
 let progressCache = {
     normal: {},
-    interval: {}
+    interval: {},
+    free: {}
 };  // 種目ごとにキャッシュ
 const CACHE_DURATION = 5 * 60 * 1000;  // キャッシュ有効期間: 5分
 
@@ -975,6 +985,7 @@ auth.onAuthStateChanged(async (user) => {
         modeSelect.value = currentMode;
         
         // 背景色クラスを設定
+        document.body.classList.remove('mode-normal', 'mode-interval', 'mode-free');
         document.body.classList.add(`mode-${currentMode}`);
         
         // モードに応じたタブ表示を初期化
@@ -1275,12 +1286,17 @@ function updateTabsForMode() {
             btn.style.display = 'block';
         }
     });
-    
+
     tabContents.forEach(content => {
         const contentMode = content.dataset.mode;
         if (contentMode && contentMode !== currentMode) {
             // 表示中のタブがモード専用で、現在のモードと一致しない場合は非表示
-            content.classList.remove('active');
+            // ただしtimer-tabはintervalとfreeの両方で使用可能
+            if (content.id === 'timer-tab' && (currentMode === 'interval' || currentMode === 'free')) {
+                // timer-tabはintervalとfreeで共有
+            } else {
+                content.classList.remove('active');
+            }
         }
     });
     
@@ -1321,11 +1337,19 @@ function updateModeInfo() {
             progress: 'インターバルモードの成長記録',
             rules: 'インターバルモードのルールと倍率設定',
             score: 'インターバルモードの総合得点'
+        },
+        'free': {
+            post: 'フリーモードの記録を投稿（自由種目）',
+            board: 'フリーモードのデータのみ表示',
+            ranking: 'フリーモードのランキング表示',
+            progress: 'フリーモードの成長記録',
+            rules: 'フリーモードの種目管理（種目の追加・削除が可能）',
+            score: 'フリーモードの総合得点'
         }
     };
-    
+
     const currentTexts = modeTexts[currentMode];
-    const modeClass = currentMode === 'normal' ? 'normal' : 'interval-mode';
+    const modeClass = currentMode === 'normal' ? 'normal' : currentMode === 'interval' ? 'interval-mode' : 'free-mode';
     
     // 各タブのモード情報を更新
     const modeInfoElements = {
@@ -1349,7 +1373,7 @@ function updateModeInfo() {
 /**
  * モード変更処理
  */
-function changeMode(newMode) {
+async function changeMode(newMode) {
     if (currentMode === newMode) return;
     
     console.log(`モード切り替え: ${currentMode} → ${newMode}`);
@@ -1366,7 +1390,7 @@ function changeMode(newMode) {
     modeSelect.value = newMode;
     
     // 背景色クラスを切り替え（トランジション付き）
-    document.body.classList.remove('mode-normal', 'mode-interval');
+    document.body.classList.remove('mode-normal', 'mode-interval', 'mode-free');
     document.body.classList.add(`mode-${newMode}`);
     
     // タブの表示を更新
@@ -1380,18 +1404,30 @@ function changeMode(newMode) {
         try {
             console.log(`${newMode}モードのデータを読み込み中...`);
             console.log(`使用コレクション: ${getCollectionName('posts')}, ${getCollectionName('settings')}`);
-            
+
+            // フリーモードへの切り替え時はUI初期化
+            if (newMode === 'free') {
+                await initFreeMode();
+            } else {
+                // フリーモードから戻る場合はUI復元
+                restoreStandardExerciseUI();
+            }
+
             loadPosts(true);  // 強制リフレッシュ
             loadRanking(true);  // 強制リフレッシュ
-            
+
             // 得点タブの場合も再読み込み
             const activeTab = document.querySelector('.tab-content.active');
             if (activeTab && activeTab.id === 'score-tab') {
-                loadUserCheckboxes(true);
+                if (newMode === 'free') {
+                    loadFreeUserCheckboxes(true);
+                } else {
+                    loadUserCheckboxes(true);
+                }
             } else if (activeTab && activeTab.id === 'progress-tab') {
                 loadProgressChart();
             }
-            
+
             console.log(`${newMode}モードへの切り替え完了`);
         } catch (error) {
             console.error('モード切り替え時のデータ読み込みエラー:', error);
@@ -1439,14 +1475,22 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
             loadProgressChart();
         }
         
-        // ルールタブの場合は倍率をロード
+        // ルールタブの場合は倍率をロード（フリーモードでは種目管理UI）
         if (tabName === 'rules') {
-            loadMultipliers();
+            if (currentMode === 'free') {
+                updateFreeRulesTab();
+            } else {
+                loadMultipliers();
+            }
         }
         
         // 得点タブの場合はキャッシュを使用
         if (tabName === 'score') {
-            loadUserCheckboxes(false);  // キャッシュ使用
+            if (currentMode === 'free') {
+                loadFreeUserCheckboxes(false);
+            } else {
+                loadUserCheckboxes(false);
+            }
         }
         
         // タイマータブの場合は初期化
@@ -1485,7 +1529,11 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
                 await loadProgressChart();
                 break;
             case 'score-tab':
-                await loadUserCheckboxes(true);  // 強制更新
+                if (currentMode === 'free') {
+                    await loadFreeUserCheckboxes(true);
+                } else {
+                    await loadUserCheckboxes(true);
+                }
                 break;
             case 'board-tab':
                 await loadPosts(true);  // 掲示板を強制更新
@@ -1507,7 +1555,8 @@ submitPostBtn.addEventListener('click', async () => {
     const value = parseInt(exerciseValue.value);
     
     // 種目の検証
-    if (!type || !exerciseNames[type]) {
+    const validExercises = currentMode === 'free' ? freeExercises : exerciseNames;
+    if (!type || !validExercises[type]) {
         postError.textContent = '種目を選択してください';
         return;
     }
@@ -1642,7 +1691,8 @@ function createPostElement(postId, post, userName) {
     
     // XSS対策: エスケープ処理を適用
     const safeUserName = escapeHtml(userName);
-    const safeExerciseName = escapeHtml(exerciseNames[post.exerciseType] || post.exerciseType);
+    const currentExNames = currentMode === 'free' ? getFreeExerciseNames() : exerciseNames;
+    const safeExerciseName = escapeHtml(currentExNames[post.exerciseType] || post.exerciseType);
     const safeValue = parseInt(post.value) || 0; // 数値として扱う
     const safePostId = escapeHtml(postId);
     
@@ -1653,7 +1703,7 @@ function createPostElement(postId, post, userName) {
         </div>
         <div class="post-content">
             <span class="post-exercise">${safeExerciseName}</span>
-            <span class="post-value">${safeValue} ${post.exerciseType === 'Lsit' ? '秒' : post.exerciseType === 'pullup' ? 'セット' : '回'}</span>
+            <span class="post-value">${safeValue} ${currentMode === 'free' ? '' : (post.exerciseType === 'Lsit' ? '秒' : post.exerciseType === 'pullup' ? 'セット' : '回')}</span>
         </div>
         <div class="post-actions">
             <button class="like-btn ${isLiked ? 'liked' : ''}" onclick="toggleLike('${safePostId}')">
@@ -1940,18 +1990,24 @@ async function loadRanking(forceRefresh = false) {
         console.log(`[loadRanking] ${snapshot.size}件の投稿からランキング集計 (${mode}モード)`);
         
     const rankings = {};
-    
+
     // 種目ごとに最高記録を集計
-    Object.keys(exerciseNames).forEach(type => {
+    const currentExNames = currentMode === 'free' ? getFreeExerciseNames() : exerciseNames;
+    Object.keys(currentExNames).forEach(type => {
         rankings[type] = {};
     });
-    
+
     snapshot.forEach((doc) => {
         const post = doc.data();
         const type = post.exerciseType;
         const userId = post.userId;
         const value = post.value;
-        
+
+        // フリーモードでは動的に種目が増えるので、rankingsにキーがなければ追加
+        if (!rankings[type]) {
+            rankings[type] = {};
+        }
+
         if (!rankings[type][userId] || rankings[type][userId].value < value) {
             rankings[type][userId] = {
                 value: value,
@@ -1979,7 +2035,8 @@ async function loadRanking(forceRefresh = false) {
 async function renderRanking(rankings) {
     rankingList.innerHTML = '';
     
-    for (const type of Object.keys(exerciseNames)) {
+    const currentExNames = currentMode === 'free' ? getFreeExerciseNames() : exerciseNames;
+    for (const type of Object.keys(currentExNames)) {
         const categoryDiv = document.createElement('div');
         categoryDiv.className = 'ranking-category';
         
@@ -1996,7 +2053,7 @@ async function renderRanking(rankings) {
         
         const sorted = entries.sort((a, b) => b.value - a.value);
         
-        let rankingHTML = `<h3>${exerciseNames[type]}</h3>`;
+        let rankingHTML = `<h3>${currentExNames[type] || type}</h3>`;
         
         if (sorted.length === 0) {
             rankingHTML += '<p style="color: #999;">まだ記録がありません</p>';
@@ -2016,7 +2073,7 @@ async function renderRanking(rankings) {
                     <div class="ranking-item">
                         <div class="ranking-position ${positionClass}">${currentRank}</div>
                         <div class="ranking-user">${escapeHtml(data.userName)}</div>
-                        <div class="ranking-value">${data.value} ${type === 'Lsit' ? '秒' : type === 'pullup' ? 'セット' : '回'}</div>
+                        <div class="ranking-value">${data.value} ${currentMode === 'free' ? '' : (type === 'Lsit' ? '秒' : type === 'pullup' ? 'セット' : '回')}</div>
                     </div>
                 `;
             });
@@ -2056,20 +2113,20 @@ async function loadProgressChart() {
         // タイムスタンプでソート
         userPosts.sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
         
-        // ラベルとデータを作成
+        // データポイントを {x: Date, y: value} 形式で作成
+        const chartData = [];
         userPosts.forEach(post => {
             const date = new Date(post.timestamp.toDate());
-            labels.push(date.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' }));
-            data.push(post.value);
+            chartData.push({ x: date, y: post.value });
         });
-        
+
         // 既存のチャートを破棄
         if (myChart) {
             myChart.destroy();
         }
-        
+
         // データがない場合のメッセージ
-        if (data.length === 0) {
+        if (chartData.length === 0) {
             const ctx = progressChart.getContext('2d');
             ctx.clearRect(0, 0, progressChart.width, progressChart.height);
             ctx.font = '16px Arial';
@@ -2078,16 +2135,15 @@ async function loadProgressChart() {
             ctx.fillText('この種目の記録がまだありません', progressChart.width / 2, progressChart.height / 2);
             return;
         }
-        
-        // 新しいチャートを作成
+
+        // 新しいチャートを作成（time scaleで実際の日付間隔を反映）
         const ctx = progressChart.getContext('2d');
         myChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: labels,
                 datasets: [{
-                    label: exerciseNames[selectedType],
-                    data: data,
+                    label: (currentMode === 'free' ? (freeExercises[selectedType]?.name || selectedType) : exerciseNames[selectedType]),
+                    data: chartData,
                     borderColor: '#667eea',
                     backgroundColor: 'rgba(102, 126, 234, 0.1)',
                     tension: 0.4,
@@ -2107,10 +2163,18 @@ async function loadProgressChart() {
                         beginAtZero: true,
                         title: {
                             display: true,
-                            text: selectedType === 'Lsit' ? '秒数' : selectedType === 'pullup' ? 'セット数' : '回数'
+                            text: currentMode === 'free' ? '記録' : (selectedType === 'Lsit' ? '秒数' : selectedType === 'pullup' ? 'セット数' : '回数')
                         }
                     },
                     x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day',
+                            displayFormats: {
+                                day: 'M/d'
+                            },
+                            tooltipFormat: 'yyyy/MM/dd'
+                        },
                         title: {
                             display: true,
                             text: '日付'
@@ -2136,10 +2200,17 @@ graphExerciseType.addEventListener('change', loadProgressChart);
 
 // 集計方法の変更時
 document.getElementById('scoring-method').addEventListener('change', async () => {
+    if (currentMode === 'free') {
+        // フリーモードは常に%表示
+        const checkboxes = document.querySelectorAll('.user-checkbox input[type="checkbox"]');
+        const selectedIds = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+        await loadFreeScoreChart(selectedIds);
+        return;
+    }
     // ランキングを再表示
     const usersScores = await getAllUsersScores();
     await displayTotalScores(usersScores);
-    
+
     // チャートも再描画（現在選択されているユーザーで）
     const checkboxes = document.querySelectorAll('.user-checkbox input[type="checkbox"]');
     const selectedIds = Array.from(checkboxes)
@@ -2250,6 +2321,32 @@ function initAudioContext() {
     }
     return audioContext;
 }
+
+// ロック画面復帰時にAudioContextを再開し、タイマーの経過を補正する
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // AudioContextがsuspendedなら再開
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().then(() => {
+                console.log('[タイマー] visibilitychange: AudioContext再開成功');
+            }).catch(err => {
+                console.error('[タイマー] visibilitychange: AudioContext再開失敗:', err);
+            });
+        }
+        // タイマーが動作中なら経過時間を補正
+        if (timerInterval && timerStartTime && !isPreparationPhase) {
+            const now = Date.now();
+            const realElapsed = Math.floor((now - timerStartTime) / 1000);
+            if (realElapsed > elapsedSeconds) {
+                const missed = realElapsed - elapsedSeconds;
+                console.log(`[タイマー] 復帰補正: ${missed}秒分を補正`);
+                elapsedSeconds = realElapsed;
+                currentCount = 1 + Math.floor(elapsedSeconds / intervalSeconds);
+                updateTimerDisplay();
+            }
+        }
+    }
+});
 
 // 毎秒の小さな音（チック音）
 function playTickSound() {
@@ -2389,13 +2486,13 @@ function updateTimerDisplay() {
 
 function startTimer() {
     if (timerInterval) return; // 既に実行中の場合は何もしない
-    
+
     console.log('[タイマー] スタートボタンが押されました');
-    
+
     // インターバル設定を取得
     const intervalInput = document.getElementById('interval-input');
     intervalSeconds = parseInt(intervalInput.value) || 3;
-    
+
     // AudioContextを初期化して再開（ブラウザのオートプレイポリシー対応）
     const ctx = initAudioContext();
     if (ctx && ctx.state === 'suspended') {
@@ -2406,46 +2503,66 @@ function startTimer() {
             console.error('[タイマー] AudioContext再開失敗:', error);
         });
     }
-    
+
     // ボタンの状態を更新
     timerStartBtn.disabled = true;
     timerStopBtn.disabled = false;
     intervalInput.disabled = true;
-    
+
     // 準備時間のカウントダウン開始
     isPreparationPhase = true;
     preparationCountdown = 10;
     updateTimerDisplay();
-    
+
+    // 準備フェーズの開始時刻を記録
+    let prepStartTime = Date.now();
+    let lastPrepCountdown = preparationCountdown;
+
     console.log('[タイマー] setIntervalを開始します');
-    
+
     timerInterval = setInterval(() => {
+        // AudioContextがsuspendedなら自動再開を試みる
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().catch(() => {});
+        }
+
         if (isPreparationPhase) {
-            // 準備時間のカウントダウン
-            playCountdownSound();
-            preparationCountdown--;
+            // 実時間ベースで準備カウントダウンを計算
+            const prepElapsed = Math.floor((Date.now() - prepStartTime) / 1000);
+            preparationCountdown = Math.max(0, 10 - prepElapsed);
+
+            // 1秒進んだタイミングでのみ音を鳴らす
+            if (preparationCountdown < lastPrepCountdown && preparationCountdown > 0) {
+                playCountdownSound();
+            }
+            lastPrepCountdown = preparationCountdown;
+
             updateTimerDisplay();
-            
+
             if (preparationCountdown <= 0) {
                 // 準備時間終了、メインタイマー開始
                 isPreparationPhase = false;
                 elapsedSeconds = 0;
                 currentCount = 1;  // 0秒時点で1にセット
+                timerStartTime = Date.now(); // メインタイマーの開始時刻を記録
                 playBeepSound();    // 0秒時点の音を再生
                 updateTimerDisplay();
             }
         } else {
-            // メインタイマー
-            elapsedSeconds++;
-            
+            // メインタイマー（実時間ベース）
+            const realElapsed = Math.floor((Date.now() - timerStartTime) / 1000);
+            const prevElapsed = elapsedSeconds;
+            elapsedSeconds = realElapsed;
+            const newCount = 1 + Math.floor(elapsedSeconds / intervalSeconds);
+
             // インターバルごとに回数をカウント
-            if (elapsedSeconds % intervalSeconds === 0) {
+            if (newCount > currentCount) {
                 playBeepSound(); // 大きな音
-                currentCount++;
-            } else {
+                currentCount = newCount;
+            } else if (elapsedSeconds > prevElapsed) {
                 playTickSound(); // 小さな音
             }
-            
+
             updateTimerDisplay();
         }
     }, 1000); // 1秒間隔
@@ -2486,9 +2603,650 @@ if (timerStartBtn && timerStopBtn && timerResetBtn) {
     timerStartBtn.addEventListener('click', startTimer);
     timerStopBtn.addEventListener('click', stopTimer);
     timerResetBtn.addEventListener('click', resetTimer);
-    
+
     // タイマーの初期表示を設定
     updateTimerDisplay();
 } else {
     console.error('[3秒タイマー] ボタン要素が見つかりません');
+}
+
+// ====================================================================
+// フリーモード機能
+// ====================================================================
+
+// フリーモードの種目リスト（Firestoreから動的に取得）
+let freeExercises = {};  // { key: { name: '種目名', rule: 'ルール' } }
+let freeExercisesLoaded = false;
+
+/**
+ * フリーモードの種目リストをFirestoreから取得
+ */
+async function loadFreeExercises() {
+    try {
+        const doc = await db.collection('settings_free').doc('exercises').get();
+        if (doc.exists) {
+            freeExercises = doc.data().exercises || {};
+        } else {
+            freeExercises = {};
+        }
+        freeExercisesLoaded = true;
+        console.log('[フリーモード] 種目ロード完了:', Object.keys(freeExercises).length, '種目');
+    } catch (error) {
+        console.error('[フリーモード] 種目の取得に失敗:', error);
+        freeExercises = {};
+    }
+}
+
+/**
+ * フリーモードの種目をFirestoreに保存
+ */
+async function saveFreeExercises() {
+    try {
+        await db.collection('settings_free').doc('exercises').set({
+            exercises: freeExercises,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        console.log('[フリーモード] 種目保存完了');
+    } catch (error) {
+        console.error('[フリーモード] 種目の保存に失敗:', error);
+        throw error;
+    }
+}
+
+/**
+ * フリーモードの種目を追加
+ * @param {string} name - 種目名
+ * @param {string} rule - ルール説明
+ */
+async function addFreeExercise(name, rule) {
+    // キー名を生成（ユニークなID）
+    const key = 'free_' + Date.now();
+    freeExercises[key] = { name: name, rule: rule };
+    await saveFreeExercises();
+
+    // キャッシュクリア
+    scoreCache.free = null;
+    scoreCacheTime.free = null;
+    rankingCache.free = null;
+    rankingCacheTime.free = null;
+
+    // UI更新
+    updateFreeExerciseUI();
+}
+
+/**
+ * フリーモードの種目を削除
+ * @param {string} key - 種目キー
+ */
+async function deleteFreeExercise(key) {
+    if (!confirm(`種目「${freeExercises[key]?.name}」を削除しますか？`)) return;
+    delete freeExercises[key];
+    await saveFreeExercises();
+
+    // キャッシュクリア
+    scoreCache.free = null;
+    scoreCacheTime.free = null;
+    rankingCache.free = null;
+    rankingCacheTime.free = null;
+
+    updateFreeExerciseUI();
+}
+
+/**
+ * フリーモードのUI全体を更新
+ */
+function updateFreeExerciseUI() {
+    updateFreePostDropdown();
+    updateFreeRulesTab();
+    updateFreeGraphDropdown();
+}
+
+/**
+ * フリーモード：投稿タブのプルダウンを更新
+ */
+function updateFreePostDropdown() {
+    if (currentMode !== 'free') return;
+    const select = document.getElementById('exercise-type');
+    // 既存のオプションをクリア
+    select.innerHTML = '<option value="">種目を選択</option>';
+    Object.entries(freeExercises).forEach(([key, ex]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = ex.name;
+        select.appendChild(option);
+    });
+}
+
+/**
+ * フリーモード：ルールタブを更新
+ */
+function updateFreeRulesTab() {
+    if (currentMode !== 'free') return;
+
+    const rulesTab = document.getElementById('rules-tab');
+    const rulesList = rulesTab.querySelector('.rules-list');
+
+    // タイトルを変更
+    const title = rulesTab.querySelector('h2');
+    if (title) title.textContent = '📋 フリーモード種目管理';
+
+    // 倍率の説明と更新ボタンを非表示に
+    const rulesDesc = rulesTab.querySelector('.rules-description');
+    if (rulesDesc) rulesDesc.style.display = 'none';
+    const updateBtn = document.getElementById('update-multipliers-btn');
+    if (updateBtn) updateBtn.style.display = 'none';
+
+    // 種目追加ボタン（既存があれば削除して再作成）
+    let addBtn = rulesTab.querySelector('.add-exercise-btn');
+    if (!addBtn) {
+        addBtn = document.createElement('button');
+        addBtn.className = 'add-exercise-btn';
+        addBtn.textContent = '➕ 種目を追加';
+        addBtn.addEventListener('click', () => {
+            document.getElementById('free-exercise-modal').style.display = 'block';
+        });
+        rulesList.parentNode.insertBefore(addBtn, rulesList);
+    }
+
+    // ルールリストを再構築
+    rulesList.innerHTML = '';
+    Object.entries(freeExercises).forEach(([key, ex]) => {
+        const item = document.createElement('div');
+        item.className = 'rule-item';
+        item.innerHTML = `
+            <div class="rule-info">
+                <h3>${escapeHtml(ex.name)}</h3>
+                <p class="rule-detail">${escapeHtml(ex.rule)}</p>
+            </div>
+            <button class="rule-delete-btn" data-key="${escapeHtml(key)}">🗑️ 削除</button>
+        `;
+        rulesList.appendChild(item);
+    });
+
+    // 削除ボタンにイベントリスナーを設定
+    rulesList.querySelectorAll('.rule-delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            deleteFreeExercise(btn.dataset.key);
+        });
+    });
+
+    if (Object.keys(freeExercises).length === 0) {
+        rulesList.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">まだ種目が登録されていません。上のボタンから種目を追加してください。</p>';
+    }
+}
+
+/**
+ * フリーモード：成長グラフのプルダウンを更新
+ */
+function updateFreeGraphDropdown() {
+    if (currentMode !== 'free') return;
+    const select = document.getElementById('graph-exercise-type');
+    select.innerHTML = '';
+    Object.entries(freeExercises).forEach(([key, ex]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = ex.name;
+        select.appendChild(option);
+    });
+}
+
+/**
+ * フリーモード入場時のUI初期化
+ */
+async function initFreeMode() {
+    if (!freeExercisesLoaded) {
+        await loadFreeExercises();
+    }
+    updateFreeExerciseUI();
+}
+
+/**
+ * ノーマル/インターバルモードに戻る時のUI復元
+ */
+function restoreStandardExerciseUI() {
+    // ルールタブのタイトルを復元
+    const rulesTab = document.getElementById('rules-tab');
+    const title = rulesTab.querySelector('h2');
+    if (title) title.textContent = '📋 種目ルール';
+
+    // レーダーチャートの凡例注釈を削除
+    const annotations = document.querySelector('.chart-legend-annotations');
+    if (annotations) annotations.remove();
+
+    // 投稿プルダウンを復元
+    const select = document.getElementById('exercise-type');
+    select.innerHTML = `
+        <option value="">種目を選択</option>
+        <option value="pushup">プッシュアップ</option>
+        <option value="dips">ディップス</option>
+        <option value="squat">片足スクワット</option>
+        <option value="Lsit">Lシット(秒)</option>
+        <option value="pullup">懸垂(セット)</option>
+    `;
+
+    // 成長グラフプルダウンを復元
+    const graphSelect = document.getElementById('graph-exercise-type');
+    graphSelect.innerHTML = `
+        <option value="pushup">プッシュアップ</option>
+        <option value="dips">ディップス</option>
+        <option value="squat">片足スクワット</option>
+        <option value="Lsit">Lシット（秒）</option>
+        <option value="pullup">懸垂(セット)</option>
+    `;
+
+    // ルールタブの種目追加ボタンを削除
+    const rulesTab = document.getElementById('rules-tab');
+    const addBtn = rulesTab.querySelector('.add-exercise-btn');
+    if (addBtn) addBtn.remove();
+
+    // ルールリストを復元
+    const rulesList = rulesTab.querySelector('.rules-list');
+    rulesList.innerHTML = `
+        <div class="rule-item">
+            <div class="rule-info">
+                <h3>💪 プッシュアップ</h3>
+                <p class="rule-detail">プッシュアップバーを使用。顎がマットにつくまで下げる。</p>
+            </div>
+            <div class="rule-multiplier" style="display:none;">
+                <label>倍率：</label>
+                <input type="number" id="multiplier-pushup" min="0.1" step="0.1" value="1.0">
+            </div>
+        </div>
+        <div class="rule-item">
+            <div class="rule-info">
+                <h3>🔥 ディップス</h3>
+                <p class="rule-detail">顎がストレッチポールにタッチするまで下げる。幅、ポール位置は自由。</p>
+            </div>
+            <div class="rule-multiplier" style="display:none;">
+                <label>倍率：</label>
+                <input type="number" id="multiplier-dips" min="0.1" step="0.1" value="1.0">
+            </div>
+        </div>
+        <div class="rule-item">
+            <div class="rule-info">
+                <h3>🦵 片足スクワット</h3>
+                <p class="rule-detail">マット3段重ねの上で、片足でしゃがんで立ち上がる。左右の合計回数。</p>
+            </div>
+            <div class="rule-multiplier" style="display:none;">
+                <label>倍率：</label>
+                <input type="number" id="multiplier-squat" min="0.1" step="0.1" value="1.0">
+            </div>
+        </div>
+        <div class="rule-item">
+            <div class="rule-info">
+                <h3>⏱️ Lシット(秒)</h3>
+                <p class="rule-detail">プッシュアップバー/ダンベルを使用。秒数で記録。</p>
+            </div>
+            <div class="rule-multiplier" style="display:none;">
+                <label>倍率：</label>
+                <input type="number" id="multiplier-Lsit" min="0.1" step="0.1" value="1.0">
+            </div>
+        </div>
+        <div class="rule-item">
+            <div class="rule-info">
+                <h3>🏃 懸垂(セット)</h3>
+                <p class="rule-detail">顎をバーより上に上げる。セット数で記録。1~10セット：5rep、11~20セット：6rep、21~セット：7回。</p>
+            </div>
+            <div class="rule-multiplier" style="display:none;">
+                <label>倍率：</label>
+                <input type="number" id="multiplier-pullup" min="0.1" step="0.1" value="1.0">
+            </div>
+        </div>
+    `;
+
+    // multiplierInputsの参照を再設定
+    multiplierInputs.pushup = document.getElementById('multiplier-pushup');
+    multiplierInputs.dips = document.getElementById('multiplier-dips');
+    multiplierInputs.squat = document.getElementById('multiplier-squat');
+    multiplierInputs.Lsit = document.getElementById('multiplier-Lsit');
+    multiplierInputs.pullup = document.getElementById('multiplier-pullup');
+}
+
+// フリーモード種目追加モーダルのイベント
+document.querySelector('.close-free-exercise-modal').addEventListener('click', () => {
+    document.getElementById('free-exercise-modal').style.display = 'none';
+    document.getElementById('free-exercise-error').textContent = '';
+});
+
+window.addEventListener('click', (event) => {
+    const modal = document.getElementById('free-exercise-modal');
+    if (event.target === modal) {
+        modal.style.display = 'none';
+        document.getElementById('free-exercise-error').textContent = '';
+    }
+});
+
+document.getElementById('add-free-exercise-btn').addEventListener('click', async () => {
+    const nameInput = document.getElementById('free-exercise-name');
+    const ruleInput = document.getElementById('free-exercise-rule');
+    const errorEl = document.getElementById('free-exercise-error');
+
+    const name = nameInput.value.trim();
+    const rule = ruleInput.value.trim();
+
+    if (!name) {
+        errorEl.textContent = '種目名を入力してください';
+        return;
+    }
+    if (name.length > 20) {
+        errorEl.textContent = '種目名は20文字以内で入力してください';
+        return;
+    }
+
+    try {
+        await addFreeExercise(name, rule);
+        nameInput.value = '';
+        ruleInput.value = '';
+        errorEl.textContent = '';
+        document.getElementById('free-exercise-modal').style.display = 'none';
+        alert('種目を追加しました！');
+    } catch (error) {
+        errorEl.textContent = '種目の追加に失敗しました';
+    }
+});
+
+/**
+ * フリーモードの種目名マッピングを取得
+ * @returns {Object} exerciseNamesと同じ形式 { key: name }
+ */
+function getFreeExerciseNames() {
+    const names = {};
+    Object.entries(freeExercises).forEach(([key, ex]) => {
+        names[key] = ex.name;
+    });
+    return names;
+}
+
+/**
+ * フリーモード用の得点計算（倍率なし、値そのまま）
+ */
+async function getAllUsersScoresFree(forceRefresh = false) {
+    try {
+        const now = Date.now();
+        const mode = 'free';
+
+        if (!forceRefresh && scoreCache[mode] && scoreCacheTime[mode] && (now - scoreCacheTime[mode] < CACHE_DURATION)) {
+            return scoreCache[mode];
+        }
+
+        if (!freeExercisesLoaded) {
+            await loadFreeExercises();
+        }
+
+        const collectionName = 'posts_free';
+        const postsSnapshot = await db.collection(collectionName).get();
+        const usersSnapshot = await db.collection('users').get();
+
+        const usersData = {};
+        usersSnapshot.forEach(doc => {
+            const data = doc.data();
+            usersData[doc.id] = data.userName || data.email;
+        });
+
+        const exerciseKeys = Object.keys(freeExercises);
+        const userRecords = {};
+
+        postsSnapshot.forEach(doc => {
+            const post = doc.data();
+            const userId = post.userId;
+            const exerciseType = post.exerciseType;
+            const value = post.value;
+
+            if (!userRecords[userId]) {
+                userRecords[userId] = {
+                    userName: usersData[userId] || 'Unknown',
+                    exercises: {},
+                    scores: {},
+                    totalScore: 0
+                };
+            }
+
+            if (!userRecords[userId].exercises[exerciseType] ||
+                userRecords[userId].exercises[exerciseType] < value) {
+                userRecords[userId].exercises[exerciseType] = value;
+            }
+        });
+
+        // %計算（最高得点を100%とする）
+        exerciseKeys.forEach(exercise => {
+            let maxVal = 0;
+            Object.values(userRecords).forEach(user => {
+                const val = user.exercises[exercise] || 0;
+                if (val > maxVal) maxVal = val;
+            });
+
+            Object.values(userRecords).forEach(user => {
+                const val = user.exercises[exercise] || 0;
+                const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                user.scores[exercise] = pct;
+                user.totalScore += pct;
+            });
+        });
+
+        scoreCache[mode] = userRecords;
+        scoreCacheTime[mode] = now;
+
+        return userRecords;
+    } catch (error) {
+        console.error('[フリーモード] 得点計算エラー:', error);
+        throw error;
+    }
+}
+
+/**
+ * フリーモード用レーダーチャート描画（番号付き凡例）
+ */
+async function loadFreeScoreChart(selectedUserIds = []) {
+    try {
+        scoreError.textContent = '';
+        const usersScores = await getAllUsersScoresFree();
+        const exerciseKeys = Object.keys(freeExercises);
+
+        if (selectedUserIds.length === 0) {
+            selectedUserIds = Object.keys(usersScores);
+        }
+
+        if (exerciseKeys.length === 0) {
+            scoreError.textContent = 'フリーモードの種目がまだ登録されていません';
+            if (myScoreChart) { myScoreChart.destroy(); myScoreChart = null; }
+            return;
+        }
+
+        // 番号ラベル（①②③...）を作成
+        const circledNumbers = exerciseKeys.map((_, i) => {
+            const nums = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩',
+                           '⑪','⑫','⑬','⑭','⑮','⑯','⑰','⑱','⑲','⑳'];
+            return i < nums.length ? nums[i] : `(${i + 1})`;
+        });
+
+        const allUserIds = Object.keys(usersScores).sort();
+        const getUserColorIndex = (userId) => {
+            const index = allUserIds.indexOf(userId);
+            return index >= 0 ? index : 0;
+        };
+
+        const colors = [
+            'rgba(102, 126, 234, 0.6)',
+            'rgba(237, 100, 166, 0.6)',
+            'rgba(255, 159, 64, 0.6)',
+            'rgba(75, 192, 192, 0.6)',
+            'rgba(153, 102, 255, 0.6)',
+            'rgba(255, 205, 86, 0.6)'
+        ];
+        const borderColors = [
+            'rgb(102, 126, 234)',
+            'rgb(237, 100, 166)',
+            'rgb(255, 159, 64)',
+            'rgb(75, 192, 192)',
+            'rgb(153, 102, 255)',
+            'rgb(255, 205, 86)'
+        ];
+
+        const datasets = selectedUserIds.map(userId => {
+            const user = usersScores[userId];
+            if (!user) return null;
+            const colorIndex = getUserColorIndex(userId) % colors.length;
+            const data = exerciseKeys.map(key => user.scores[key] || 0);
+            return {
+                label: user.userName,
+                data: data,
+                backgroundColor: colors[colorIndex],
+                borderColor: borderColors[colorIndex],
+                borderWidth: 2,
+                pointBackgroundColor: borderColors[colorIndex],
+                pointBorderColor: '#fff',
+                pointHoverBackgroundColor: '#fff',
+                pointHoverBorderColor: borderColors[colorIndex]
+            };
+        }).filter(d => d !== null);
+
+        if (myScoreChart) { myScoreChart.destroy(); }
+
+        const ctx = scoreChart.getContext('2d');
+        myScoreChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: circledNumbers,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { top: 10, bottom: 10, left: 20, right: 20 } },
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: { stepSize: 20 }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { font: { size: 13 }, padding: 15, boxWidth: 15, boxHeight: 15 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                const idx = context[0].dataIndex;
+                                return freeExercises[exerciseKeys[idx]]?.name || '';
+                            },
+                            label: function(context) {
+                                return context.dataset.label + ': ' + context.parsed.r.toFixed(1) + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // 注釈を表示（レーダーチャートの下）
+        let annotationContainer = document.querySelector('.chart-legend-annotations');
+        if (!annotationContainer) {
+            annotationContainer = document.createElement('div');
+            annotationContainer.className = 'chart-legend-annotations';
+            scoreChart.parentNode.insertBefore(annotationContainer, scoreChart.nextSibling);
+        }
+        annotationContainer.innerHTML = exerciseKeys.map((key, i) => {
+            return `<span class="legend-annotation-item">${circledNumbers[i]} ${escapeHtml(freeExercises[key].name)}</span>`;
+        }).join('');
+
+        // 総合得点ランキング表示
+        displayFreeScores(usersScores, exerciseKeys);
+
+    } catch (error) {
+        console.error('[フリーモード] レーダーチャートエラー:', error);
+        scoreError.textContent = 'チャートの描画に失敗しました';
+    }
+}
+
+/**
+ * フリーモード用の総合得点ランキング表示
+ */
+function displayFreeScores(usersScores, exerciseKeys) {
+    const sortedUsers = Object.entries(usersScores)
+        .sort((a, b) => b[1].totalScore - a[1].totalScore);
+
+    let html = '';
+    let currentRank = 1;
+    let previousScore = null;
+
+    sortedUsers.forEach(([userId, userData], index) => {
+        const totalScore = userData.totalScore;
+        if (previousScore !== null && totalScore !== previousScore) {
+            currentRank = index + 1;
+        }
+        previousScore = totalScore;
+
+        const medal = currentRank === 1 ? '🥇' : currentRank === 2 ? '🥈' : currentRank === 3 ? '🥉' : `${currentRank}.`;
+
+        let breakdownHtml = exerciseKeys.map(key => {
+            const ex = freeExercises[key];
+            if (!ex) return '';
+            return `
+                <div class="breakdown-item breakdown-deviation">
+                    <span class="breakdown-label">${escapeHtml(ex.name)}</span>
+                    <span class="breakdown-num">${userData.exercises[key] || 0}</span>
+                    <span class="breakdown-score">-</span>
+                    <span class="breakdown-pct">${(userData.scores[key] || 0).toFixed(1)}%</span>
+                </div>
+            `;
+        }).join('');
+
+        html += `
+            <div class="total-score-item" onclick="toggleScoreDetails('${escapeHtml(userId)}')">
+                <div class="score-header">
+                    <span class="score-rank">${medal}</span>
+                    <span class="score-username">${escapeHtml(userData.userName)}</span>
+                    <span class="score-value">${totalScore.toFixed(1)}%</span>
+                </div>
+                <div class="score-details" id="score-details-${escapeHtml(userId)}" style="display: none;">
+                    <div class="score-breakdown">
+                        ${breakdownHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    totalScoresList.innerHTML = html;
+}
+
+/**
+ * フリーモード用ユーザーチェックボックス
+ */
+async function loadFreeUserCheckboxes(forceRefresh = false) {
+    try {
+        const usersScores = await getAllUsersScoresFree(forceRefresh);
+
+        let html = '';
+        Object.keys(usersScores).forEach(userId => {
+            const user = usersScores[userId];
+            const isCurrentUser = userId === currentUser.uid;
+            const checked = isCurrentUser ? 'checked' : '';
+            html += `
+                <label class="user-checkbox">
+                    <input type="checkbox" value="${userId}" ${checked}>
+                    <span>${escapeHtml(user.userName)}</span>
+                </label>
+            `;
+        });
+
+        userCheckboxes.innerHTML = html;
+
+        userCheckboxes.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                const selectedIds = Array.from(
+                    userCheckboxes.querySelectorAll('input[type="checkbox"]:checked')
+                ).map(cb => cb.value);
+                loadFreeScoreChart(selectedIds);
+            });
+        });
+
+        loadFreeScoreChart([currentUser.uid]);
+
+    } catch (error) {
+        console.error('[フリーモード] チェックボックスエラー:', error);
+        scoreError.textContent = 'ユーザーリストの取得に失敗しました';
+    }
 }
