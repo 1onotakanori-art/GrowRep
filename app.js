@@ -19,7 +19,7 @@ function escapeHtml(str) {
 // ====================================================================
 // モード管理
 // ====================================================================
-let currentMode = 'interval'; // 'normal' または 'interval'
+let currentMode = 'free'; // 'normal', 'interval', または 'free'
 
 /**
  * モードに応じたコレクション名を取得
@@ -990,7 +990,12 @@ auth.onAuthStateChanged(async (user) => {
         
         // モードに応じたタブ表示を初期化
         updateTabsForMode();
-        
+
+        // フリーモードが初期モードの場合はUI初期化
+        if (currentMode === 'free') {
+            await initFreeMode();
+        }
+
         loadPosts();
         loadRanking();
     } else {
@@ -2290,6 +2295,64 @@ let preparationCountdown = 10;
 // Web Audio APIでビープ音を生成
 let audioContext = null;
 
+// ロック画面でもオーディオセッションを維持するためのサイレント音声要素
+let silentAudio = null;
+let wakeLock = null;
+
+/**
+ * サイレント音声ループを開始してオーディオセッションを維持する
+ * モバイルブラウザはaudio要素が再生中ならバックグラウンドでもAudioContextを維持する
+ */
+function startSilentAudioKeepAlive() {
+    if (silentAudio) return;
+    try {
+        silentAudio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
+        silentAudio.loop = true;
+        silentAudio.volume = 0.01;
+        silentAudio.play().then(() => {
+            console.log('[タイマー] サイレント音声ループ開始 - ロック画面でもオーディオ維持');
+        }).catch(err => {
+            console.warn('[タイマー] サイレント音声ループ開始失敗:', err);
+            silentAudio = null;
+        });
+    } catch (err) {
+        console.warn('[タイマー] サイレント音声要素作成失敗:', err);
+        silentAudio = null;
+    }
+}
+
+function stopSilentAudioKeepAlive() {
+    if (silentAudio) {
+        silentAudio.pause();
+        silentAudio.src = '';
+        silentAudio = null;
+        console.log('[タイマー] サイレント音声ループ停止');
+    }
+}
+
+/**
+ * Wake Lock APIでスクリーンロックを防止する（対応ブラウザのみ）
+ */
+async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        console.log('[タイマー] Wake Lock取得成功');
+        wakeLock.addEventListener('release', () => {
+            console.log('[タイマー] Wake Lock解放');
+        });
+    } catch (err) {
+        console.warn('[タイマー] Wake Lock取得失敗:', err);
+    }
+}
+
+function releaseWakeLock() {
+    if (wakeLock) {
+        wakeLock.release().catch(() => {});
+        wakeLock = null;
+    }
+}
+
 // ====================================================================
 // タイマー音声設定
 // ====================================================================
@@ -2344,6 +2407,14 @@ document.addEventListener('visibilitychange', () => {
                 console.error('[タイマー] visibilitychange: AudioContext再開失敗:', err);
             });
         }
+        // サイレント音声が停止していたら再開
+        if (timerInterval && silentAudio && silentAudio.paused) {
+            silentAudio.play().catch(() => {});
+        }
+        // Wake Lockを再取得（画面復帰時にreleaseされるため）
+        if (timerInterval) {
+            requestWakeLock();
+        }
         // タイマーが動作中なら経過時間を補正
         if (timerInterval && timerStartTime && !isPreparationPhase) {
             const now = Date.now();
@@ -2363,11 +2434,11 @@ document.addEventListener('visibilitychange', () => {
 function playTickSound() {
     const ctx = initAudioContext();
     if (!ctx) return;
-    
+
     try {
-        // AudioContextがsuspendedの場合はスキップ
+        // AudioContextがsuspendedの場合は再開を試みる
         if (ctx.state === 'suspended') {
-            console.log('[タイマー] AudioContext is suspended, skipping tick sound');
+            ctx.resume().catch(() => {});
             return;
         }
         
@@ -2399,10 +2470,10 @@ function playTickSound() {
 function playBeepSound() {
     const ctx = initAudioContext();
     if (!ctx) return;
-    
+
     try {
         if (ctx.state === 'suspended') {
-            console.log('[タイマー] AudioContext is suspended, skipping beep sound');
+            ctx.resume().catch(() => {});
             return;
         }
         
@@ -2441,10 +2512,10 @@ function playBeepSound() {
 function playCountdownSound() {
     const ctx = initAudioContext();
     if (!ctx) return;
-    
+
     try {
         if (ctx.state === 'suspended') {
-            console.log('[タイマー] AudioContext is suspended, skipping countdown sound');
+            ctx.resume().catch(() => {});
             return;
         }
         
@@ -2514,6 +2585,11 @@ function startTimer() {
             console.error('[タイマー] AudioContext再開失敗:', error);
         });
     }
+
+    // ロック画面でもオーディオセッションを維持するためのサイレント音声開始
+    startSilentAudioKeepAlive();
+    // スクリーンロック防止（対応ブラウザのみ）
+    requestWakeLock();
 
     // ボタンの状態を更新
     timerStartBtn.disabled = true;
@@ -2585,14 +2661,18 @@ function stopTimer() {
     clearInterval(timerInterval);
     timerInterval = null;
     isPreparationPhase = false;
-    
+
+    // サイレント音声とWake Lockを停止
+    stopSilentAudioKeepAlive();
+    releaseWakeLock();
+
     // ボタンの状態を更新
     timerStartBtn.disabled = false;
     timerStopBtn.disabled = true;
-    
+
     const intervalInput = document.getElementById('interval-input');
     intervalInput.disabled = false;
-    
+
     updateTimerDisplay();
 }
 
@@ -3150,12 +3230,13 @@ async function loadFreeScoreChart(selectedUserIds = []) {
             }
         });
 
-        // 注釈を表示（レーダーチャートの下）
+        // 注釈を表示（レーダーチャートコンテナの外・下に配置）
         let annotationContainer = document.querySelector('.chart-legend-annotations');
         if (!annotationContainer) {
             annotationContainer = document.createElement('div');
             annotationContainer.className = 'chart-legend-annotations';
-            scoreChart.parentNode.insertBefore(annotationContainer, scoreChart.nextSibling);
+            const chartContainer = scoreChart.closest('.score-chart-container');
+            chartContainer.parentNode.insertBefore(annotationContainer, chartContainer.nextSibling);
         }
         annotationContainer.innerHTML = exerciseKeys.map((key, i) => {
             return `<span class="legend-annotation-item">${circledNumbers[i]} ${escapeHtml(freeExercises[key].name)}</span>`;
