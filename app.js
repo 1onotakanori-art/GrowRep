@@ -1198,7 +1198,7 @@ updateUsernameBtn.addEventListener('click', async () => {
         
         // ローカル情報更新
         currentUserData = await getUserData(currentUser.uid);
-        userName.textContent = newUsername;
+        profileBtn.textContent = '👤 ' + newUsername;
         currentUsername.textContent = newUsername;
         
         usernameError.textContent = '';
@@ -2042,7 +2042,7 @@ async function renderRanking(rankings) {
         
         // 各ユーザーのユーザー名を取得
         const entries = [];
-        for (const [userId, data] of Object.entries(rankings[type])) {
+        for (const [userId, data] of Object.entries(rankings[type] || {})) {
             const userData = await getUserData(userId);
             const userName = userData && userData.userName ? userData.userName : data.email;
             entries.push({
@@ -2093,8 +2093,6 @@ async function loadProgressChart() {
         const collectionName = getCollectionName('posts');
         const snapshot = await db.collection(collectionName).get();
         
-        const labels = [];
-        const data = [];
         const userPosts = [];
         
         // 現在のユーザーかつ選択された種目の投稿を抽出
@@ -2136,28 +2134,54 @@ async function loadProgressChart() {
             return;
         }
 
-        // 新しいチャートを作成（time scaleで実際の日付間隔を反映）
+        // 新しいチャートを作成
+        // 日付間隔を実際のカレンダーに合わせるため、最初の投稿日～今日まで全日付をラベルにし
+        // データがない日はnullにしてspanGapsで線を繋ぐ
         const ctx = progressChart.getContext('2d');
+        const exerciseLabel = currentMode === 'free' ? (freeExercises[selectedType]?.name || selectedType) : exerciseNames[selectedType];
+
+        // 日付キー(M/d)と値のマップを作成（同じ日の複数投稿は最後の値を使用）
+        const dateValueMap = {};
+        chartData.forEach(d => {
+            const key = `${d.x.getFullYear()}-${String(d.x.getMonth()+1).padStart(2,'0')}-${String(d.x.getDate()).padStart(2,'0')}`;
+            dateValueMap[key] = d.y;
+        });
+
+        // 最初の投稿日から今日までの全日付を生成
+        const firstDate = new Date(chartData[0].x);
+        firstDate.setHours(0,0,0,0);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+
+        const allLabels = [];
+        const allValues = [];
+        const cursor = new Date(firstDate);
+        while (cursor <= today) {
+            const key = `${cursor.getFullYear()}-${String(cursor.getMonth()+1).padStart(2,'0')}-${String(cursor.getDate()).padStart(2,'0')}`;
+            const label = `${cursor.getMonth()+1}/${cursor.getDate()}`;
+            allLabels.push(label);
+            allValues.push(dateValueMap[key] !== undefined ? dateValueMap[key] : null);
+            cursor.setDate(cursor.getDate() + 1);
+        }
+
         myChart = new Chart(ctx, {
             type: 'line',
             data: {
+                labels: allLabels,
                 datasets: [{
-                    label: (currentMode === 'free' ? (freeExercises[selectedType]?.name || selectedType) : exerciseNames[selectedType]),
-                    data: chartData,
+                    label: exerciseLabel,
+                    data: allValues,
                     borderColor: '#667eea',
                     backgroundColor: 'rgba(102, 126, 234, 0.1)',
                     tension: 0.4,
-                    fill: true
+                    fill: true,
+                    spanGaps: true
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true
-                    }
-                },
+                plugins: { legend: { display: true } },
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -2166,20 +2190,7 @@ async function loadProgressChart() {
                             text: currentMode === 'free' ? '記録' : (selectedType === 'Lsit' ? '秒数' : selectedType === 'pullup' ? 'セット数' : '回数')
                         }
                     },
-                    x: {
-                        type: 'time',
-                        time: {
-                            unit: 'day',
-                            displayFormats: {
-                                day: 'M/d'
-                            },
-                            tooltipFormat: 'yyyy/MM/dd'
-                        },
-                        title: {
-                            display: true,
-                            text: '日付'
-                        }
-                    }
+                    x: { title: { display: true, text: '日付' } }
                 }
             }
         });
@@ -3250,3 +3261,14 @@ async function loadFreeUserCheckboxes(forceRefresh = false) {
         scoreError.textContent = 'ユーザーリストの取得に失敗しました';
     }
 }
+
+// ====================================================================
+// 初期化フォールバック: JSが正常に読み込まれたことを確認
+// onAuthStateChangedが5秒以内に発火しない場合、ログイン画面を表示
+// ====================================================================
+setTimeout(() => {
+    if (loginContainer.style.display === 'none' && mainContainer.style.display === 'none') {
+        console.warn('[初期化] onAuthStateChangedが応答しません。ログイン画面を表示します。');
+        loginContainer.style.display = 'block';
+    }
+}, 5000);
