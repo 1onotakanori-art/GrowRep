@@ -20,9 +20,9 @@
 // };
 // ====================================================================
 
-// TODO: Firebaseコンソールで取得した設定情報に置き換えてください
+// GitHub Actions により __FIREBASE_API_KEY__ が自動的に置換されます
 const firebaseConfig = {
-  apiKey: "AIzaSyCZjbpOkpqsFu62CgI_JgSaVJmpI2wNGJ8",
+  apiKey: "__FIREBASE_API_KEY__",
   authDomain: "growrep-65c18.firebaseapp.com",
   projectId: "growrep-65c18",
   storageBucket: "growrep-65c18.firebasestorage.app",
@@ -32,8 +32,8 @@ const firebaseConfig = {
 
 
 // Firebase設定の検証
-if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-    console.warn('⚠️ Firebase設定が未完了です。firebase-config.jsを編集してください。');
+if (firebaseConfig.apiKey === "__FIREBASE_API_KEY__" || firebaseConfig.apiKey === "YOUR_API_KEY") {
+    console.warn('⚠️ Firebase設定が未完了です。GitHub Secretsが正しく設定されているか確認してください。');
 }
 
 // Firebase初期化
