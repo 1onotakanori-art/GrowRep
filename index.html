@@ -36,6 +36,7 @@
                         <option value="normal">ノーマルモード</option>
                         <option value="interval">インターバルモード</option>
                         <option value="free">フリーモード</option>
+                        <option value="weekly">週間チャレンジ</option>
                     </select>
                 </div>
             </div>
@@ -88,6 +89,7 @@
         <div id="ranking-tab" class="tab-content">
             <h2>🏆 種目別ランキング</h2>
             <div id="ranking-mode-info" class="mode-info"></div>
+            <div id="weekly-challenge-info" style="display:none;"></div>
             <div id="ranking-list" class="ranking-list"></div>
         </div>
 
@@ -204,6 +206,9 @@
             
             <p id="score-error" class="error-message"></p>
         </div>
+
+        <!-- 週間チャレンジモード背景オーバーレイ -->
+        <div id="weekly-mode-overlay"></div>
 
         <!-- 3秒タイマータブ -->
         <div id="timer-tab" class="tab-content" data-mode="interval">

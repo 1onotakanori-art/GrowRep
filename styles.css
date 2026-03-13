@@ -58,6 +58,24 @@ body.mode-free::after {
     opacity: 1;
 }
 
+/* 週間チャレンジモード用オーバーレイ（::before/::after が使用済みのためdivで実装） */
+#weekly-mode-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+    opacity: 0;
+    transition: opacity var(--mode-transition-duration) var(--mode-transition-timing);
+    pointer-events: none;
+    z-index: -1;
+}
+
+body.mode-weekly #weekly-mode-overlay {
+    opacity: 1;
+}
+
 /* フリーモード用のヘッダー文字色 */
 header h1::before {
     content: 'GrowRep';
@@ -78,6 +96,12 @@ body.mode-free header h1::before {
 
 body.mode-free header h1::after {
     opacity: 0;
+}
+
+/* 週間チャレンジモード用のヘッダー文字色 */
+body.mode-weekly header h1::before {
+    background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+    opacity: 1;
 }
 
 .container {
@@ -1755,4 +1779,64 @@ body.mode-interval header h1::after {
         width: 100%;
         min-width: 0;
     }
+}
+
+/* ====================================================================
+   週間チャレンジモード専用スタイル
+   ==================================================================== */
+
+/* 週間チャレンジ情報ボックス */
+.weekly-challenge-info {
+    background: linear-gradient(135deg, rgba(247, 151, 30, 0.12) 0%, rgba(255, 210, 0, 0.12) 100%);
+    border: 2px solid rgba(247, 151, 30, 0.4);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+}
+
+.weekly-challenge-info h3 {
+    color: #e67e00;
+    font-size: 1.1em;
+    margin-bottom: 10px;
+}
+
+.weekly-challenge-period {
+    font-size: 0.9em;
+    color: #666;
+    margin-bottom: 12px;
+}
+
+.weekly-challenge-exercises {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.weekly-challenge-exercise-item {
+    background: white;
+    border-left: 4px solid #f7971e;
+    border-radius: 0 6px 6px 0;
+    padding: 6px 12px;
+    font-weight: 600;
+    color: #333;
+}
+
+.weekly-challenge-next {
+    font-size: 0.85em;
+    color: #888;
+    text-align: right;
+}
+
+/* 週間チャレンジのランキング種目ヘッダー強調 */
+body.mode-weekly .ranking-category h3 {
+    color: #e67e00;
+}
+
+/* 週間チャレンジ未設定メッセージ */
+.weekly-no-challenge {
+    text-align: center;
+    color: #999;
+    padding: 30px;
+    font-size: 0.95em;
 }
