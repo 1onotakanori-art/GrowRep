@@ -101,6 +101,9 @@ body.mode-free header h1::after {
 /* 週間チャレンジモード用のヘッダー文字色 */
 body.mode-weekly header h1::before {
     background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
     opacity: 1;
 }
 

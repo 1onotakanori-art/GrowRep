@@ -983,7 +983,7 @@ auth.onAuthStateChanged(async (user) => {
         if (currentUserData.userName && currentUserData.userName !== user.email) {
             displayName = currentUserData.userName;
         }
-        profileBtn.textContent = '👤 ' + displayName;
+        profileBtn.innerHTML = '<i class="fa-solid fa-user"></i> ' + displayName;
         
         loginContainer.style.display = 'none';
         mainContainer.style.display = 'block';
@@ -1210,7 +1210,7 @@ updateUsernameBtn.addEventListener('click', async () => {
         
         // ローカル情報更新
         currentUserData = await getUserData(currentUser.uid);
-        profileBtn.textContent = '👤 ' + newUsername;
+        profileBtn.innerHTML = '<i class="fa-solid fa-user"></i> ' + newUsername;
         currentUsername.textContent = newUsername;
         
         usernameError.textContent = '';
@@ -1930,7 +1930,7 @@ async function addComment(postId) {
             const postElement = commentsSection.closest('.post-item');
             const commentBtn = postElement ? postElement.querySelector('.comment-btn') : null;
             if (commentBtn) {
-                commentBtn.innerHTML = `💬 ${post.comments.length}`;
+                commentBtn.innerHTML = `<i class="fa-solid fa-comment"></i> ${post.comments.length}`;
             }
         }
         
@@ -2001,7 +2001,7 @@ async function deleteComment(postId, commentIndex) {
             const postElement = commentsSection.closest('.post-item');
             const commentBtn = postElement ? postElement.querySelector('.comment-btn') : null;
             if (commentBtn) {
-                commentBtn.innerHTML = `💬 ${updatedComments.length > 0 ? updatedComments.length : ''}`;
+                commentBtn.innerHTML = `<i class="fa-solid fa-comment"></i> ${updatedComments.length > 0 ? updatedComments.length : ''}`;
             }
         }
         
@@ -2890,7 +2890,7 @@ function updateFreeRulesTab() {
     if (!addBtn) {
         addBtn = document.createElement('button');
         addBtn.className = 'add-exercise-btn';
-        addBtn.textContent = '➕ 種目を追加';
+        addBtn.innerHTML = '<i class="fa-solid fa-plus"></i> 種目を追加';
         addBtn.addEventListener('click', () => {
             document.getElementById('free-exercise-modal').style.display = 'block';
         });
@@ -3640,7 +3640,7 @@ function renderWeeklyChallengeInfo() {
     infoEl.className = 'weekly-challenge-info';
     infoEl.innerHTML = `
         <h3><i class="fa-solid fa-trophy"></i> 今週のチャレンジ</h3>
-        <div class="weekly-challenge-period"><i class="fa-solid fa-calendar"></i> 採用期間: ${formatDate(monJST)} 〜 ${formatDate(friJST)}（平日のみ）</div>
+        <div class="weekly-challenge-period"><i class="fa-solid fa-calendar"></i> 採用期間: ${formatDate(monJST)} 〜 ${formatDate(friJST)}</div>
         <div class="weekly-challenge-exercises">${exercisesHtml}</div>
         <div class="weekly-challenge-next">次回発表: ${formatDate(nextWeekEndJST)} 17:00</div>
     `;
