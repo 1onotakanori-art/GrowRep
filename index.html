@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GrowRep - 筋トレ成果報告アプリ</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="icon-style.css">
 </head>
 <body>
     <!-- ログイン画面 -->
@@ -33,9 +35,9 @@
                 <h1>GrowRep</h1>
                 <div class="mode-selector">
                     <select id="mode-select">
-                        <option value="normal">ノーマルモード</option>
-                        <option value="interval">インターバルモード</option>
-                        <option value="free">フリーモード</option>
+                        <option value="normal">ノーマル</option>
+                        <option value="interval">インターバル</option>
+                        <option value="free">フリー</option>
                         <option value="weekly">週間チャレンジ</option>
                     </select>
                 </div>
@@ -55,14 +57,14 @@
             <button class="tab-btn" data-tab="progress">成長グラフ</button>
             <button class="tab-btn" data-tab="rules">ルール</button>
             <button class="tab-btn" data-tab="score">総合得点</button>
-            <button class="tab-btn" data-tab="timer" data-mode="interval" style="display: none;">⏱️ インターバルタイマー</button>
-            <button class="tab-btn" data-tab="timer" data-mode="free" style="display: none;">⏱️ インターバルタイマー</button>
+            <button class="tab-btn" data-tab="timer" data-mode="interval" style="display: none;"><i class="fa-solid fa-stopwatch"></i> インターバルタイマー</button>
+            <button class="tab-btn" data-tab="timer" data-mode="free" style="display: none;"><i class="fa-solid fa-stopwatch"></i> インターバルタイマー</button>
         </nav>
 
         <!-- 投稿タブ -->
         <div id="post-tab" class="tab-content active">
             <div class="post-form">
-                <h2>📝 トレーニング記録を投稿</h2>
+                <h2><i class="fa-solid fa-pen-to-square"></i> トレーニング記録を投稿</h2>
                 <div id="post-mode-info" class="mode-info"></div>
                 <select id="exercise-type" required>
                     <option value="">種目を選択</option>
@@ -80,14 +82,14 @@
 
         <!-- 掲示板タブ -->
         <div id="board-tab" class="tab-content">
-            <h2>💬 みんなの投稿</h2>
+            <h2><i class="fa-solid fa-comments"></i> みんなの投稿</h2>
             <div id="board-mode-info" class="mode-info"></div>
             <div id="posts-list" class="posts-list"></div>
         </div>
 
         <!-- ランキングタブ -->
         <div id="ranking-tab" class="tab-content">
-            <h2>🏆 種目別ランキング</h2>
+            <h2><i class="fa-solid fa-trophy"></i> 種目別ランキング</h2>
             <div id="ranking-mode-info" class="mode-info"></div>
             <div id="weekly-challenge-info" style="display:none;"></div>
             <div id="ranking-list" class="ranking-list"></div>
@@ -95,7 +97,7 @@
 
         <!-- 成長グラフタブ -->
         <div id="progress-tab" class="tab-content">
-            <h2>📈 あなたの成長グラフ</h2>
+            <h2><i class="fa-solid fa-chart-line"></i> あなたの成長グラフ</h2>
             <div id="progress-mode-info" class="mode-info"></div>
             <select id="graph-exercise-type">
                 <option value="pushup">プッシュアップ</option>
@@ -109,7 +111,7 @@
 
         <!-- ルールタブ -->
         <div id="rules-tab" class="tab-content">
-            <h2>📋 種目ルール</h2>
+            <h2><i class="fa-solid fa-clipboard-list"></i> 種目ルール</h2>
             <div id="rules-mode-info" class="mode-info"></div>
             <div class="rules-description" style="display:none;">
                 <p>得点＝ <strong>回数/秒数/セット数 × 倍率</strong></p>
@@ -118,7 +120,7 @@
             <div class="rules-list">
                 <div class="rule-item">
                     <div class="rule-info">
-                        <h3>💪 プッシュアップ</h3>
+                        <h3><i class="fa-solid fa-dumbbell"></i> プッシュアップ</h3>
                         <p class="rule-detail">プッシュアップバーを使用。顎がマットにつくまで下げる。</p>
                     </div>
                     <div class="rule-multiplier" style="display:none;">
@@ -128,7 +130,7 @@
                 </div>
                 <div class="rule-item">
                     <div class="rule-info">
-                        <h3>🔥 ディップス</h3>
+                        <h3><i class="fa-solid fa-fire"></i> ディップス</h3>
                         <p class="rule-detail">顎がストレッチポールにタッチするまで下げる。幅、ポール位置は自由。</p>
                     </div>
                     <div class="rule-multiplier" style="display:none;">
@@ -138,7 +140,7 @@
                 </div>
                 <div class="rule-item">
                     <div class="rule-info">
-                        <h3>🦵 片足スクワット</h3>
+                        <h3><i class="fa-solid fa-shoe-prints"></i> 片足スクワット</h3>
                         <p class="rule-detail">マット3段重ねの上で、片足でしゃがんで立ち上がる。左右の合計回数。</p>
                     </div>
                     <div class="rule-multiplier" style="display:none;">
@@ -148,7 +150,7 @@
                 </div>
                 <div class="rule-item">
                     <div class="rule-info">
-                        <h3>⏱️ Lシット(秒)</h3>
+                        <h3><i class="fa-solid fa-stopwatch"></i> Lシット(秒)</h3>
                         <p class="rule-detail">プッシュアップバー/ダンベルを使用。秒数で記録。</p>
                     </div>
                     <div class="rule-multiplier" style="display:none;">
@@ -158,7 +160,7 @@
                 </div>
                 <div class="rule-item">
                     <div class="rule-info">
-                        <h3>🏃 懸垂(セット)</h3>
+                        <h3><i class="fa-solid fa-person-running"></i> 懸垂(セット)</h3>
                         <p class="rule-detail">顎をバーより上に上げる。セット数で記録。1~10セット：5rep、11~20セット：6rep、21~セット：7回。</p>
                     </div>
                     <div class="rule-multiplier" style="display:none;">
@@ -174,7 +176,7 @@
 
         <!-- 得点タブ -->
         <div id="score-tab" class="tab-content">
-            <h2>🏆 総合得点</h2>
+            <h2><i class="fa-solid fa-trophy"></i> 総合得点</h2>
             <div id="score-mode-info" class="mode-info"></div>
             <div class="score-description" style="display:none;">
                 <p>最高記録から得点を計算</p>
@@ -191,12 +193,12 @@
             </div>
             
             <div class="total-scores">
-                <h3>📊 総合得点ランキング</h3>
+                <h3><i class="fa-solid fa-chart-bar"></i> 総合得点ランキング</h3>
                 <div id="total-scores-list" class="total-scores-list"></div>
             </div>
             
             <div class="user-selection">
-                <h3>👥 表示ユーザー</h3>
+                <h3><i class="fa-solid fa-users"></i> 表示ユーザー</h3>
                 <div id="user-checkboxes" class="checkbox-group"></div>
             </div>
             
@@ -212,7 +214,7 @@
 
         <!-- 3秒タイマータブ -->
         <div id="timer-tab" class="tab-content" data-mode="interval">
-            <h2>⏱️ インターバルタイマー</h2>
+            <h2><i class="fa-solid fa-stopwatch"></i> インターバルタイマー</h2>
             <div class="timer-description">
                 <p>指定した秒数ごとに音が鳴り、カウントアップされます</p>
             </div>

@@ -1751,12 +1751,12 @@ function createPostElement(postId, post, userName) {
         </div>
         <div class="post-actions">
             <button class="like-btn ${isLiked ? 'liked' : ''}" onclick="toggleLike('${safePostId}')">
-                💪 ${likeCount > 0 ? likeCount : ''}
+                <i class="fa-solid fa-heart"></i> ${likeCount > 0 ? likeCount : ''}
             </button>
             <button class="comment-btn" onclick="toggleComments('${safePostId}')">
-                💬 ${post.comments && post.comments.length > 0 ? post.comments.length : ''}
+                <i class="fa-solid fa-comment"></i> ${post.comments && post.comments.length > 0 ? post.comments.length : ''}
             </button>
-            ${isOwner ? `<button class="delete-btn" onclick="deletePost('${safePostId}')">🗑️ </button>` : ''}
+            ${isOwner ? `<button class="delete-btn" onclick="deletePost('${safePostId}')"><i class="fa-solid fa-trash"></i></button>` : ''}
         </div>
         <div id="comments-${safePostId}" class="comments-section" style="display: none;">
             <div id="comments-list-${safePostId}"></div>
@@ -1821,19 +1821,19 @@ async function toggleLike(postId) {
         // 現在の状態を取得
         const isLiked = likeBtn.classList.contains('liked');
         const currentText = likeBtn.textContent.trim();
-        const currentCount = parseInt(currentText.replace('💪', '').trim()) || 0;
+        const currentCount = parseInt(currentText.replace(/[^0-9]/g, '')) || 0;
         
         // UIを即座に更新（楽観的更新）
         if (isLiked) {
             // いいねを取り消す場合
             likeBtn.classList.remove('liked');
             const newCount = Math.max(0, currentCount - 1);
-            likeBtn.innerHTML = `💪 ${newCount > 0 ? newCount : ''}`;
+            likeBtn.innerHTML = `<i class="fa-solid fa-heart"></i> ${newCount > 0 ? newCount : ''}`;
         } else {
             // いいねを追加する場合
             likeBtn.classList.add('liked');
             const newCount = currentCount + 1;
-            likeBtn.innerHTML = `💪 ${newCount}`;
+            likeBtn.innerHTML = `<i class="fa-solid fa-heart"></i> ${newCount}`;
         }
         
         // 裏でFirestoreを更新
@@ -1935,10 +1935,10 @@ async function addComment(postId) {
         }
         
         // 成功メッセージを表示
-        alert('💬 コメントが送信されました！');
+        alert('コメントが送信されました！');
     } catch (error) {
         console.error('コメント送信エラー:', error);
-        alert('❌ コメントの送信に失敗しました');
+        alert('コメントの送信に失敗しました');
     }
 }
 
@@ -2005,10 +2005,10 @@ async function deleteComment(postId, commentIndex) {
             }
         }
         
-        alert('🗑️ コメントを削除しました');
+        alert('コメントを削除しました');
     } catch (error) {
         console.error('コメント削除エラー:', error);
-        alert('❌ コメントの削除に失敗しました');
+        alert('コメントの削除に失敗しました');
     }
 }
 
@@ -2992,7 +2992,7 @@ function restoreStandardExerciseUI() {
     rulesList.innerHTML = `
         <div class="rule-item">
             <div class="rule-info">
-                <h3>💪 プッシュアップ</h3>
+                <h3><i class="fa-solid fa-dumbbell"></i> プッシュアップ</h3>
                 <p class="rule-detail">プッシュアップバーを使用。顎がマットにつくまで下げる。</p>
             </div>
             <div class="rule-multiplier" style="display:none;">
@@ -3002,7 +3002,7 @@ function restoreStandardExerciseUI() {
         </div>
         <div class="rule-item">
             <div class="rule-info">
-                <h3>🔥 ディップス</h3>
+                <h3><i class="fa-solid fa-fire"></i> ディップス</h3>
                 <p class="rule-detail">顎がストレッチポールにタッチするまで下げる。幅、ポール位置は自由。</p>
             </div>
             <div class="rule-multiplier" style="display:none;">
@@ -3012,7 +3012,7 @@ function restoreStandardExerciseUI() {
         </div>
         <div class="rule-item">
             <div class="rule-info">
-                <h3>🦵 片足スクワット</h3>
+                <h3><i class="fa-solid fa-shoe-prints"></i> 片足スクワット</h3>
                 <p class="rule-detail">マット3段重ねの上で、片足でしゃがんで立ち上がる。左右の合計回数。</p>
             </div>
             <div class="rule-multiplier" style="display:none;">
@@ -3022,7 +3022,7 @@ function restoreStandardExerciseUI() {
         </div>
         <div class="rule-item">
             <div class="rule-info">
-                <h3>⏱️ Lシット(秒)</h3>
+                <h3><i class="fa-solid fa-stopwatch"></i> Lシット(秒)</h3>
                 <p class="rule-detail">プッシュアップバー/ダンベルを使用。秒数で記録。</p>
             </div>
             <div class="rule-multiplier" style="display:none;">
@@ -3032,7 +3032,7 @@ function restoreStandardExerciseUI() {
         </div>
         <div class="rule-item">
             <div class="rule-info">
-                <h3>🏃 懸垂(セット)</h3>
+                <h3><i class="fa-solid fa-person-running"></i> 懸垂(セット)</h3>
                 <p class="rule-detail">顎をバーより上に上げる。セット数で記録。1~10セット：5rep、11~20セット：6rep、21~セット：7回。</p>
             </div>
             <div class="rule-multiplier" style="display:none;">
@@ -3639,8 +3639,8 @@ function renderWeeklyChallengeInfo() {
     infoEl.style.display = 'block';
     infoEl.className = 'weekly-challenge-info';
     infoEl.innerHTML = `
-        <h3>🏆 今週のチャレンジ</h3>
-        <div class="weekly-challenge-period">📅 採用期間: ${formatDate(monJST)} 〜 ${formatDate(friJST)}（平日のみ）</div>
+        <h3><i class="fa-solid fa-trophy"></i> 今週のチャレンジ</h3>
+        <div class="weekly-challenge-period"><i class="fa-solid fa-calendar"></i> 採用期間: ${formatDate(monJST)} 〜 ${formatDate(friJST)}（平日のみ）</div>
         <div class="weekly-challenge-exercises">${exercisesHtml}</div>
         <div class="weekly-challenge-next">次回発表: ${formatDate(nextWeekEndJST)} 17:00</div>
     `;
