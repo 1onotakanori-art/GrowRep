@@ -1,33 +1,21 @@
-// Firebase設定
+// Firebase設定テンプレート
 // ====================================================================
-// 重要: セキュリティに関する注意事項
-// ====================================================================
-// 1. Firebase APIキーはクライアント側での使用を前提とした公開情報です
-// 2. セキュリティはFirestoreルールとAuthenticationで制御します
-// 3. 本番環境では、以下の対策を推奨します：
-//    - Firebase ConsoleでAPIキー制限を設定
-//    - 承認済みドメインの制限
-//    - Firestoreセキュリティルールの厳格化
-//
-// 【推奨】環境変数を使う場合（Vite使用時）：
-// const firebaseConfig = {
-//     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-//     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-//     projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-//     storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-//     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-//     appId: import.meta.env.VITE_FIREBASE_APP_ID
-// };
+// 使い方:
+// 1. このファイルをコピーして firebase-config.js を作成してください
+//    $ cp firebase-config.template.js firebase-config.js
+// 2. 以下のプレースホルダーをFirebase Consoleで取得した値に置き換えてください
+//    Firebase Console → プロジェクト設定 → マイアプリ → SDK の設定と構成
+// 3. firebase-config.js は .gitignore に含まれているため、
+//    Git にコミットされません（APIキーの漏洩を防止）
 // ====================================================================
 
-// TODO: Firebaseコンソールで取得した設定情報に置き換えてください
 const firebaseConfig = {
-  apiKey: "AIzaSyDTWKcH1DUyeHj67HsiZ5yFSOHFizZee60",
-  authDomain: "growrep-65c18.firebaseapp.com",
-  projectId: "growrep-65c18",
-  storageBucket: "growrep-65c18.firebasestorage.app",
-  messagingSenderId: "140764534093",
-  appId: "1:140764534093:web:30f7500100b9d03de59304"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
 
