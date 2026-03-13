@@ -45,7 +45,7 @@
             <div class="header-bottom">
                 <div class="user-info">
                     <button id="profile-btn" class="header-btn header-btn-profile"><i class="fa-solid fa-user"></i> プロフィール</button>
-                    <button id="refresh-all-btn" class="header-btn"><i class="fa-solid fa-rotate"></i> 更新</button>
+                    <button id="refresh-all-btn" class="header-btn"><i class="fa-solid fa-rotate"></i>  更新</button>
                 </div>
             </div>
         </header>
@@ -59,6 +59,8 @@
             <button class="tab-btn" data-tab="score">総合得点</button>
             <button class="tab-btn" data-tab="timer" data-mode="interval" style="display: none;"><i class="fa-solid fa-stopwatch"></i> インターバルタイマー</button>
             <button class="tab-btn" data-tab="timer" data-mode="free" style="display: none;"><i class="fa-solid fa-stopwatch"></i> インターバルタイマー</button>
+            <button class="tab-btn" data-tab="timer" data-mode="weekly" style="display: none;"><i class="fa-solid fa-stopwatch"></i> インターバルタイマー</button>
+            <button class="tab-btn" data-tab="champions" data-mode="weekly" style="display: none;"><i class="fa-solid fa-crown"></i> 歴代チャンプ</button>
         </nav>
 
         <!-- 投稿タブ -->
@@ -207,6 +209,13 @@
             </div>
             
             <p id="score-error" class="error-message"></p>
+        </div>
+
+        <!-- 歴代チャンプタブ（週間チャレンジモード専用） -->
+        <div id="champions-tab" class="tab-content" data-mode="weekly">
+            <h2><i class="fa-solid fa-crown"></i> 歴代チャンプ</h2>
+            <div id="champions-mode-info" class="mode-info"></div>
+            <div id="champions-list" class="champions-list"></div>
         </div>
 
         <!-- 週間チャレンジモード背景オーバーレイ -->

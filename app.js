@@ -1303,9 +1303,9 @@ function updateTabsForMode() {
         const contentMode = content.dataset.mode;
         if (contentMode && contentMode !== currentMode) {
             // 表示中のタブがモード専用で、現在のモードと一致しない場合は非表示
-            // ただしtimer-tabはintervalとfreeの両方で使用可能
-            if (content.id === 'timer-tab' && (currentMode === 'interval' || currentMode === 'free')) {
-                // timer-tabはintervalとfreeで共有
+            // ただしtimer-tabはintervalとfreeとweeklyの両方で使用可能
+            if (content.id === 'timer-tab' && (currentMode === 'interval' || currentMode === 'free' || currentMode === 'weekly')) {
+                // timer-tabはintervalとfreeとweeklyで共有
             } else {
                 content.classList.remove('active');
             }
@@ -1364,7 +1364,8 @@ function updateModeInfo() {
             ranking: '今週（月〜金）の最高記録ランキング',
             progress: '週間チャレンジ種目の成長記録',
             rules: '今週の3種目ルール（読み取り専用）',
-            score: '今週の週間チャレンジ得点'
+            score: '今週の週間チャレンジ得点',
+            champions: '毎週の総合得点チャンピオンの記録'
         }
     };
 
@@ -1381,7 +1382,8 @@ function updateModeInfo() {
         'ranking-mode-info': currentTexts.ranking,
         'progress-mode-info': currentTexts.progress,
         'rules-mode-info': currentTexts.rules,
-        'score-mode-info': currentTexts.score
+        'score-mode-info': currentTexts.score,
+        'champions-mode-info': currentTexts.champions
     };
     
     Object.entries(modeInfoElements).forEach(([id, text]) => {
@@ -1531,6 +1533,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
                 updateTimerDisplay();
             }
         }
+        
+        // 歴代チャンプタブの場合はデータ読み込み
+        if (tabName === 'champions') {
+            loadChampionsHistory();
+        }
     });
 });
 
@@ -1570,6 +1577,9 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
                 break;
             case 'board-tab':
                 await loadPosts(true);  // 掲示板を強制更新
+                break;
+            case 'champions-tab':
+                await loadChampionsHistory();
                 break;
             default:
                 // その他のタブでは特に何もしない
@@ -3527,6 +3537,27 @@ async function getOrUpdateWeeklyChallenge() {
         }
 
         // 新しい週: 種目を選出してFirestoreに保存
+        // まず前の週のデータを履歴に保存し、チャンプを集計する
+        if (doc.exists) {
+            const prevData = doc.data();
+            const prevWeekStart = prevData.weekStart ? prevData.weekStart.toDate() : null;
+            if (prevWeekStart && prevData.exercises && prevData.exercises.length > 0) {
+                const prevWeekEnd = prevData.weekEnd ? prevData.weekEnd.toDate() : null;
+                if (prevWeekEnd) {
+                    await saveWeeklyChallengeHistory({
+                        weekStart: prevWeekStart,
+                        weekEnd: prevWeekEnd,
+                        exercises: prevData.exercises
+                    });
+                    await finalizeWeeklyChampion({
+                        weekStart: prevWeekStart,
+                        weekEnd: prevWeekEnd,
+                        exercises: prevData.exercises
+                    });
+                }
+            }
+        }
+
         if (!freeExercisesLoaded) {
             await loadFreeExercises();
         }
@@ -3621,8 +3652,13 @@ function renderWeeklyChallengeInfo() {
     const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
     const weekStartJST = new Date(weeklyChallenge.weekStart.getTime() + JST_OFFSET_MS);
 
-    // 月曜〜金曜の日付範囲を表示
+    // 第◯週の計算（その年の1/1から数えて何週目か）
     const monJST = new Date(weekStartJST.getTime() + 1 * 24 * 60 * 60 * 1000);
+    const yearStart = new Date(Date.UTC(monJST.getUTCFullYear(), 0, 1));
+    const diffMs = monJST.getTime() - yearStart.getTime();
+    const weekNumber = Math.ceil((diffMs / (24 * 60 * 60 * 1000) + 1) / 7);
+
+    // 月曜〜金曜の日付範囲を表示
     const friJST = new Date(weekStartJST.getTime() + 5 * 24 * 60 * 60 * 1000);
 
     const dayNames = ['日','月','火','水','木','金','土'];
@@ -3640,7 +3676,7 @@ function renderWeeklyChallengeInfo() {
     infoEl.className = 'weekly-challenge-info';
     infoEl.innerHTML = `
         <h3><i class="fa-solid fa-trophy"></i> 今週のチャレンジ</h3>
-        <div class="weekly-challenge-period"><i class="fa-solid fa-calendar"></i> 採用期間: ${formatDate(monJST)} 〜 ${formatDate(friJST)}</div>
+        <div class="weekly-challenge-period"><i class="fa-solid fa-calendar"></i> 第${weekNumber}週：${formatDate(monJST)} 〜 ${formatDate(friJST)}</div>
         <div class="weekly-challenge-exercises">${exercisesHtml}</div>
         <div class="weekly-challenge-next">次回発表: ${formatDate(nextWeekEndJST)} 17:00</div>
     `;
@@ -3979,6 +4015,11 @@ async function initWeeklyMode() {
     updateWeeklyRulesTab();
     updateWeeklyGraphDropdown();
     renderWeeklyChallengeInfo();
+
+    // 現在の週の履歴を保存（チャンプ集計用）
+    if (weeklyChallenge && weeklyChallenge.exercises.length > 0) {
+        saveWeeklyChallengeHistory(weeklyChallenge);
+    }
 }
 
 /**
@@ -4064,6 +4105,275 @@ function updateWeeklyGraphDropdown() {
         option.textContent = ex.name;
         select.appendChild(option);
     });
+}
+
+// ====================================================================
+// 歴代チャンプ機能
+// ====================================================================
+
+/**
+ * 指定日が年初から数えて第何週目かを計算する
+ * @param {Date} date - UTC Date（JST変換済みであること想定）
+ * @returns {number} 週番号
+ */
+function getWeekNumberOfYear(date) {
+    const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+    const diffMs = date.getTime() - yearStart.getTime();
+    return Math.ceil((diffMs / (24 * 60 * 60 * 1000) + 1) / 7);
+}
+
+/**
+ * 歴代チャンプの集計・保存処理
+ * 各週の集計期間終了後に、最も得点の高かったユーザーをチャンピオンとして記録する
+ * @param {Object} weeklyData - { weekStart, weekEnd, exercises }
+ * @returns {Promise<void>}
+ */
+async function finalizeWeeklyChampion(weeklyData) {
+    try {
+        const { weekStart, weekEnd, exercises } = weeklyData;
+        const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+        const monJST = new Date(weekStart.getTime() + JST_OFFSET_MS + 1 * 24 * 60 * 60 * 1000);
+        const weekNumber = getWeekNumberOfYear(monJST);
+        const year = monJST.getUTCFullYear();
+        const docId = `${year}_W${String(weekNumber).padStart(2, '0')}`;
+
+        // 既に記録済みか確認
+        const existingDoc = await db.collection('weekly_champions').doc(docId).get();
+        if (existingDoc.exists) {
+            console.log(`[歴代チャンプ] ${docId} は既に記録済み`);
+            return;
+        }
+
+        // スコア計算
+        if (!freeExercisesLoaded) {
+            await loadFreeExercises();
+        }
+
+        const exerciseKeys = exercises.filter(k => freeExercises[k]);
+        if (exerciseKeys.length === 0) return;
+
+        const postsSnapshot = await db.collection('posts_free').get();
+        const usersSnapshot = await db.collection('users').get();
+
+        const usersData = {};
+        usersSnapshot.forEach(doc => {
+            const data = doc.data();
+            usersData[doc.id] = data.userName || data.email;
+        });
+
+        const userRecords = {};
+
+        postsSnapshot.forEach(doc => {
+            const post = doc.data();
+            if (!post.timestamp) return;
+            const postDate = post.timestamp.toDate();
+
+            if (postDate < weekStart || postDate >= weekEnd) return;
+            if (!isWeekdayJST(postDate)) return;
+            if (!exerciseKeys.includes(post.exerciseType)) return;
+
+            const { userId, exerciseType, value } = post;
+            if (!userRecords[userId]) {
+                userRecords[userId] = {
+                    userName: usersData[userId] || 'Unknown',
+                    exercises: {}
+                };
+            }
+
+            if (!userRecords[userId].exercises[exerciseType] ||
+                userRecords[userId].exercises[exerciseType] < value) {
+                userRecords[userId].exercises[exerciseType] = value;
+            }
+        });
+
+        // %計算で総合得点算出
+        let totalScores = {};
+        exerciseKeys.forEach(exercise => {
+            let maxVal = 0;
+            Object.values(userRecords).forEach(user => {
+                const val = user.exercises[exercise] || 0;
+                if (val > maxVal) maxVal = val;
+            });
+            Object.entries(userRecords).forEach(([userId, user]) => {
+                const val = user.exercises[exercise] || 0;
+                const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                if (!totalScores[userId]) totalScores[userId] = 0;
+                totalScores[userId] += pct;
+            });
+        });
+
+        // 最高得点のユーザーをチャンプに
+        let champUserId = null;
+        let champScore = -1;
+        Object.entries(totalScores).forEach(([userId, score]) => {
+            if (score > champScore) {
+                champScore = score;
+                champUserId = userId;
+            }
+        });
+
+        if (!champUserId) return;
+
+        const champUser = userRecords[champUserId];
+        const exerciseRecords = {};
+        exerciseKeys.forEach(key => {
+            const ex = freeExercises[key];
+            exerciseRecords[key] = {
+                name: ex ? ex.name : key,
+                value: champUser.exercises[key] || 0
+            };
+        });
+
+        const friJST = new Date(weekStart.getTime() + JST_OFFSET_MS + 5 * 24 * 60 * 60 * 1000);
+        const dayNames = ['日','月','火','水','木','金','土'];
+        const formatDate = (d) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${dayNames[d.getUTCDay()]})`;
+
+        await db.collection('weekly_champions').doc(docId).set({
+            year,
+            weekNumber,
+            weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
+            weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
+            periodLabel: `${formatDate(monJST)} 〜 ${formatDate(friJST)}`,
+            champUserId,
+            champUserName: champUser.userName,
+            champTotalScore: champScore,
+            exercises: exerciseRecords,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`[歴代チャンプ] ${docId} チャンプ記録完了: ${champUser.userName}`);
+
+    } catch (error) {
+        console.error('[歴代チャンプ] チャンプ記録エラー:', error);
+    }
+}
+
+/**
+ * 過去の週でまだチャンプが記録されていないものを自動集計する
+ */
+async function checkAndFinalizePassedWeeks() {
+    try {
+        // settings_free/weekly_challenge から過去の記録をチェック
+        const currentBounds = getWeekBoundaries();
+        const doc = await db.collection('settings_free').doc('weekly_challenge').get();
+        if (!doc.exists) return;
+
+        const data = doc.data();
+        const savedWeekStart = data.weekStart ? data.weekStart.toDate() : null;
+
+        // 現在の週が既にFirestoreの週と同じなら、過去の週がまだ未集計の可能性
+        // 1週間前の情報を手動でチェック
+        const oneWeekAgo = new Date(currentBounds.start.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const prevWeekBounds = getWeekBoundaries(new Date(oneWeekAgo.getTime() + 3 * 24 * 60 * 60 * 1000));
+
+        // 過去のチャレンジドキュメント（weekly_challenge_history）があれば使う
+        const historySnap = await db.collection('weekly_challenge_history').get();
+        
+        // 現在のweekly_challengeデータで前週分を試行
+        if (savedWeekStart && Math.abs(savedWeekStart.getTime() - currentBounds.start.getTime()) < 60 * 1000) {
+            // 現在の週のデータが保存されている → 前の週を集計
+            const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+            const prevMonJST = new Date(prevWeekBounds.start.getTime() + JST_OFFSET_MS + 1 * 24 * 60 * 60 * 1000);
+            const prevWeekNumber = getWeekNumberOfYear(prevMonJST);
+            const prevYear = prevMonJST.getUTCFullYear();
+            const prevDocId = `${prevYear}_W${String(prevWeekNumber).padStart(2, '0')}`;
+
+            const prevChampDoc = await db.collection('weekly_champions').doc(prevDocId).get();
+            if (!prevChampDoc.exists) {
+                // 前の週のチャレンジ種目を取得する必要がある
+                // weekly_challenge_history から取得
+                const prevHistDoc = await db.collection('weekly_challenge_history').doc(prevDocId).get();
+                if (prevHistDoc.exists) {
+                    const prevData = prevHistDoc.data();
+                    await finalizeWeeklyChampion({
+                        weekStart: prevData.weekStart.toDate(),
+                        weekEnd: prevData.weekEnd.toDate(),
+                        exercises: prevData.exercises || []
+                    });
+                }
+            }
+        }
+
+    } catch (error) {
+        console.error('[歴代チャンプ] 過去週チェックエラー:', error);
+    }
+}
+
+/**
+ * 週が変わった時に前の週のチャレンジ情報を履歴に保存する
+ */
+async function saveWeeklyChallengeHistory(weeklyData) {
+    try {
+        const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+        const monJST = new Date(weeklyData.weekStart.getTime() + JST_OFFSET_MS + 1 * 24 * 60 * 60 * 1000);
+        const weekNumber = getWeekNumberOfYear(monJST);
+        const year = monJST.getUTCFullYear();
+        const docId = `${year}_W${String(weekNumber).padStart(2, '0')}`;
+
+        const existingDoc = await db.collection('weekly_challenge_history').doc(docId).get();
+        if (existingDoc.exists) return; // 既に保存済み
+
+        await db.collection('weekly_challenge_history').doc(docId).set({
+            weekStart: firebase.firestore.Timestamp.fromDate(weeklyData.weekStart),
+            weekEnd: firebase.firestore.Timestamp.fromDate(weeklyData.weekEnd),
+            exercises: weeklyData.exercises,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`[歴代チャンプ] 週間チャレンジ履歴を保存: ${docId}`);
+    } catch (error) {
+        console.error('[歴代チャンプ] 履歴保存エラー:', error);
+    }
+}
+
+/**
+ * 歴代チャンプタブのデータを読み込んで表示
+ */
+async function loadChampionsHistory() {
+    const championsList = document.getElementById('champions-list');
+    if (!championsList) return;
+
+    championsList.innerHTML = '<p style="text-align:center; padding:20px;">読み込み中...</p>';
+
+    try {
+        const snapshot = await db.collection('weekly_champions')
+            .orderBy('year', 'desc')
+            .orderBy('weekNumber', 'desc')
+            .get();
+
+        if (snapshot.empty) {
+            championsList.innerHTML = '<p style="text-align:center; color:#999; padding:20px;">まだチャンピオンの記録がありません。<br>各週の集計期間終了後に自動的に記録されます。</p>';
+            return;
+        }
+
+        let html = '';
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const exercisesHtml = Object.values(data.exercises || {}).map(ex => {
+                return `<div class="champ-exercise-item"><i class="fa-solid fa-dumbbell"></i> ${escapeHtml(ex.name)}: <strong>${ex.value}</strong></div>`;
+            }).join('');
+
+            html += `
+                <div class="champ-card">
+                    <div class="champ-header">
+                        <span class="champ-week"><i class="fa-solid fa-crown"></i> 第${data.weekNumber}週チャンプ</span>
+                        <span class="champ-period">${escapeHtml(data.periodLabel || '')}</span>
+                    </div>
+                    <div class="champ-body">
+                        <div class="champ-user"><i class="fa-solid fa-user"></i> ${escapeHtml(data.champUserName)}</div>
+                        <div class="champ-score">総合得点: ${Math.round(data.champTotalScore)}pt</div>
+                        <div class="champ-exercises">${exercisesHtml}</div>
+                    </div>
+                </div>
+            `;
+        });
+
+        championsList.innerHTML = html;
+
+    } catch (error) {
+        console.error('[歴代チャンプ] データ読み込みエラー:', error);
+        championsList.innerHTML = '<p style="text-align:center; color:#e74c3c;">データの読み込みに失敗しました</p>';
+    }
 }
 
 // ====================================================================

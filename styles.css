@@ -1853,3 +1853,83 @@ body.mode-weekly .ranking-category h3 {
     padding: 24px;
     font-size: 0.9em;
 }
+
+/* ====================================================================
+   歴代チャンプタブ
+   ==================================================================== */
+.champions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 8px 0;
+}
+
+.champ-card {
+    background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
+    border: 2px solid #f7971e;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(247, 151, 30, 0.15);
+}
+
+.champ-header {
+    background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.champ-week {
+    font-weight: bold;
+    color: #fff;
+    font-size: 1.05em;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.champ-period {
+    font-size: 0.85em;
+    color: rgba(255,255,255,0.9);
+}
+
+.champ-body {
+    padding: 12px 16px;
+}
+
+.champ-user {
+    font-size: 1.15em;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.champ-score {
+    font-size: 0.9em;
+    color: #e67e00;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.champ-exercises {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.champ-exercise-item {
+    font-size: 0.9em;
+    color: #555;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.champ-exercise-item:last-child {
+    border-bottom: none;
+}
+
+.champ-exercise-item i {
+    color: #f7971e;
+    margin-right: 4px;
+}

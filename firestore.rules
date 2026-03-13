@@ -91,5 +91,19 @@ service cloud.firestore {
       allow create, update: if request.auth != null;
       allow delete: if false;
     }
+
+    // weekly_champions コレクション（歴代チャンプ記録）
+    match /weekly_champions/{docId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+
+    // weekly_challenge_history コレクション（週間チャレンジ履歴）
+    match /weekly_challenge_history/{docId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
   }
 }
