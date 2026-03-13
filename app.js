@@ -19,7 +19,7 @@ function escapeHtml(str) {
 // ====================================================================
 // モード管理
 // ====================================================================
-let currentMode = 'free'; // 'normal', 'interval', または 'free'
+let currentMode = 'free'; // 'normal', 'interval', 'free', または 'weekly'
 
 /**
  * モードに応じたコレクション名を取得
@@ -30,7 +30,7 @@ function getCollectionName(baseCollection) {
     if (currentMode === 'interval') {
         return `${baseCollection}_interval`;
     }
-    if (currentMode === 'free') {
+    if (currentMode === 'free' || currentMode === 'weekly') {
         return `${baseCollection}_free`;
     }
     return baseCollection;
@@ -130,37 +130,44 @@ let unsubscribePosts = null;  // 投稿リスナーの解除用
 let postsCache = {
     normal: null,
     interval: null,
-    free: null
+    free: null,
+    weekly: null
 };
 let postsCacheTime = {
     normal: null,
     interval: null,
-    free: null
+    free: null,
+    weekly: null
 };
 let rankingCache = {
     normal: null,
     interval: null,
-    free: null
+    free: null,
+    weekly: null
 };
 let rankingCacheTime = {
     normal: null,
     interval: null,
-    free: null
+    free: null,
+    weekly: null
 };
 let scoreCache = {
     normal: null,
     interval: null,
-    free: null
+    free: null,
+    weekly: null
 };
 let scoreCacheTime = {
     normal: null,
     interval: null,
-    free: null
+    free: null,
+    weekly: null
 };
 let progressCache = {
     normal: {},
     interval: {},
-    free: {}
+    free: {},
+    weekly: {}
 };  // 種目ごとにキャッシュ
 const CACHE_DURATION = 5 * 60 * 1000;  // キャッシュ有効期間: 5分
 
@@ -1350,11 +1357,22 @@ function updateModeInfo() {
             progress: 'フリーモードの成長記録',
             rules: 'フリーモードの種目管理（種目の追加・削除が可能）',
             score: 'フリーモードの総合得点'
+        },
+        'weekly': {
+            post: '週間チャレンジの記録を投稿（今週の3種目のみ）',
+            board: 'フリーモードの投稿を表示（週間チャレンジ記録も含む）',
+            ranking: '今週（月〜金）の最高記録ランキング',
+            progress: '週間チャレンジ種目の成長記録',
+            rules: '今週の3種目ルール（読み取り専用）',
+            score: '今週の週間チャレンジ得点'
         }
     };
 
-    const currentTexts = modeTexts[currentMode];
-    const modeClass = currentMode === 'normal' ? 'normal' : currentMode === 'interval' ? 'interval-mode' : 'free-mode';
+    const currentTexts = modeTexts[currentMode] || modeTexts['normal'];
+    const modeClass = currentMode === 'normal' ? 'normal'
+                    : currentMode === 'interval' ? 'interval-mode'
+                    : currentMode === 'weekly' ? 'weekly-mode'
+                    : 'free-mode';
     
     // 各タブのモード情報を更新
     const modeInfoElements = {
@@ -1395,7 +1413,7 @@ async function changeMode(newMode) {
     modeSelect.value = newMode;
     
     // 背景色クラスを切り替え（トランジション付き）
-    document.body.classList.remove('mode-normal', 'mode-interval', 'mode-free');
+    document.body.classList.remove('mode-normal', 'mode-interval', 'mode-free', 'mode-weekly');
     document.body.classList.add(`mode-${newMode}`);
     
     // タブの表示を更新
@@ -1410,11 +1428,13 @@ async function changeMode(newMode) {
             console.log(`${newMode}モードのデータを読み込み中...`);
             console.log(`使用コレクション: ${getCollectionName('posts')}, ${getCollectionName('settings')}`);
 
-            // フリーモードへの切り替え時はUI初期化
+            // モード別UI初期化
             if (newMode === 'free') {
                 await initFreeMode();
+            } else if (newMode === 'weekly') {
+                await initWeeklyMode();
             } else {
-                // フリーモードから戻る場合はUI復元
+                // フリー/週間チャレンジから戻る場合はUI復元
                 restoreStandardExerciseUI();
             }
 
@@ -1426,6 +1446,8 @@ async function changeMode(newMode) {
             if (activeTab && activeTab.id === 'score-tab') {
                 if (newMode === 'free') {
                     loadFreeUserCheckboxes(true);
+                } else if (newMode === 'weekly') {
+                    loadWeeklyUserCheckboxes(true);
                 } else {
                     loadUserCheckboxes(true);
                 }
@@ -1480,10 +1502,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
             loadProgressChart();
         }
         
-        // ルールタブの場合は倍率をロード（フリーモードでは種目管理UI）
+        // ルールタブの場合は倍率をロード（フリーモードでは種目管理UI、週間チャレンジでは読み取り専用）
         if (tabName === 'rules') {
             if (currentMode === 'free') {
                 updateFreeRulesTab();
+            } else if (currentMode === 'weekly') {
+                updateWeeklyRulesTab();
             } else {
                 loadMultipliers();
             }
@@ -1493,6 +1517,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (tabName === 'score') {
             if (currentMode === 'free') {
                 loadFreeUserCheckboxes(false);
+            } else if (currentMode === 'weekly') {
+                loadWeeklyUserCheckboxes(false);
             } else {
                 loadUserCheckboxes(false);
             }
@@ -1536,6 +1562,8 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
             case 'score-tab':
                 if (currentMode === 'free') {
                     await loadFreeUserCheckboxes(true);
+                } else if (currentMode === 'weekly') {
+                    await loadWeeklyUserCheckboxes(true);
                 } else {
                     await loadUserCheckboxes(true);
                 }
@@ -1560,7 +1588,9 @@ submitPostBtn.addEventListener('click', async () => {
     const value = parseInt(exerciseValue.value);
     
     // 種目の検証
-    const validExercises = currentMode === 'free' ? freeExercises : exerciseNames;
+    const validExercises = currentMode === 'free' ? freeExercises
+                         : currentMode === 'weekly' ? getWeeklyExercisesObject()
+                         : exerciseNames;
     if (!type || !validExercises[type]) {
         postError.textContent = '種目を選択してください';
         return;
@@ -1597,6 +1627,15 @@ submitPostBtn.addEventListener('click', async () => {
         progressCache[mode] = {};
         postsCache[mode] = null;
         postsCacheTime[mode] = null;
+        // 週間チャレンジはフリーモードと同じコレクションを使うため、freeキャッシュも無効化
+        if (mode === 'weekly') {
+            rankingCache.free = null;
+            rankingCacheTime.free = null;
+            scoreCache.free = null;
+            scoreCacheTime.free = null;
+            postsCache.free = null;
+            postsCacheTime.free = null;
+        }
         
         exerciseType.value = '';
         exerciseValue.value = '';
@@ -1975,9 +2014,15 @@ async function deleteComment(postId, commentIndex) {
 
 // ランキングの読み込み（キャッシュ対応）
 async function loadRanking(forceRefresh = false) {
+    // 週間チャレンジモードは専用関数に委譲
+    if (currentMode === 'weekly') {
+        await loadWeeklyRanking(forceRefresh);
+        return;
+    }
+
     const now = Date.now();
     const mode = currentMode;
-    
+
     // キャッシュが有効な場合はキャッシュを使用
     if (!forceRefresh && rankingCache[mode] && rankingCacheTime[mode] && (now - rankingCacheTime[mode] < CACHE_DURATION)) {
         console.log(`[loadRanking] キャッシュを使用 (${mode}モード)`);
@@ -2039,8 +2084,21 @@ async function loadRanking(forceRefresh = false) {
 // ランキングの表示
 async function renderRanking(rankings) {
     rankingList.innerHTML = '';
-    
-    const currentExNames = currentMode === 'free' ? getFreeExerciseNames() : exerciseNames;
+
+    // 週間チャレンジモード以外では weekly-challenge-info を非表示
+    const weeklyInfo = document.getElementById('weekly-challenge-info');
+    if (weeklyInfo && currentMode !== 'weekly') {
+        weeklyInfo.style.display = 'none';
+    }
+
+    let currentExNames;
+    if (currentMode === 'weekly') {
+        currentExNames = getWeeklyExerciseNames();
+    } else if (currentMode === 'free') {
+        currentExNames = getFreeExerciseNames();
+    } else {
+        currentExNames = exerciseNames;
+    }
     for (const type of Object.keys(currentExNames)) {
         const categoryDiv = document.createElement('div');
         categoryDiv.className = 'ranking-category';
@@ -3340,6 +3398,672 @@ async function loadFreeUserCheckboxes(forceRefresh = false) {
         console.error('[フリーモード] チェックボックスエラー:', error);
         scoreError.textContent = 'ユーザーリストの取得に失敗しました';
     }
+}
+
+// ====================================================================
+// 週間チャレンジモード機能
+// ====================================================================
+
+/** 週間チャレンジの現在のデータ */
+let weeklyChallenge = null;  // { weekStart, weekEnd, exercises, selectionHistory }
+let weeklyChallengeLoaded = false;
+
+/**
+ * 現在の週の境界日時を返す（JST基準）
+ * 週の開始: 直近の日曜17:00 JST (= 日曜08:00 UTC)
+ * @param {Date} [now=new Date()]
+ * @returns {{ start: Date, end: Date }} UTC基準のDateオブジェクト
+ */
+function getWeekBoundaries(now = new Date()) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+    // JSTに変換して計算
+    const jstMs = now.getTime() + JST_OFFSET_MS;
+    const jstDate = new Date(jstMs);
+
+    const jstDayOfWeek = jstDate.getUTCDay();   // 0=日, 1=月, ..., 6=土
+    const jstHour = jstDate.getUTCHours();
+    const jstMin = jstDate.getUTCMinutes();
+    const jstSec = jstDate.getUTCSeconds();
+    const jstMs2 = jstDate.getUTCMilliseconds();
+
+    // 今日のJST午前0時
+    const todayJstDayStartMs = jstMs - (jstHour * 3600 + jstMin * 60 + jstSec) * 1000 - jstMs2;
+
+    // 今週の日曜17:00 JST（UTCオフセット適用後）を計算
+    let daysBack;
+    if (jstDayOfWeek === 0 && jstHour < 17) {
+        // 日曜日の17:00より前 → 先週日曜を基点にする
+        daysBack = 7;
+    } else {
+        daysBack = jstDayOfWeek;
+    }
+
+    // 直近日曜日のJST午前0時
+    const lastSundayJstDayStartMs = todayJstDayStartMs - daysBack * 24 * 60 * 60 * 1000;
+
+    // 直近日曜日の17:00 JST（UTC換算）
+    const weekStartJstMs = lastSundayJstDayStartMs + 17 * 60 * 60 * 1000;
+
+    // UTCに戻す
+    const weekStartUTC = new Date(weekStartJstMs - JST_OFFSET_MS);
+    const weekEndUTC = new Date(weekStartUTC.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    return { start: weekStartUTC, end: weekEndUTC };
+}
+
+/**
+ * 指定日時がJST換算で平日（月〜金）か判定
+ * @param {Date} date
+ * @returns {boolean}
+ */
+function isWeekdayJST(date) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const jstDate = new Date(date.getTime() + JST_OFFSET_MS);
+    const jstDayOfWeek = jstDate.getUTCDay(); // 0=日, 1=月, ..., 6=土
+    return jstDayOfWeek >= 1 && jstDayOfWeek <= 5;
+}
+
+/**
+ * 加重ランダムで count 個の種目を選出（偏りを防ぐ）
+ * @param {string[]} allKeys - 全種目キー
+ * @param {Object} history - { [key]: 選出回数 }
+ * @param {number} count
+ * @returns {string[]}
+ */
+function selectWeeklyExercises(allKeys, history, count = 3) {
+    if (allKeys.length <= count) return [...allKeys];
+
+    const remaining = [...allKeys];
+    const selected = [];
+
+    for (let i = 0; i < count; i++) {
+        // 重み = 1 / (過去選出回数 + 1)
+        const weights = remaining.map(key => 1 / ((history[key] || 0) + 1));
+        const total = weights.reduce((s, w) => s + w, 0);
+
+        let rand = Math.random() * total;
+        for (let j = 0; j < remaining.length; j++) {
+            rand -= weights[j];
+            if (rand <= 0) {
+                selected.push(remaining[j]);
+                remaining.splice(j, 1);
+                break;
+            }
+        }
+    }
+
+    return selected;
+}
+
+/**
+ * 今週の週間チャレンジ設定を取得/更新する
+ * - settings_free/weekly_challenge から読み込む
+ * - 古ければ新しい3種目を選出してFirestoreに保存
+ * @returns {Promise<Object>} weeklyChallenge
+ */
+async function getOrUpdateWeeklyChallenge() {
+    const { start: weekStart, end: weekEnd } = getWeekBoundaries();
+
+    try {
+        const doc = await db.collection('settings_free').doc('weekly_challenge').get();
+
+        if (doc.exists) {
+            const data = doc.data();
+            const savedWeekStart = data.weekStart ? data.weekStart.toDate() : null;
+
+            // 同じ週かどうか確認（1分の誤差許容）
+            if (savedWeekStart && Math.abs(savedWeekStart.getTime() - weekStart.getTime()) < 60 * 1000) {
+                weeklyChallenge = {
+                    weekStart,
+                    weekEnd,
+                    exercises: data.exercises || [],
+                    selectionHistory: data.selectionHistory || {}
+                };
+                weeklyChallengeLoaded = true;
+                console.log('[週間チャレンジ] 既存チャレンジを使用:', weeklyChallenge.exercises);
+                return weeklyChallenge;
+            }
+        }
+
+        // 新しい週: 種目を選出してFirestoreに保存
+        if (!freeExercisesLoaded) {
+            await loadFreeExercises();
+        }
+
+        const allKeys = Object.keys(freeExercises);
+        const existingHistory = (doc.exists && doc.data().selectionHistory) ? doc.data().selectionHistory : {};
+
+        let selectedExercises = [];
+        if (allKeys.length > 0) {
+            selectedExercises = selectWeeklyExercises(allKeys, existingHistory);
+        }
+
+        // 選出履歴を更新
+        const newHistory = { ...existingHistory };
+        selectedExercises.forEach(key => {
+            newHistory[key] = (newHistory[key] || 0) + 1;
+        });
+
+        await db.collection('settings_free').doc('weekly_challenge').set({
+            weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
+            weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
+            exercises: selectedExercises,
+            selectionHistory: newHistory,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        weeklyChallenge = {
+            weekStart,
+            weekEnd,
+            exercises: selectedExercises,
+            selectionHistory: newHistory
+        };
+        weeklyChallengeLoaded = true;
+
+        // 週が変わったのでキャッシュをクリア
+        rankingCache.weekly = null;
+        rankingCacheTime.weekly = null;
+        scoreCache.weekly = null;
+        scoreCacheTime.weekly = null;
+
+        console.log('[週間チャレンジ] 新しいチャレンジを設定:', selectedExercises);
+        return weeklyChallenge;
+
+    } catch (error) {
+        console.error('[週間チャレンジ] チャレンジの取得/更新に失敗:', error);
+        weeklyChallenge = { weekStart, weekEnd, exercises: [], selectionHistory: {} };
+        weeklyChallengeLoaded = true;
+        return weeklyChallenge;
+    }
+}
+
+/**
+ * 今週の3種目を { key: { name, rule } } 形式で返す
+ * @returns {Object}
+ */
+function getWeeklyExercisesObject() {
+    if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) return {};
+    const result = {};
+    weeklyChallenge.exercises.forEach(key => {
+        if (freeExercises[key]) {
+            result[key] = freeExercises[key];
+        }
+    });
+    return result;
+}
+
+/**
+ * 今週の3種目の名前マッピングを返す { key: name }
+ * @returns {Object}
+ */
+function getWeeklyExerciseNames() {
+    const obj = getWeeklyExercisesObject();
+    const names = {};
+    Object.entries(obj).forEach(([key, ex]) => { names[key] = ex.name; });
+    return names;
+}
+
+/**
+ * 週間チャレンジ情報を #weekly-challenge-info に表示
+ */
+function renderWeeklyChallengeInfo() {
+    const infoEl = document.getElementById('weekly-challenge-info');
+    if (!infoEl) return;
+
+    if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) {
+        infoEl.style.display = 'block';
+        infoEl.className = 'weekly-challenge-info';
+        infoEl.innerHTML = '<p class="weekly-no-challenge">フリーモードに種目が登録されていません。まずフリーモードで種目を追加してください。</p>';
+        return;
+    }
+
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const weekStartJST = new Date(weeklyChallenge.weekStart.getTime() + JST_OFFSET_MS);
+
+    // 月曜〜金曜の日付範囲を表示
+    const monJST = new Date(weekStartJST.getTime() + 1 * 24 * 60 * 60 * 1000);
+    const friJST = new Date(weekStartJST.getTime() + 5 * 24 * 60 * 60 * 1000);
+
+    const dayNames = ['日','月','火','水','木','金','土'];
+    const formatDate = (d) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${dayNames[d.getUTCDay()]})`;
+
+    const exercisesHtml = weeklyChallenge.exercises.map(key => {
+        const ex = freeExercises[key];
+        if (!ex) return '';
+        return `<div class="weekly-challenge-exercise-item">🏋️ ${escapeHtml(ex.name)}</div>`;
+    }).join('');
+
+    const nextWeekEndJST = new Date(weeklyChallenge.weekEnd.getTime() + JST_OFFSET_MS);
+
+    infoEl.style.display = 'block';
+    infoEl.className = 'weekly-challenge-info';
+    infoEl.innerHTML = `
+        <h3>🏆 今週のチャレンジ</h3>
+        <div class="weekly-challenge-period">📅 採用期間: ${formatDate(monJST)} 〜 ${formatDate(friJST)}（平日のみ）</div>
+        <div class="weekly-challenge-exercises">${exercisesHtml}</div>
+        <div class="weekly-challenge-next">次回発表: ${formatDate(nextWeekEndJST)} 17:00</div>
+    `;
+}
+
+/**
+ * 週間チャレンジ: ランキング読み込み
+ * @param {boolean} forceRefresh
+ */
+async function loadWeeklyRanking(forceRefresh = false) {
+    const now = Date.now();
+
+    if (!weeklyChallengeLoaded) {
+        await getOrUpdateWeeklyChallenge();
+    }
+
+    if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) {
+        rankingList.innerHTML = '<p class="weekly-no-challenge">フリーモードに種目がまだ登録されていません。</p>';
+        renderWeeklyChallengeInfo();
+        return;
+    }
+
+    if (!forceRefresh && rankingCache.weekly && rankingCacheTime.weekly && (now - rankingCacheTime.weekly < CACHE_DURATION)) {
+        console.log('[週間チャレンジ] ランキングキャッシュを使用');
+        renderWeeklyChallengeInfo();
+        renderRanking(rankingCache.weekly);
+        return;
+    }
+
+    try {
+        const snapshot = await db.collection('posts_free').get();
+
+        const { weekStart, weekEnd, exercises } = weeklyChallenge;
+        const rankings = {};
+        exercises.forEach(key => { rankings[key] = {}; });
+
+        snapshot.forEach(doc => {
+            const post = doc.data();
+            if (!post.timestamp) return;
+
+            const postDate = post.timestamp.toDate();
+
+            // 今週範囲内か
+            if (postDate < weekStart || postDate >= weekEnd) return;
+
+            // 平日（月〜金 JST）か
+            if (!isWeekdayJST(postDate)) return;
+
+            // 今週の3種目か
+            if (!exercises.includes(post.exerciseType)) return;
+
+            const { userId, exerciseType, value } = post;
+            if (!rankings[exerciseType]) rankings[exerciseType] = {};
+
+            if (!rankings[exerciseType][userId] || rankings[exerciseType][userId].value < value) {
+                rankings[exerciseType][userId] = {
+                    value,
+                    userId,
+                    email: post.userEmail
+                };
+            }
+        });
+
+        rankingCache.weekly = rankings;
+        rankingCacheTime.weekly = now;
+
+        console.log('[週間チャレンジ] ランキング集計完了');
+        renderWeeklyChallengeInfo();
+        await renderRanking(rankings);
+
+    } catch (error) {
+        console.error('[週間チャレンジ] ランキング読み込みエラー:', error);
+        rankingList.innerHTML = '<p style="text-align:center; color:#e74c3c;">ランキングの読み込みに失敗しました</p>';
+    }
+}
+
+/**
+ * 週間チャレンジ: 全ユーザーのスコア計算
+ * フリーモードと同構造だが今週・平日・3種目フィルタあり
+ */
+async function getAllUsersScoresWeekly(forceRefresh = false) {
+    try {
+        const now = Date.now();
+
+        if (!forceRefresh && scoreCache.weekly && scoreCacheTime.weekly && (now - scoreCacheTime.weekly < CACHE_DURATION)) {
+            return scoreCache.weekly;
+        }
+
+        if (!weeklyChallengeLoaded) {
+            await getOrUpdateWeeklyChallenge();
+        }
+
+        if (!freeExercisesLoaded) {
+            await loadFreeExercises();
+        }
+
+        const { weekStart, weekEnd, exercises } = weeklyChallenge;
+        const exerciseKeys = exercises.filter(k => freeExercises[k]);
+
+        const postsSnapshot = await db.collection('posts_free').get();
+        const usersSnapshot = await db.collection('users').get();
+
+        const usersData = {};
+        usersSnapshot.forEach(doc => {
+            const data = doc.data();
+            usersData[doc.id] = data.userName || data.email;
+        });
+
+        const userRecords = {};
+
+        postsSnapshot.forEach(doc => {
+            const post = doc.data();
+            if (!post.timestamp) return;
+
+            const postDate = post.timestamp.toDate();
+
+            // 今週の平日かつ今週の3種目のみ
+            if (postDate < weekStart || postDate >= weekEnd) return;
+            if (!isWeekdayJST(postDate)) return;
+            if (!exerciseKeys.includes(post.exerciseType)) return;
+
+            const { userId, exerciseType, value } = post;
+
+            if (!userRecords[userId]) {
+                userRecords[userId] = {
+                    userName: usersData[userId] || 'Unknown',
+                    exercises: {},
+                    scores: {},
+                    totalScore: 0
+                };
+            }
+
+            if (!userRecords[userId].exercises[exerciseType] ||
+                userRecords[userId].exercises[exerciseType] < value) {
+                userRecords[userId].exercises[exerciseType] = value;
+            }
+        });
+
+        // %計算（最高得点を100%とする）
+        exerciseKeys.forEach(exercise => {
+            let maxVal = 0;
+            Object.values(userRecords).forEach(user => {
+                const val = user.exercises[exercise] || 0;
+                if (val > maxVal) maxVal = val;
+            });
+
+            Object.values(userRecords).forEach(user => {
+                const val = user.exercises[exercise] || 0;
+                const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                user.scores[exercise] = pct;
+                user.totalScore += pct;
+            });
+        });
+
+        scoreCache.weekly = userRecords;
+        scoreCacheTime.weekly = now;
+
+        return userRecords;
+
+    } catch (error) {
+        console.error('[週間チャレンジ] スコア計算エラー:', error);
+        return {};
+    }
+}
+
+/**
+ * 週間チャレンジ: 得点タブのユーザーチェックボックスを表示
+ */
+async function loadWeeklyUserCheckboxes(forceRefresh = false) {
+    try {
+        const usersScores = await getAllUsersScoresWeekly(forceRefresh);
+        const exerciseKeys = weeklyChallenge ? weeklyChallenge.exercises.filter(k => freeExercises[k]) : [];
+
+        let html = '';
+        Object.keys(usersScores).forEach(userId => {
+            const user = usersScores[userId];
+            const isCurrentUser = userId === currentUser.uid;
+            const checked = isCurrentUser ? 'checked' : '';
+            html += `
+                <label class="user-checkbox">
+                    <input type="checkbox" value="${userId}" ${checked}>
+                    <span>${escapeHtml(user.userName)}</span>
+                </label>
+            `;
+        });
+
+        userCheckboxes.innerHTML = html;
+
+        userCheckboxes.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                const selectedIds = Array.from(
+                    userCheckboxes.querySelectorAll('input[type="checkbox"]:checked')
+                ).map(cb => cb.value);
+                loadWeeklyScoreChart(selectedIds, exerciseKeys, usersScores);
+            });
+        });
+
+        loadWeeklyScoreChart([currentUser.uid], exerciseKeys, usersScores);
+
+    } catch (error) {
+        console.error('[週間チャレンジ] チェックボックスエラー:', error);
+        scoreError.textContent = 'ユーザーリストの取得に失敗しました';
+    }
+}
+
+/**
+ * 週間チャレンジ: レーダーチャートと総合得点を描画
+ */
+async function loadWeeklyScoreChart(selectedUserIds, exerciseKeys, usersScores) {
+    if (!usersScores) {
+        usersScores = await getAllUsersScoresWeekly(false);
+    }
+    if (!exerciseKeys) {
+        exerciseKeys = weeklyChallenge ? weeklyChallenge.exercises.filter(k => freeExercises[k]) : [];
+    }
+
+    try {
+        scoreError.textContent = '';
+
+        if (selectedUserIds.length === 0) {
+            selectedUserIds = Object.keys(usersScores);
+        }
+
+        if (exerciseKeys.length === 0) {
+            scoreError.textContent = '今週のチャレンジ種目がまだ設定されていません';
+            if (myScoreChart) { myScoreChart.destroy(); myScoreChart = null; }
+            return;
+        }
+
+        const circledNumbers = exerciseKeys.map((_, i) => {
+            const nums = ['①','②','③'];
+            return i < nums.length ? nums[i] : `(${i + 1})`;
+        });
+
+        const allUserIds = Object.keys(usersScores).sort();
+        const getUserColorIndex = (userId) => {
+            const index = allUserIds.indexOf(userId);
+            return index >= 0 ? index : 0;
+        };
+
+        const colors = [
+            'rgba(247, 151, 30, 0.6)',
+            'rgba(237, 100, 166, 0.6)',
+            'rgba(102, 126, 234, 0.6)',
+            'rgba(75, 192, 192, 0.6)',
+            'rgba(153, 102, 255, 0.6)',
+            'rgba(255, 205, 86, 0.6)'
+        ];
+        const borderColors = [
+            'rgb(247, 151, 30)',
+            'rgb(237, 100, 166)',
+            'rgb(102, 126, 234)',
+            'rgb(75, 192, 192)',
+            'rgb(153, 102, 255)',
+            'rgb(255, 205, 86)'
+        ];
+
+        const datasets = selectedUserIds.map(userId => {
+            const user = usersScores[userId];
+            if (!user) return null;
+            const colorIndex = getUserColorIndex(userId) % colors.length;
+            const data = exerciseKeys.map(key => user.scores[key] || 0);
+            return {
+                label: user.userName,
+                data,
+                backgroundColor: colors[colorIndex],
+                borderColor: borderColors[colorIndex],
+                borderWidth: 2,
+                pointBackgroundColor: borderColors[colorIndex],
+                pointBorderColor: '#fff',
+                pointHoverBackgroundColor: '#fff',
+                pointHoverBorderColor: borderColors[colorIndex]
+            };
+        }).filter(d => d !== null);
+
+        if (myScoreChart) { myScoreChart.destroy(); }
+
+        const ctx = scoreChart.getContext('2d');
+        myScoreChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: circledNumbers,
+                datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { top: 10, bottom: 10, left: 20, right: 20 } },
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: { display: false },
+                        grid: { color: 'rgba(0,0,0,0.1)' },
+                        pointLabels: { font: { size: 16 } }
+                    }
+                },
+                plugins: {
+                    legend: { position: 'top' }
+                }
+            }
+        });
+
+        // 凡例注釈（種目番号↔名前の対応）
+        let annotationContainer = document.querySelector('.chart-legend-annotations');
+        if (!annotationContainer) {
+            annotationContainer = document.createElement('div');
+            annotationContainer.className = 'chart-legend-annotations';
+            const chartContainer = scoreChart.closest('.score-chart-container');
+            chartContainer.parentNode.insertBefore(annotationContainer, chartContainer.nextSibling);
+        }
+        annotationContainer.innerHTML = exerciseKeys.map((key, i) => {
+            const ex = freeExercises[key];
+            if (!ex) return '';
+            return `<span class="legend-annotation-item">${circledNumbers[i]} ${escapeHtml(ex.name)}</span>`;
+        }).join('');
+
+        // 総合得点ランキング
+        displayFreeScores(usersScores, exerciseKeys);
+
+    } catch (error) {
+        console.error('[週間チャレンジ] チャートエラー:', error);
+        scoreError.textContent = 'チャートの描画に失敗しました';
+    }
+}
+
+/**
+ * 週間チャレンジモード入場時のUI初期化
+ */
+async function initWeeklyMode() {
+    if (!freeExercisesLoaded) {
+        await loadFreeExercises();
+    }
+    await getOrUpdateWeeklyChallenge();
+    updateWeeklyPostDropdown();
+    updateWeeklyRulesTab();
+    updateWeeklyGraphDropdown();
+    renderWeeklyChallengeInfo();
+}
+
+/**
+ * 週間チャレンジ: 投稿タブのプルダウンを今週の3種目に更新
+ */
+function updateWeeklyPostDropdown() {
+    if (currentMode !== 'weekly') return;
+    const select = document.getElementById('exercise-type');
+    select.innerHTML = '<option value="">種目を選択</option>';
+
+    if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) return;
+
+    weeklyChallenge.exercises.forEach(key => {
+        const ex = freeExercises[key];
+        if (!ex) return;
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = ex.name;
+        select.appendChild(option);
+    });
+}
+
+/**
+ * 週間チャレンジ: ルールタブを今週の3種目（読み取り専用）で更新
+ */
+function updateWeeklyRulesTab() {
+    if (currentMode !== 'weekly') return;
+
+    const rulesTab = document.getElementById('rules-tab');
+    const rulesList = rulesTab.querySelector('.rules-list');
+
+    const title = rulesTab.querySelector('h2');
+    if (title) title.textContent = '📋 今週のチャレンジ種目';
+
+    // 倍率説明・更新ボタンを非表示
+    const rulesDesc = rulesTab.querySelector('.rules-description');
+    if (rulesDesc) rulesDesc.style.display = 'none';
+    const updateBtn = document.getElementById('update-multipliers-btn');
+    if (updateBtn) updateBtn.style.display = 'none';
+
+    // 種目追加ボタンがあれば削除（フリーモードからの復帰時）
+    const addBtn = rulesTab.querySelector('.add-exercise-btn');
+    if (addBtn) addBtn.remove();
+
+    // 今週の3種目を読み取り専用で表示
+    rulesList.innerHTML = '';
+
+    if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) {
+        rulesList.innerHTML = '<p style="text-align:center; color:#999; padding:20px;">今週のチャレンジ種目がまだ設定されていません。</p>';
+        return;
+    }
+
+    weeklyChallenge.exercises.forEach(key => {
+        const ex = freeExercises[key];
+        if (!ex) return;
+        const item = document.createElement('div');
+        item.className = 'rule-item';
+        item.innerHTML = `
+            <div class="rule-info">
+                <h3>🏋️ ${escapeHtml(ex.name)}</h3>
+                <p class="rule-detail">${escapeHtml(ex.rule || 'ルール未設定')}</p>
+            </div>
+        `;
+        rulesList.appendChild(item);
+    });
+}
+
+/**
+ * 週間チャレンジ: 成長グラフのプルダウンを今週の3種目に更新
+ */
+function updateWeeklyGraphDropdown() {
+    if (currentMode !== 'weekly') return;
+    const select = document.getElementById('graph-exercise-type');
+    select.innerHTML = '';
+
+    if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) return;
+
+    weeklyChallenge.exercises.forEach(key => {
+        const ex = freeExercises[key];
+        if (!ex) return;
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = ex.name;
+        select.appendChild(option);
+    });
 }
 
 // ====================================================================
