@@ -39,6 +39,47 @@ body.mode-interval::before {
     opacity: 1;
 }
 
+/* フリーモード用オーバーレイ */
+body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    opacity: 0;
+    transition: opacity var(--mode-transition-duration) var(--mode-transition-timing);
+    pointer-events: none;
+    z-index: -1;
+}
+
+body.mode-free::after {
+    opacity: 1;
+}
+
+/* フリーモード用のヘッダー文字色 */
+header h1::before {
+    content: 'GrowRep';
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    opacity: 0;
+    transition: opacity var(--mode-transition-duration) var(--mode-transition-timing);
+}
+
+body.mode-free header h1::before {
+    opacity: 1;
+}
+
+body.mode-free header h1::after {
+    opacity: 0;
+}
+
 .container {
     max-width: 1200px;
     margin: 0 auto;
@@ -1588,6 +1629,87 @@ body.mode-interval header h1::after {
 
 .mode-info.interval-mode {
     background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.mode-info.free-mode {
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    color: #1a1a2e;
+}
+
+/* フリーモード種目追加ボタン */
+.add-exercise-btn {
+    width: 100%;
+    padding: 15px;
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    color: #1a1a2e;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+    margin-bottom: 20px;
+}
+
+.add-exercise-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(67, 233, 123, 0.4);
+}
+
+.free-exercise-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.free-exercise-form label {
+    font-weight: 600;
+    color: #333;
+}
+
+.free-exercise-form input[type="text"] {
+    padding: 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 16px;
+}
+
+.free-exercise-form input[type="text"]:focus {
+    outline: none;
+    border-color: #43e97b;
+}
+
+/* レーダーチャート凡例注釈 */
+.chart-legend-annotations {
+    margin-top: 15px;
+    padding: 15px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+}
+
+.legend-annotation-item {
+    font-size: 14px;
+    color: #333;
+}
+
+/* 種目削除ボタン */
+.rule-delete-btn {
+    padding: 6px 12px;
+    background: #ffebe0;
+    color: #e67e22;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s;
+}
+
+.rule-delete-btn:hover {
+    background: #e67e22;
+    color: white;
 }
 
 @media (max-width: 768px) {

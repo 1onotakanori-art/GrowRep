@@ -7,8 +7,8 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- ログイン画面 -->
-    <div id="login-container" class="container">
+    <!-- ログイン画面（初期非表示: onAuthStateChangedで制御） -->
+    <div id="login-container" class="container" style="display: none;">
         <div class="login-box">
             <h1>GrowRep</h1>
             <p>筋トレ成果報告アプリ in 共和</p>
@@ -34,6 +34,7 @@
                     <select id="mode-select">
                         <option value="normal">ノーマルモード</option>
                         <option value="interval">インターバルモード</option>
+                        <option value="free">フリーモード</option>
                     </select>
                 </div>
             </div>
@@ -53,6 +54,7 @@
             <button class="tab-btn" data-tab="rules">ルール</button>
             <button class="tab-btn" data-tab="score">総合得点</button>
             <button class="tab-btn" data-tab="timer" data-mode="interval" style="display: none;">⏱️ インターバルタイマー</button>
+            <button class="tab-btn" data-tab="timer" data-mode="free" style="display: none;">⏱️ インターバルタイマー</button>
         </nav>
 
         <!-- 投稿タブ -->
@@ -104,9 +106,9 @@
 
         <!-- ルールタブ -->
         <div id="rules-tab" class="tab-content">
-            <h2>📋 種目ルール & 得点倍率</h2>
+            <h2>📋 種目ルール</h2>
             <div id="rules-mode-info" class="mode-info"></div>
-            <div class="rules-description">
+            <div class="rules-description" style="display:none;">
                 <p>得点＝ <strong>回数/秒数/セット数 × 倍率</strong></p>
                 <p>種目ごとの倍率は任意で変更可能</p>
             </div>
@@ -116,7 +118,7 @@
                         <h3>💪 プッシュアップ</h3>
                         <p class="rule-detail">プッシュアップバーを使用。顎がマットにつくまで下げる。</p>
                     </div>
-                    <div class="rule-multiplier">
+                    <div class="rule-multiplier" style="display:none;">
                         <label>倍率：</label>
                         <input type="number" id="multiplier-pushup" min="0.1" step="0.1" value="1.0">
                     </div>
@@ -126,7 +128,7 @@
                         <h3>🔥 ディップス</h3>
                         <p class="rule-detail">顎がストレッチポールにタッチするまで下げる。幅、ポール位置は自由。</p>
                     </div>
-                    <div class="rule-multiplier">
+                    <div class="rule-multiplier" style="display:none;">
                         <label>倍率：</label>
                         <input type="number" id="multiplier-dips" min="0.1" step="0.1" value="1.0">
                     </div>
@@ -136,7 +138,7 @@
                         <h3>🦵 片足スクワット</h3>
                         <p class="rule-detail">マット3段重ねの上で、片足でしゃがんで立ち上がる。左右の合計回数。</p>
                     </div>
-                    <div class="rule-multiplier">
+                    <div class="rule-multiplier" style="display:none;">
                         <label>倍率：</label>
                         <input type="number" id="multiplier-squat" min="0.1" step="0.1" value="1.0">
                     </div>
@@ -146,7 +148,7 @@
                         <h3>⏱️ Lシット(秒)</h3>
                         <p class="rule-detail">プッシュアップバー/ダンベルを使用。秒数で記録。</p>
                     </div>
-                    <div class="rule-multiplier">
+                    <div class="rule-multiplier" style="display:none;">
                         <label>倍率：</label>
                         <input type="number" id="multiplier-Lsit" min="0.1" step="0.1" value="1.0">
                     </div>
@@ -156,13 +158,13 @@
                         <h3>🏃 懸垂(セット)</h3>
                         <p class="rule-detail">顎をバーより上に上げる。セット数で記録。1~10セット：5rep、11~20セット：6rep、21~セット：7回。</p>
                     </div>
-                    <div class="rule-multiplier">
+                    <div class="rule-multiplier" style="display:none;">
                         <label>倍率：</label>
                         <input type="number" id="multiplier-pullup" min="0.1" step="0.1" value="1.0">
                     </div>
                 </div>
             </div>
-            <button id="update-multipliers-btn" class="btn-primary">倍率を更新</button>
+            <button id="update-multipliers-btn" class="btn-primary" style="display:none;">倍率を更新</button>
             <p id="rules-message" class="success-message"></p>
             <p id="rules-error" class="error-message"></p>
         </div>
@@ -171,7 +173,7 @@
         <div id="score-tab" class="tab-content">
             <h2>🏆 総合得点</h2>
             <div id="score-mode-info" class="mode-info"></div>
-            <div class="score-description">
+            <div class="score-description" style="display:none;">
                 <p>最高記録から得点を計算</p>
                 <p><strong>得点 = 回数/秒数/セット数 × 倍率</strong></p>
             </div>
@@ -179,9 +181,9 @@
             <div class="scoring-method-selector">
                 <label for="scoring-method">集計方法：</label>
                 <select id="scoring-method">
-                    <option value="sum">各種目の得点を合計</option>
-                    <option value="deviation">偏差値の合計</option>
-                    <option value="percentage">最高得点を100%とした%の合計</option>
+                    <option value="percentage" selected>最高得点を100%とした%の合計</option>
+                    <option value="sum" style="display:none;">各種目の得点を合計</option>
+                    <option value="deviation" style="display:none;">偏差値の合計</option>
                 </select>
             </div>
             
@@ -232,6 +234,22 @@
                     <button id="timer-reset-btn" class="timer-btn timer-reset">🔄 リセット</button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- フリーモード種目追加モーダル -->
+    <div id="free-exercise-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close-free-exercise-modal">&times;</span>
+            <h2>➕ 種目を追加</h2>
+            <div class="free-exercise-form">
+                <label for="free-exercise-name">種目名</label>
+                <input type="text" id="free-exercise-name" placeholder="例: バーピー" maxlength="20">
+                <label for="free-exercise-rule">ルール説明</label>
+                <textarea id="free-exercise-rule" placeholder="例: 1分間で行った回数を記録" maxlength="200" rows="3" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:16px;resize:vertical;"></textarea>
+                <button id="add-free-exercise-btn" class="btn-primary">追加する</button>
+            </div>
+            <p id="free-exercise-error" class="error-message"></p>
         </div>
     </div>
 
@@ -300,6 +318,8 @@
     
     <!-- Chart.js for graphs -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Chart.js date adapter for time scale -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     
     <!-- App scripts -->
     <script src="firebase-config.js"></script>
