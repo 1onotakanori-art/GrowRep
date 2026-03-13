@@ -1,5 +1,4 @@
-# Firebase設定（APIキーを含むため追跡しない）
-firebase-config.js
+# Firebase設定
 firebase-config.local.js
 .env
 .env.local
