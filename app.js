@@ -2846,7 +2846,6 @@ function restoreStandardExerciseUI() {
     `;
 
     // ルールタブの種目追加ボタンを削除
-    const rulesTab = document.getElementById('rules-tab');
     const addBtn = rulesTab.querySelector('.add-exercise-btn');
     if (addBtn) addBtn.remove();
 
