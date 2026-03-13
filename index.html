@@ -7,8 +7,9 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- ログイン画面（初期非表示: onAuthStateChangedで制御） -->
+    <!-- ログイン画面 -->
     <div id="login-container" class="container" style="display: none;">
+        <!-- JS読み込み完了後にonAuthStateChangedで表示制御 -->
         <div class="login-box">
             <h1>GrowRep</h1>
             <p>筋トレ成果報告アプリ in 共和</p>
@@ -318,8 +319,7 @@
     
     <!-- Chart.js for graphs -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <!-- Chart.js date adapter for time scale -->
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <!-- date-fns adapter loaded dynamically for time scale support -->
     
     <!-- App scripts -->
     <script src="firebase-config.js"></script>
