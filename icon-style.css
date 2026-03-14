@@ -10,9 +10,15 @@ button i {
     pointer-events: none;
 }
 
+/* ヘッダーボタンのアイコン間隔 */
+.header-btn i {
+    margin-right: 6px;
+}
+
 /* タイマーボタンのアイコン */
 .tab-btn i {
     font-size: 0.9em;
+    margin-right: 4px;
 }
 
 /* 週間チャレンジの期間表示のアイコン */
