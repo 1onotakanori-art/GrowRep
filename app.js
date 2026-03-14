@@ -2524,6 +2524,71 @@ function initAudioContext() {
     return audioContext;
 }
 
+/**
+ * AudioContextを完全に破棄して再作成する
+ */
+function resetAudioContext() {
+    console.log('[タイマー] AudioContextを完全リセット');
+    
+    // 既存のAudioContextを破棄
+    if (audioContext) {
+        try {
+            audioContext.close().catch(() => {});
+        } catch (e) {
+            console.warn('[タイマー] AudioContext破棄時エラー:', e);
+        }
+        audioContext = null;
+    }
+    
+    // サイレント音声も再作成
+    stopSilentAudioKeepAlive();
+    
+    // 新しいAudioContextを作成
+    return initAudioContext();
+}
+
+/**
+ * テスト音を鳴らしてAudioContextが動作することを確認
+ */
+async function playTestSound() {
+    const ctx = resetAudioContext();
+    if (!ctx) {
+        console.error('[タイマー] AudioContextが利用できません');
+        return false;
+    }
+    
+    try {
+        // AudioContextを確実に再開
+        if (ctx.state === 'suspended') {
+            await ctx.resume();
+            console.log('[タイマー] AudioContext再開成功');
+        }
+        
+        // 短いテスト音を再生
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.value = 880; // ビープ音の周波数
+        oscillator.type = 'sine';
+        
+        const volume = getComputedVolume(beepSoundVolume) * 0.8; // 少し小さめ
+        gainNode.gain.setValueAtTime(volume, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.3);
+        
+        console.log('[タイマー] テスト音再生成功');
+        return true;
+    } catch (error) {
+        console.error('[タイマー] テスト音再生失敗:', error);
+        return false;
+    }
+}
+
 // ロック画面復帰時にAudioContextを再開し、タイマーの経過を補正する
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
@@ -2812,7 +2877,7 @@ function stopTimer() {
     updateTimerDisplay();
 }
 
-function resetTimer() {
+async function resetTimer() {
     stopTimer();
     
     currentCount = 0;
@@ -2820,11 +2885,9 @@ function resetTimer() {
     preparationCountdown = 10;
     updateTimerDisplay();
     
-    // AudioContextを再開（次回の音再生のため）
-    const ctx = initAudioContext();
-    if (ctx && ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-    }
+    // AudioContextを完全リセットしてテスト音を再生
+    console.log('[タイマー] リセットボタン: AudioContextをリセットしてテスト音再生');
+    await playTestSound();
     
     // ボタンの状態を更新
     timerStartBtn.disabled = false;
@@ -5146,9 +5209,9 @@ async function loadChampionsHistory() {
     championsList.innerHTML = '<p style="text-align:center; padding:20px;">読み込み中...</p>';
 
     try {
+        // ドキュメントID（例: 2026_W01）で降順ソート（複合インデックス不要）
         const snapshot = await db.collection('weekly_champions')
-            .orderBy('year', 'desc')
-            .orderBy('weekNumber', 'desc')
+            .orderBy(firebase.firestore.FieldPath.documentId(), 'desc')
             .get();
 
         if (snapshot.empty) {
