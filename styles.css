@@ -787,7 +787,7 @@ body.mode-interval header h1::after {
 .modal-content {
     background-color: white;
     margin: 5% auto;
-    padding: 20px;
+    padding: 15px;
     border-radius: 16px;
     width: 90%;
     max-width: 600px;
@@ -820,22 +820,47 @@ body.mode-interval header h1::after {
     }
 }
 
-.close-modal {
-    position: absolute;
-    right: 20px;
-    top: 20px;
+.close-modal,
+.close-free-exercise-modal,
+.close-edit-exercise-modal {
     color: #aaa;
-    font-size: 32px;
+    font-size: 28px;
     font-weight: bold;
     cursor: pointer;
     transition: color 0.1s;
-    animation: slideUp 0.3s ease;
     line-height: 1;
+    flex-shrink: 0;
 }
 
 .close-modal:hover,
-.close-modal:focus {
+.close-modal:focus,
+.close-free-exercise-modal:hover,
+.close-edit-exercise-modal:hover {
     color: #333;
+}
+
+/* プロフィールモーダル用の古い位置指定 */
+#profile-modal .close-modal,
+#reset-password-modal .close-reset-modal {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+}
+
+/* モーダルヘッダー（閉じるボタンと一緒に配置） */
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #667eea;
+}
+
+.modal-header h2 {
+    color: #667eea;
+    font-size: 1.2em;
+    margin: 0;
 }
 
 .modal-content h2 {
@@ -1677,16 +1702,18 @@ body.mode-interval header h1::after {
 .free-exercise-form {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
 }
 
 .free-exercise-form label {
     font-weight: 600;
     color: #333;
+    font-size: 13px;
+    margin-bottom: -4px;
 }
 
 .free-exercise-form input[type="text"] {
-    padding: 10px;
+    padding: 8px;
     border: 2px solid #e0e0e0;
     border-radius: 8px;
     font-size: 14px;
@@ -1759,16 +1786,16 @@ body.mode-interval header h1::after {
 .icon-grid {
     display: grid;
     grid-template-columns: repeat(10, 1fr);
-    gap: 6px;
-    padding: 10px;
+    gap: 4px;
+    padding: 6px;
     background: #f8f9fa;
     border-radius: 8px;
     border: 2px solid #e0e0e0;
 }
 
 .icon-grid-btn {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1776,7 +1803,7 @@ body.mode-interval header h1::after {
     border-radius: 6px;
     background: white;
     cursor: pointer;
-    font-size: 16px;
+    font-size: 14px;
     color: #555;
     transition: all 0.2s;
 }
