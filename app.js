@@ -5138,7 +5138,7 @@ async function loadChampionsHistory() {
             .get();
 
         if (snapshot.empty) {
-            championsList.innerHTML = '<p style="text-align:center; color:#999; padding:20px;">まだチャンピオンの記録がありません。<br>各週の集計期間終了後に自動的に記録されます。</p>';
+            championsList.innerHTML = '<p style="text-align:center; color:#999; padding:20px;">歴代データ無し</p>';
             return;
         }
 
@@ -5168,7 +5168,9 @@ async function loadChampionsHistory() {
 
     } catch (error) {
         console.error('[歴代チャンプ] データ読み込みエラー:', error);
-        championsList.innerHTML = '<p style="text-align:center; color:#e74c3c;">データの読み込みに失敗しました</p>';
+        const errorMessage = error.message || 'エラー詳細不明';
+        const errorCode = error.code ? ` (コード: ${error.code})` : '';
+        championsList.innerHTML = `<p style="text-align:center; color:#e74c3c; padding:20px;">データの読み込みに失敗しました<br><span style="font-size:0.85em; color:#999;">エラー: ${escapeHtml(errorMessage)}${escapeHtml(errorCode)}</span></p>`;
     }
 }
 
