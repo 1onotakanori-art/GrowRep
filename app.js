@@ -2118,7 +2118,59 @@ async function renderRanking(rankings) {
     } else {
         currentExNames = exerciseNames;
     }
-    for (const type of Object.keys(currentExNames)) {
+    
+    // フリーモードではフィルタ・ソートを適用
+    let exerciseKeys;
+    if (currentMode === 'free') {
+        // ランキングタブにフィルタUIを挿入（ranking-listの直前）
+        const rankingTab = document.getElementById('ranking-tab');
+        const existingFilter = rankingTab.querySelector('.exercise-filter-bar');
+        if (existingFilter) existingFilter.remove();
+        
+        const filterBar = createExerciseFilterUI(rankingTab, async () => {
+            await renderRanking(rankings);
+        });
+        // フィルタバーをranking-listの直前に移動
+        rankingTab.insertBefore(filterBar, rankingList);
+        
+        const filteredEntries = getFilteredAndSortedExercises(exerciseFilterState);
+        exerciseKeys = filteredEntries.map(([key]) => key);
+        
+        if (exerciseFilterState.sortBy === 'tags-group') {
+            const groups = groupExercisesByTag(filteredEntries);
+            for (const [tag, groupEntries] of Object.entries(groups)) {
+                const groupHeader = document.createElement('div');
+                groupHeader.className = 'exercise-tag-section';
+                groupHeader.innerHTML = `<h4><i class="fa-solid fa-tag"></i> ${escapeHtml(tag)}</h4>`;
+                rankingList.appendChild(groupHeader);
+                
+                for (const [type] of groupEntries) {
+                    await renderRankingCategory(rankingList, type, currentExNames, rankings);
+                }
+            }
+            
+            if (filteredEntries.length === 0 && Object.keys(freeExercises).length > 0) {
+                rankingList.innerHTML += '<p style="text-align: center; color: #999; padding: 20px;"><i class="fa-solid fa-filter"></i> 該当する種目が見つかりません</p>';
+            }
+            return;
+        }
+    } else {
+        exerciseKeys = Object.keys(currentExNames);
+    }
+    
+    for (const type of exerciseKeys) {
+        await renderRankingCategory(rankingList, type, currentExNames, rankings);
+    }
+    
+    if (currentMode === 'free' && exerciseKeys.length === 0 && Object.keys(freeExercises).length > 0) {
+        rankingList.innerHTML += '<p style="text-align: center; color: #999; padding: 20px;"><i class="fa-solid fa-filter"></i> 該当する種目が見つかりません</p>';
+    }
+}
+
+/**
+ * ランキングの1種目分をレンダリング
+ */
+async function renderRankingCategory(container, type, currentExNames, rankings) {
         const categoryDiv = document.createElement('div');
         categoryDiv.className = 'ranking-category';
         
@@ -2162,8 +2214,7 @@ async function renderRanking(rankings) {
         }
         
         categoryDiv.innerHTML = rankingHTML;
-        rankingList.appendChild(categoryDiv);
-    }
+        container.appendChild(categoryDiv);
 }
 
 // 成長グラフの読み込み
@@ -2783,8 +2834,26 @@ if (timerStartBtn && timerStopBtn && timerResetBtn) {
 // ====================================================================
 
 // フリーモードの種目リスト（Firestoreから動的に取得）
-let freeExercises = {};  // { key: { name: '種目名', rule: 'ルール' } }
+let freeExercises = {};  // { key: { name: '種目名', rule: 'ルール', icon: 'アイコン', tags: ['タグ'] } }
 let freeExercisesLoaded = false;
+
+// 投稿統計キャッシュ（検索・ソート機能用）
+let exercisePostStats = {};  // { [exerciseKey]: { totalPosts, recentPosts, lastPostDate } }
+let exercisePostStatsTime = null;
+
+// 検索・フィルタ状態
+let exerciseFilterState = {
+    searchQuery: '',
+    filterTags: [],
+    sortBy: 'name-asc'
+};
+
+// プリセットタグ定義
+const PRESET_TAGS = [
+    '胸', '背中', '肩', '腕', '脚', '腹', '全身', '体幹',
+    '自重', 'ダンベル', 'バーベル', 'マシン', 'バンド', 'ケトルベル', 'バランスボール',
+    '筋力', '有酸素', '柔軟性', 'バランス', '爆発力', '持久力'
+];
 
 /**
  * フリーモードの種目リストをFirestoreから取得
@@ -2794,10 +2863,13 @@ async function loadFreeExercises() {
         const doc = await db.collection('settings_free').doc('exercises').get();
         if (doc.exists) {
             freeExercises = doc.data().exercises || {};
-            // 既存の種目にアイコンが未設定の場合、デフォルトアイコンを設定
+            // 既存の種目にアイコン・タグが未設定の場合、デフォルト値を設定
             Object.keys(freeExercises).forEach(key => {
                 if (!freeExercises[key].icon) {
                     freeExercises[key].icon = 'fa-dumbbell';
+                }
+                if (!Array.isArray(freeExercises[key].tags)) {
+                    freeExercises[key].tags = [];
                 }
             });
         } else {
@@ -2829,7 +2901,7 @@ async function saveFreeExercises() {
 
 // フリーモード種目用アイコンセット
 const freeExerciseIcons = [
-    'fa-dumbbell', 'fa-person-running', 'fa-shoe-prints', 'fa-bolt', 'fa-stopwatch', 'fa-weight-hanging', 'fa-hand-fist', 'fa-star', 'fa-bone', 'fa-hand-peace', 'fa-heart', 'fa-heart-pulse', 'fa-explosion', 'fa-bolt-lightning', 'fa-fire', 'fa-water', 'fa-tree', 'fa-person-shelter', 'fa-person-rays', 'fa-volume-high'
+    'fa-dumbbell', 'fa-fire', 'fa-person-running', 'fa-shoe-prints', 'fa-stopwatch', 'fa-bolt', 'fa-hand-fist', 'fa-weight-hanging', 'fa-hand-holding', 'fa-crosshairs', 'fa-person-shelter', 'fa-person-falling-burst', 'fa-person-arrow-up-from-line', 'fa-person-arrow-down-to-line', 'fa-heart-pulse', 'fa-rocket', 'fa-water', 'fa-circle', 'fa-square', 'fa-bicycle'
 ];
 
 /**
@@ -2864,13 +2936,14 @@ function renderIconGrid(containerId, hiddenInputId, selectedIcon = 'fa-dumbbell'
  * @param {string} rule - ルール説明
  * @param {string} icon - アイコンクラス名
  */
-async function addFreeExercise(name, rule, icon = 'fa-dumbbell') {
+async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = []) {
     // キー名を生成（ユニークなID）
     const key = 'free_' + Date.now();
     freeExercises[key] = { 
         name: name, 
         rule: rule, 
         icon: icon,
+        tags: tags,
         createdBy: currentUser ? currentUser.uid : null,
         createdByName: currentUserData ? currentUserData.userName : (currentUser ? currentUser.email : 'Unknown'),
         createdAt: new Date().toISOString()
@@ -2912,12 +2985,13 @@ async function deleteFreeExercise(key) {
  * @param {string} rule - 新しいルール説明
  * @param {string} icon - 新しいアイコン
  */
-async function editFreeExercise(key, name, rule, icon) {
+async function editFreeExercise(key, name, rule, icon, tags = []) {
     const existing = freeExercises[key] || {};
     freeExercises[key] = { 
         name, 
         rule, 
         icon,
+        tags: tags,
         // 既存の作成者情報を保持
         createdBy: existing.createdBy || null,
         createdByName: existing.createdByName || 'Unknown',
@@ -2937,6 +3011,7 @@ function openEditExerciseModal(key) {
     document.getElementById('edit-exercise-name').value = ex.name;
     document.getElementById('edit-exercise-rule').value = ex.rule || '';
     renderIconGrid('edit-exercise-icon-grid', 'edit-exercise-icon', ex.icon || 'fa-dumbbell');
+    renderTagSelector('edit-exercise-tags', ex.tags || []);
     document.getElementById('edit-exercise-error').textContent = '';
     document.getElementById('edit-exercise-modal').style.display = 'block';
 }
@@ -2944,7 +3019,9 @@ function openEditExerciseModal(key) {
 /**
  * フリーモードのUI全体を更新
  */
-function updateFreeExerciseUI() {
+async function updateFreeExerciseUI() {
+    // 投稿統計をバックグラウンドで読み込み（ソート用）
+    loadExercisePostStats().catch(err => console.error('[updateFreeExerciseUI] 統計取得エラー:', err));
     updateFreePostDropdown();
     updateFreeRulesTab();
     updateFreeGraphDropdown();
@@ -2955,15 +3032,51 @@ function updateFreeExerciseUI() {
  */
 function updateFreePostDropdown() {
     if (currentMode !== 'free') return;
+    const postForm = document.querySelector('.post-form');
     const select = document.getElementById('exercise-type');
-    // 既存のオプションをクリア
-    select.innerHTML = '<option value="">種目を選択</option>';
-    Object.entries(freeExercises).forEach(([key, ex]) => {
-        const option = document.createElement('option');
-        option.value = key;
-        option.textContent = ex.name;
-        select.appendChild(option);
-    });
+    
+    // フィルタUIを投稿フォーム内のセレクト直前に挿入
+    const filterBar = createExerciseFilterUI(postForm, () => updateFreePostDropdownContent());
+    postForm.insertBefore(filterBar, select);
+    updateFreePostDropdownContent();
+}
+
+/**
+ * 投稿タブのプルダウン内容を更新（フィルタリング済み）
+ */
+function updateFreePostDropdownContent() {
+    const select = document.getElementById('exercise-type');
+    const currentVal = select.value;
+    const entries = getFilteredAndSortedExercises(exerciseFilterState);
+    
+    if (exerciseFilterState.sortBy === 'tags-group') {
+        select.innerHTML = '<option value="">種目を選択</option>';
+        const groups = groupExercisesByTag(entries);
+        Object.entries(groups).forEach(([tag, groupEntries]) => {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = tag;
+            groupEntries.forEach(([key, ex]) => {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = ex.name;
+                optgroup.appendChild(option);
+            });
+            select.appendChild(optgroup);
+        });
+    } else {
+        select.innerHTML = '<option value="">種目を選択</option>';
+        entries.forEach(([key, ex]) => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = ex.name;
+            select.appendChild(option);
+        });
+    }
+    
+    // 元の選択値を復元
+    if (currentVal && select.querySelector(`option[value="${currentVal}"]`)) {
+        select.value = currentVal;
+    }
 }
 
 /**
@@ -2993,30 +3106,40 @@ function updateFreeRulesTab() {
         addBtn.innerHTML = '<i class="fa-solid fa-plus"></i> 種目を追加';
         addBtn.addEventListener('click', () => {
             renderIconGrid('free-exercise-icon-grid', 'free-exercise-icon', 'fa-dumbbell');
+            renderTagSelector('free-exercise-tags', []);
             document.getElementById('free-exercise-modal').style.display = 'block';
         });
         rulesList.parentNode.insertBefore(addBtn, rulesList);
     }
 
-    // ルールリストを再構築
+    // フィルタUIをルールリストの直前に挿入
+    const filterBar = createExerciseFilterUI(rulesList.parentNode, () => renderFreeRulesContent());
+    rulesList.parentNode.insertBefore(filterBar, rulesList);
+    renderFreeRulesContent();
+}
+
+/**
+ * ルールタブの種目一覧をレンダリング（フィルタリング済み）
+ */
+function renderFreeRulesContent() {
+    const rulesTab = document.getElementById('rules-tab');
+    const rulesList = rulesTab.querySelector('.rules-list');
+    const entries = getFilteredAndSortedExercises(exerciseFilterState);
+    
     rulesList.innerHTML = '';
-    Object.entries(freeExercises).forEach(([key, ex]) => {
-        const iconClass = ex.icon || 'fa-dumbbell';
-        const createdByInfo = ex.createdByName ? `<span class="created-by-info">追加: ${escapeHtml(ex.createdByName)}</span>` : '';
-        const item = document.createElement('div');
-        item.className = 'rule-item';
-        item.innerHTML = `
-            <div class="rule-info">
-                <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)} ${createdByInfo}</h3>
-                <p class="rule-detail">${escapeHtml(ex.rule)}</p>
-            </div>
-            <div class="rule-actions">
-                <button class="rule-edit-btn" data-key="${escapeHtml(key)}"><i class="fa-solid fa-pen-to-square"></i></button>
-                <button class="rule-delete-btn" data-key="${escapeHtml(key)}"><i class="fa-solid fa-trash"></i></button>
-            </div>
-        `;
-        rulesList.appendChild(item);
-    });
+    
+    if (exerciseFilterState.sortBy === 'tags-group') {
+        const groups = groupExercisesByTag(entries);
+        Object.entries(groups).forEach(([tag, groupEntries]) => {
+            const groupHeader = document.createElement('div');
+            groupHeader.className = 'exercise-tag-section';
+            groupHeader.innerHTML = `<h4><i class="fa-solid fa-tag"></i> ${escapeHtml(tag)}</h4>`;
+            rulesList.appendChild(groupHeader);
+            groupEntries.forEach(([key, ex]) => appendRuleItem(rulesList, key, ex));
+        });
+    } else {
+        entries.forEach(([key, ex]) => appendRuleItem(rulesList, key, ex));
+    }
 
     // 編集ボタンにイベントリスナーを設定
     rulesList.querySelectorAll('.rule-edit-btn').forEach(btn => {
@@ -3032,9 +3155,38 @@ function updateFreeRulesTab() {
         });
     });
 
-    if (Object.keys(freeExercises).length === 0) {
-        rulesList.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">まだ種目が登録されていません。上のボタンから種目を追加してください。</p>';
+    if (entries.length === 0) {
+        if (Object.keys(freeExercises).length === 0) {
+            rulesList.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">まだ種目が登録されていません。上のボタンから種目を追加してください。</p>';
+        } else {
+            rulesList.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;"><i class="fa-solid fa-filter"></i> 該当する種目が見つかりません</p>';
+        }
     }
+}
+
+/**
+ * ルールタブに1つの種目カードを追加
+ */
+function appendRuleItem(container, key, ex) {
+    const iconClass = ex.icon || 'fa-dumbbell';
+    const createdByInfo = ex.createdByName ? `<span class="created-by-info">追加: ${escapeHtml(ex.createdByName)}</span>` : '';
+    const tagsHtml = (ex.tags && ex.tags.length > 0) 
+        ? `<div class="rule-tags">${ex.tags.map(t => `<span class="tag-chip display-only">${escapeHtml(t)}</span>`).join('')}</div>` 
+        : '';
+    const item = document.createElement('div');
+    item.className = 'rule-item';
+    item.innerHTML = `
+        <div class="rule-info">
+            <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)} ${createdByInfo}</h3>
+            <p class="rule-detail">${escapeHtml(ex.rule)}</p>
+            ${tagsHtml}
+        </div>
+        <div class="rule-actions">
+            <button class="rule-edit-btn" data-key="${escapeHtml(key)}"><i class="fa-solid fa-pen-to-square"></i></button>
+            <button class="rule-delete-btn" data-key="${escapeHtml(key)}"><i class="fa-solid fa-trash"></i></button>
+        </div>
+    `;
+    container.appendChild(item);
 }
 
 /**
@@ -3042,14 +3194,51 @@ function updateFreeRulesTab() {
  */
 function updateFreeGraphDropdown() {
     if (currentMode !== 'free') return;
+    const progressTab = document.getElementById('progress-tab');
     const select = document.getElementById('graph-exercise-type');
-    select.innerHTML = '';
-    Object.entries(freeExercises).forEach(([key, ex]) => {
-        const option = document.createElement('option');
-        option.value = key;
-        option.textContent = ex.name;
-        select.appendChild(option);
-    });
+    
+    // フィルタUIをセレクト直前に挿入
+    const filterBar = createExerciseFilterUI(progressTab, () => updateFreeGraphDropdownContent());
+    progressTab.insertBefore(filterBar, select);
+    updateFreeGraphDropdownContent();
+}
+
+/**
+ * 成長グラフのプルダウン内容を更新（フィルタリング済み）
+ */
+function updateFreeGraphDropdownContent() {
+    const select = document.getElementById('graph-exercise-type');
+    const currentVal = select.value;
+    const entries = getFilteredAndSortedExercises(exerciseFilterState);
+    
+    if (exerciseFilterState.sortBy === 'tags-group') {
+        select.innerHTML = '';
+        const groups = groupExercisesByTag(entries);
+        Object.entries(groups).forEach(([tag, groupEntries]) => {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = tag;
+            groupEntries.forEach(([key, ex]) => {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = ex.name;
+                optgroup.appendChild(option);
+            });
+            select.appendChild(optgroup);
+        });
+    } else {
+        select.innerHTML = '';
+        entries.forEach(([key, ex]) => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = ex.name;
+            select.appendChild(option);
+        });
+    }
+    
+    // 元の選択値を復元
+    if (currentVal && select.querySelector(`option[value="${currentVal}"]`)) {
+        select.value = currentVal;
+    }
 }
 
 /**
@@ -3066,6 +3255,12 @@ async function initFreeMode() {
  * ノーマル/インターバルモードに戻る時のUI復元
  */
 function restoreStandardExerciseUI() {
+    // フィルタバーを全タブから削除
+    document.querySelectorAll('.exercise-filter-bar').forEach(el => el.remove());
+    
+    // フィルタ状態をリセット
+    exerciseFilterState = { searchQuery: '', filterTags: [], sortBy: 'name-asc' };
+
     // ルールタブのタイトルを復元
     const rulesTab = document.getElementById('rules-tab');
     const title = rulesTab.querySelector('h2');
@@ -3163,6 +3358,452 @@ function restoreStandardExerciseUI() {
     multiplierInputs.pullup = document.getElementById('multiplier-pullup');
 }
 
+/**
+ * タグセレクターUIをレンダリング
+ * @param {string} containerId - タグセレクターのコンテナ要素のID
+ * @param {string[]} selectedTags - 初期選択済みタグ
+ */
+function renderTagSelector(containerId, selectedTags = []) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const currentSelected = new Set(selectedTags);
+    const presetChips = container.querySelector('.tag-preset-chips');
+    const selectedList = container.querySelector('.tag-selected-list');
+    const freeInput = container.querySelector('.tag-free-input');
+    const addBtn = container.querySelector('.tag-add-btn');
+    
+    // フリータグ（プリセットにないもの）を収集
+    const allFreeTags = new Set();
+    Object.values(freeExercises).forEach(ex => {
+        (ex.tags || []).forEach(tag => {
+            if (!PRESET_TAGS.includes(tag)) allFreeTags.add(tag);
+        });
+    });
+    selectedTags.forEach(tag => {
+        if (!PRESET_TAGS.includes(tag)) allFreeTags.add(tag);
+    });
+    
+    function renderChips() {
+        // プリセットタグ
+        presetChips.innerHTML = '';
+        PRESET_TAGS.forEach(tag => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'tag-chip' + (currentSelected.has(tag) ? ' selected' : '');
+            chip.textContent = tag;
+            chip.addEventListener('click', () => {
+                if (currentSelected.has(tag)) {
+                    currentSelected.delete(tag);
+                } else {
+                    currentSelected.add(tag);
+                }
+                renderChips();
+            });
+            presetChips.appendChild(chip);
+        });
+        
+        // フリータグもプリセットの後に表示
+        allFreeTags.forEach(tag => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'tag-chip tag-free' + (currentSelected.has(tag) ? ' selected' : '');
+            chip.textContent = tag;
+            chip.addEventListener('click', () => {
+                if (currentSelected.has(tag)) {
+                    currentSelected.delete(tag);
+                } else {
+                    currentSelected.add(tag);
+                }
+                renderChips();
+            });
+            presetChips.appendChild(chip);
+        });
+        
+        // 選択済みタグ表示
+        selectedList.innerHTML = '';
+        if (currentSelected.size > 0) {
+            currentSelected.forEach(tag => {
+                const chip = document.createElement('span');
+                chip.className = 'tag-chip selected-display';
+                chip.innerHTML = `${escapeHtml(tag)} <i class="fa-solid fa-xmark tag-remove"></i>`;
+                chip.querySelector('.tag-remove').addEventListener('click', () => {
+                    currentSelected.delete(tag);
+                    if (!PRESET_TAGS.includes(tag)) allFreeTags.delete(tag);
+                    renderChips();
+                });
+                selectedList.appendChild(chip);
+            });
+        }
+    }
+    
+    renderChips();
+    
+    // フリータグ追加
+    const handleAddFreeTag = () => {
+        const val = freeInput.value.trim();
+        if (val && val.length <= 10 && !currentSelected.has(val)) {
+            currentSelected.add(val);
+            if (!PRESET_TAGS.includes(val)) allFreeTags.add(val);
+            freeInput.value = '';
+            renderChips();
+        }
+    };
+    
+    // 既存リスナーを削除して再設定
+    const newAddBtn = addBtn.cloneNode(true);
+    addBtn.parentNode.replaceChild(newAddBtn, addBtn);
+    newAddBtn.addEventListener('click', handleAddFreeTag);
+    
+    const newFreeInput = freeInput.cloneNode(true);
+    freeInput.parentNode.replaceChild(newFreeInput, freeInput);
+    newFreeInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAddFreeTag();
+        }
+    });
+    // Update reference for handleAddFreeTag
+    container._getSelectedTags = () => Array.from(currentSelected);
+    container._freeInput = newFreeInput;
+}
+
+/**
+ * タグセレクターから選択済みタグを取得
+ * @param {string} containerId - タグセレクターのコンテナ要素のID
+ * @returns {string[]}
+ */
+function getSelectedTags(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container || !container._getSelectedTags) return [];
+    return container._getSelectedTags();
+}
+
+// ====================================================================
+// 投稿統計の取得（ソート用）
+// ====================================================================
+
+/**
+ * 投稿統計をFirestoreから取得・キャッシュ
+ * @param {boolean} forceRefresh - キャッシュを無視して再取得
+ * @returns {Object} { [exerciseKey]: { totalPosts, recentPosts, lastPostDate } }
+ */
+async function loadExercisePostStats(forceRefresh = false) {
+    const now = Date.now();
+    if (!forceRefresh && exercisePostStatsTime && (now - exercisePostStatsTime < CACHE_DURATION)) {
+        return exercisePostStats;
+    }
+    
+    try {
+        const snapshot = await db.collection('posts_free').get();
+        const stats = {};
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        
+        snapshot.forEach(doc => {
+            const post = doc.data();
+            const key = post.exerciseType;
+            if (!stats[key]) {
+                stats[key] = { totalPosts: 0, recentPosts: 0, lastPostDate: null };
+            }
+            stats[key].totalPosts++;
+            
+            const postDate = post.timestamp ? post.timestamp.toDate() : null;
+            if (postDate) {
+                if (postDate >= oneWeekAgo) {
+                    stats[key].recentPosts++;
+                }
+                if (!stats[key].lastPostDate || postDate > stats[key].lastPostDate) {
+                    stats[key].lastPostDate = postDate;
+                }
+            }
+        });
+        
+        // 自分の最終投稿日も取得
+        if (currentUser) {
+            snapshot.forEach(doc => {
+                const post = doc.data();
+                if (post.userId === currentUser.uid) {
+                    const key = post.exerciseType;
+                    if (!stats[key]) stats[key] = { totalPosts: 0, recentPosts: 0, lastPostDate: null };
+                    const postDate = post.timestamp ? post.timestamp.toDate() : null;
+                    if (postDate) {
+                        if (!stats[key].myLastPostDate || postDate > stats[key].myLastPostDate) {
+                            stats[key].myLastPostDate = postDate;
+                        }
+                    }
+                }
+            });
+        }
+        
+        exercisePostStats = stats;
+        exercisePostStatsTime = now;
+        return stats;
+    } catch (error) {
+        console.error('[投稿統計] 取得エラー:', error);
+        return exercisePostStats;
+    }
+}
+
+// ====================================================================
+// フィルタ・ソートロジック
+// ====================================================================
+
+/**
+ * フリーモード種目をフィルタ・ソートして返す
+ * @param {Object} options - { searchQuery, filterTags, sortBy }
+ * @returns {Array} [[key, exerciseObj], ...] のフィルタ・ソート済み配列
+ */
+function getFilteredAndSortedExercises(options = {}) {
+    const { searchQuery = '', filterTags = [], sortBy = 'name-asc' } = options;
+    
+    let entries = Object.entries(freeExercises);
+    
+    // テキスト検索（種目名・ルール文）
+    if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        entries = entries.filter(([key, ex]) => {
+            return (ex.name && ex.name.toLowerCase().includes(q)) ||
+                   (ex.rule && ex.rule.toLowerCase().includes(q)) ||
+                   (ex.tags && ex.tags.some(tag => tag.toLowerCase().includes(q)));
+        });
+    }
+    
+    // タグフィルタ（AND条件）
+    if (filterTags.length > 0) {
+        entries = entries.filter(([key, ex]) => {
+            const exTags = ex.tags || [];
+            return filterTags.every(tag => exTags.includes(tag));
+        });
+    }
+    
+    // ソート
+    switch (sortBy) {
+        case 'name-asc':
+            entries.sort((a, b) => (a[1].name || '').localeCompare(b[1].name || '', 'ja'));
+            break;
+        case 'name-desc':
+            entries.sort((a, b) => (b[1].name || '').localeCompare(a[1].name || '', 'ja'));
+            break;
+        case 'created-new':
+            entries.sort((a, b) => (b[1].createdAt || '').localeCompare(a[1].createdAt || ''));
+            break;
+        case 'created-old':
+            entries.sort((a, b) => (a[1].createdAt || '').localeCompare(b[1].createdAt || ''));
+            break;
+        case 'posts-desc':
+            entries.sort((a, b) => {
+                const sa = (exercisePostStats[a[0]] || {}).totalPosts || 0;
+                const sb = (exercisePostStats[b[0]] || {}).totalPosts || 0;
+                return sb - sa;
+            });
+            break;
+        case 'trend':
+            entries.sort((a, b) => {
+                const sa = (exercisePostStats[a[0]] || {}).recentPosts || 0;
+                const sb = (exercisePostStats[b[0]] || {}).recentPosts || 0;
+                return sb - sa;
+            });
+            break;
+        case 'last-post':
+            entries.sort((a, b) => {
+                const da = (exercisePostStats[a[0]] || {}).myLastPostDate;
+                const db_ = (exercisePostStats[b[0]] || {}).myLastPostDate;
+                if (!da && !db_) return 0;
+                if (!da) return 1;
+                if (!db_) return -1;
+                return db_ - da;
+            });
+            break;
+        case 'tags-group':
+            // タグ別グループ化: タグごとにまとめる（タグなしは末尾）
+            // entries自体はそのまま返し、レンダリング側でグループ化
+            break;
+    }
+    
+    return entries;
+}
+
+/**
+ * タグ別グループ化のためのユーティリティ
+ * @param {Array} entries - [[key, ex], ...] 
+ * @returns {Object} { 'タグ名': [[key, ex], ...], 'タグなし': [[key, ex], ...] }
+ */
+function groupExercisesByTag(entries) {
+    const groups = {};
+    const noTag = [];
+    
+    entries.forEach(([key, ex]) => {
+        const tags = ex.tags || [];
+        if (tags.length === 0) {
+            noTag.push([key, ex]);
+        } else {
+            tags.forEach(tag => {
+                if (!groups[tag]) groups[tag] = [];
+                groups[tag].push([key, ex]);
+            });
+        }
+    });
+    
+    if (noTag.length > 0) {
+        groups['タグなし'] = noTag;
+    }
+    
+    return groups;
+}
+
+/**
+ * 現在使用中のすべてのタグを取得
+ * @returns {string[]}
+ */
+function getAllUsedTags() {
+    const tags = new Set();
+    Object.values(freeExercises).forEach(ex => {
+        (ex.tags || []).forEach(tag => tags.add(tag));
+    });
+    return Array.from(tags).sort((a, b) => a.localeCompare(b, 'ja'));
+}
+
+// ====================================================================
+// 共通フィルタUIコンポーネント
+// ====================================================================
+
+/**
+ * 種目フィルタUIを生成して挿入
+ * @param {HTMLElement} targetContainer - UIを挿入する親要素
+ * @param {Function} onFilterChange - フィルタ変更時のコールバック
+ * @returns {HTMLElement} 生成されたフィルタバー要素
+ */
+function createExerciseFilterUI(targetContainer, onFilterChange) {
+    // 既存のフィルタUIがあれば削除
+    const existingFilter = targetContainer.querySelector('.exercise-filter-bar');
+    if (existingFilter) existingFilter.remove();
+    
+    const filterBar = document.createElement('div');
+    filterBar.className = 'exercise-filter-bar';
+    
+    const usedTags = getAllUsedTags();
+    
+    filterBar.innerHTML = `
+        <div class="filter-search-row">
+            <div class="filter-search-input-wrapper">
+                <i class="fa-solid fa-magnifying-glass filter-search-icon"></i>
+                <input type="text" class="filter-search-input" placeholder="種目を検索..." value="${escapeHtml(exerciseFilterState.searchQuery)}">
+                <button type="button" class="filter-search-clear" style="display:${exerciseFilterState.searchQuery ? 'block' : 'none'}"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <button type="button" class="filter-toggle-btn${exerciseFilterState.filterTags.length > 0 || exerciseFilterState.sortBy !== 'name-asc' ? ' active' : ''}" title="フィルタ・ソート">
+                <i class="fa-solid fa-sliders"></i>
+                ${exerciseFilterState.filterTags.length > 0 ? '<span class="filter-badge">' + exerciseFilterState.filterTags.length + '</span>' : ''}
+            </button>
+        </div>
+        <div class="filter-expandable" style="display:none;">
+            <div class="filter-sort-row">
+                <label><i class="fa-solid fa-arrow-down-wide-short"></i> 並び替え</label>
+                <select class="filter-sort-select">
+                    <option value="name-asc"${exerciseFilterState.sortBy === 'name-asc' ? ' selected' : ''}>名前順（あ→わ）</option>
+                    <option value="name-desc"${exerciseFilterState.sortBy === 'name-desc' ? ' selected' : ''}>名前順（わ→あ）</option>
+                    <option value="created-new"${exerciseFilterState.sortBy === 'created-new' ? ' selected' : ''}>作成日（新しい順）</option>
+                    <option value="created-old"${exerciseFilterState.sortBy === 'created-old' ? ' selected' : ''}>作成日（古い順）</option>
+                    <option value="posts-desc"${exerciseFilterState.sortBy === 'posts-desc' ? ' selected' : ''}>投稿数順</option>
+                    <option value="trend"${exerciseFilterState.sortBy === 'trend' ? ' selected' : ''}>トレンド（直近1週間）</option>
+                    <option value="last-post"${exerciseFilterState.sortBy === 'last-post' ? ' selected' : ''}>自分の最終投稿日順</option>
+                    <option value="tags-group"${exerciseFilterState.sortBy === 'tags-group' ? ' selected' : ''}>タグ別グループ</option>
+                </select>
+            </div>
+            ${usedTags.length > 0 ? `
+            <div class="filter-tags-row">
+                <label><i class="fa-solid fa-tags"></i> タグで絞り込み</label>
+                <div class="filter-tag-chips">
+                    ${usedTags.map(tag => `<button type="button" class="tag-chip filter-chip${exerciseFilterState.filterTags.includes(tag) ? ' active' : ''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}
+                </div>
+            </div>` : ''}
+            <div class="filter-actions-row">
+                <button type="button" class="filter-reset-btn"><i class="fa-solid fa-rotate-left"></i> リセット</button>
+            </div>
+        </div>
+    `;
+    
+    targetContainer.insertBefore(filterBar, targetContainer.firstChild);
+    
+    // イベント設定
+    const searchInput = filterBar.querySelector('.filter-search-input');
+    const clearBtn = filterBar.querySelector('.filter-search-clear');
+    const toggleBtn = filterBar.querySelector('.filter-toggle-btn');
+    const expandable = filterBar.querySelector('.filter-expandable');
+    const sortSelect = filterBar.querySelector('.filter-sort-select');
+    const resetBtn = filterBar.querySelector('.filter-reset-btn');
+    
+    let debounceTimer = null;
+    searchInput.addEventListener('input', () => {
+        clearBtn.style.display = searchInput.value ? 'block' : 'none';
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            exerciseFilterState.searchQuery = searchInput.value.trim();
+            onFilterChange();
+        }, 200);
+    });
+    
+    clearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        clearBtn.style.display = 'none';
+        exerciseFilterState.searchQuery = '';
+        onFilterChange();
+    });
+    
+    toggleBtn.addEventListener('click', () => {
+        const isHidden = expandable.style.display === 'none';
+        expandable.style.display = isHidden ? 'block' : 'none';
+        toggleBtn.classList.toggle('expanded', isHidden);
+    });
+    
+    sortSelect.addEventListener('change', () => {
+        exerciseFilterState.sortBy = sortSelect.value;
+        toggleBtn.classList.toggle('active', exerciseFilterState.filterTags.length > 0 || exerciseFilterState.sortBy !== 'name-asc');
+        onFilterChange();
+    });
+    
+    filterBar.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const tag = chip.dataset.tag;
+            const idx = exerciseFilterState.filterTags.indexOf(tag);
+            if (idx >= 0) {
+                exerciseFilterState.filterTags.splice(idx, 1);
+                chip.classList.remove('active');
+            } else {
+                exerciseFilterState.filterTags.push(tag);
+                chip.classList.add('active');
+            }
+            toggleBtn.classList.toggle('active', exerciseFilterState.filterTags.length > 0 || exerciseFilterState.sortBy !== 'name-asc');
+            // バッジ更新
+            const existingBadge = toggleBtn.querySelector('.filter-badge');
+            if (existingBadge) existingBadge.remove();
+            if (exerciseFilterState.filterTags.length > 0) {
+                const badge = document.createElement('span');
+                badge.className = 'filter-badge';
+                badge.textContent = exerciseFilterState.filterTags.length;
+                toggleBtn.appendChild(badge);
+            }
+            onFilterChange();
+        });
+    });
+    
+    resetBtn.addEventListener('click', () => {
+        exerciseFilterState.searchQuery = '';
+        exerciseFilterState.filterTags = [];
+        exerciseFilterState.sortBy = 'name-asc';
+        searchInput.value = '';
+        clearBtn.style.display = 'none';
+        sortSelect.value = 'name-asc';
+        filterBar.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        toggleBtn.classList.remove('active');
+        const existingBadge = toggleBtn.querySelector('.filter-badge');
+        if (existingBadge) existingBadge.remove();
+        onFilterChange();
+    });
+    
+    return filterBar;
+}
+
 // フリーモード種目追加モーダルのイベント
 document.querySelector('.close-free-exercise-modal').addEventListener('click', () => {
     document.getElementById('free-exercise-modal').style.display = 'none';
@@ -3208,10 +3849,12 @@ document.getElementById('add-free-exercise-btn').addEventListener('click', async
     }
 
     try {
-        await addFreeExercise(name, rule, icon);
+        const tags = getSelectedTags('free-exercise-tags');
+        await addFreeExercise(name, rule, icon, tags);
         nameInput.value = '';
         ruleInput.value = '';
         renderIconGrid('free-exercise-icon-grid', 'free-exercise-icon', 'fa-dumbbell');
+        renderTagSelector('free-exercise-tags', []);
         errorEl.textContent = '';
         document.getElementById('free-exercise-modal').style.display = 'none';
         alert('種目を追加しました！');
@@ -3241,7 +3884,8 @@ document.getElementById('save-edit-exercise-btn').addEventListener('click', asyn
     }
 
     try {
-        await editFreeExercise(key, name, rule, icon);
+        const tags = getSelectedTags('edit-exercise-tags');
+        await editFreeExercise(key, name, rule, icon, tags);
         errorEl.textContent = '';
         document.getElementById('edit-exercise-modal').style.display = 'none';
         alert('種目を更新しました！');

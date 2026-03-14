@@ -2056,3 +2056,433 @@ body.mode-weekly .ranking-category h3 {
     color: #f7971e;
     margin-right: 4px;
 }
+
+/* ====================================================================
+   タグチップ共通スタイル
+   ==================================================================== */
+.tag-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.78em;
+    border: 1.5px solid #d0d0d0;
+    background: #f5f5f5;
+    color: #555;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.tag-chip:hover {
+    border-color: #43e97b;
+    background: #e8faf0;
+}
+
+.tag-chip.selected {
+    background: linear-gradient(135deg, #43e97b, #38f9d7);
+    color: #fff;
+    border-color: #43e97b;
+    font-weight: 600;
+}
+
+.tag-chip.tag-free {
+    border-style: dashed;
+}
+
+.tag-chip.tag-free.selected {
+    border-style: solid;
+}
+
+.tag-chip.display-only {
+    cursor: default;
+    font-size: 0.72em;
+    padding: 2px 8px;
+    background: #eef7ee;
+    color: #3a8a3a;
+    border-color: #b5d8b5;
+}
+
+.tag-chip.selected-display {
+    background: #e0f5e0;
+    color: #2d7a2d;
+    border-color: #8ec98e;
+    cursor: default;
+}
+
+.tag-chip.selected-display .tag-remove {
+    cursor: pointer;
+    margin-left: 4px;
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+.tag-chip.selected-display .tag-remove:hover {
+    opacity: 1;
+    color: #e74c3c;
+}
+
+/* タグセレクター（モーダル内） */
+.tag-selector {
+    margin-bottom: 12px;
+}
+
+.tag-preset-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+}
+
+.tag-free-input-container {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.tag-free-input-container .tag-free-input {
+    flex: 1;
+    padding: 6px 10px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.tag-free-input-container .tag-add-btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #43e97b, #38f9d7);
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.tag-free-input-container .tag-add-btn:hover {
+    opacity: 0.85;
+}
+
+.tag-selected-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+/* ルールタブのタグ表示 */
+.rule-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+/* タグ別グループ見出し */
+.exercise-tag-section {
+    margin-top: 12px;
+    margin-bottom: 4px;
+}
+
+.exercise-tag-section h4 {
+    font-size: 0.9em;
+    color: #43c97b;
+    border-bottom: 2px solid #43e97b;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+}
+
+.exercise-tag-section h4 i {
+    margin-right: 4px;
+}
+
+/* ====================================================================
+   種目検索・フィルタバー
+   ==================================================================== */
+.exercise-filter-bar {
+    margin-bottom: 12px;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 10px;
+    border: 1px solid #e0e0e0;
+}
+
+.filter-search-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.filter-search-input-wrapper {
+    flex: 1;
+    position: relative;
+}
+
+.filter-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #999;
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.filter-search-input {
+    width: 100%;
+    padding: 7px 30px 7px 30px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fff;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.filter-search-input:focus {
+    border-color: #43e97b;
+}
+
+.filter-search-clear {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px;
+    display: none;
+}
+
+.filter-search-clear:hover {
+    color: #e74c3c;
+}
+
+.filter-toggle-btn {
+    width: 36px;
+    height: 36px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    font-size: 14px;
+    position: relative;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.filter-toggle-btn:hover {
+    border-color: #43e97b;
+    color: #43e97b;
+}
+
+.filter-toggle-btn.active {
+    border-color: #43e97b;
+    color: #43e97b;
+    background: #e8faf0;
+}
+
+.filter-toggle-btn.expanded {
+    background: #e8faf0;
+    border-color: #43e97b;
+}
+
+.filter-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #e74c3c;
+    color: #fff;
+    font-size: 10px;
+    font-weight: bold;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.filter-expandable {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #eee;
+}
+
+.filter-sort-row {
+    margin-bottom: 8px;
+}
+
+.filter-sort-row label {
+    font-size: 0.82em;
+    color: #666;
+    display: block;
+    margin-bottom: 3px;
+    font-weight: 600;
+}
+
+.filter-sort-select {
+    width: 100%;
+    padding: 6px 10px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 13px;
+    background: #fff;
+}
+
+.filter-tags-row {
+    margin-bottom: 8px;
+}
+
+.filter-tags-row label {
+    font-size: 0.82em;
+    color: #666;
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+
+.filter-tag-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.filter-chip {
+    font-size: 0.76em;
+    padding: 3px 9px;
+}
+
+.filter-chip.active {
+    background: linear-gradient(135deg, #43e97b, #38f9d7);
+    color: #fff;
+    border-color: #43e97b;
+    font-weight: 600;
+}
+
+.filter-actions-row {
+    text-align: right;
+}
+
+.filter-reset-btn {
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 0.8em;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.filter-reset-btn:hover {
+    border-color: #e74c3c;
+    color: #e74c3c;
+}
+
+/* ====================================================================
+   ダークモード対応 - タグ・フィルタ
+   ==================================================================== */
+body.dark-mode .tag-chip {
+    background: #2a2a2a;
+    border-color: #555;
+    color: #ccc;
+}
+
+body.dark-mode .tag-chip:hover {
+    border-color: #43e97b;
+    background: #1a3a2a;
+}
+
+body.dark-mode .tag-chip.selected {
+    background: linear-gradient(135deg, #2d8a4e, #2a9a7a);
+    color: #fff;
+    border-color: #43e97b;
+}
+
+body.dark-mode .tag-chip.display-only {
+    background: #1a3a2a;
+    color: #6aba6a;
+    border-color: #3a6a3a;
+}
+
+body.dark-mode .tag-chip.selected-display {
+    background: #1a3a2a;
+    color: #6aba6a;
+    border-color: #3a6a3a;
+}
+
+body.dark-mode .exercise-filter-bar {
+    background: rgba(40, 40, 40, 0.85);
+    border-color: #444;
+}
+
+body.dark-mode .filter-search-input {
+    background: #333;
+    border-color: #555;
+    color: #eee;
+}
+
+body.dark-mode .filter-search-input:focus {
+    border-color: #43e97b;
+}
+
+body.dark-mode .filter-toggle-btn {
+    background: #333;
+    border-color: #555;
+    color: #ccc;
+}
+
+body.dark-mode .filter-toggle-btn.active,
+body.dark-mode .filter-toggle-btn.expanded {
+    background: #1a3a2a;
+    border-color: #43e97b;
+    color: #43e97b;
+}
+
+body.dark-mode .filter-sort-select {
+    background: #333;
+    border-color: #555;
+    color: #eee;
+}
+
+body.dark-mode .filter-expandable {
+    border-top-color: #444;
+}
+
+body.dark-mode .filter-chip.active {
+    background: linear-gradient(135deg, #2d8a4e, #2a9a7a);
+    color: #fff;
+}
+
+body.dark-mode .filter-sort-row label,
+body.dark-mode .filter-tags-row label {
+    color: #aaa;
+}
+
+body.dark-mode .filter-reset-btn {
+    border-color: #555;
+    color: #aaa;
+}
+
+body.dark-mode .filter-reset-btn:hover {
+    border-color: #e74c3c;
+    color: #e74c3c;
+}
+
+body.dark-mode .tag-free-input-container .tag-free-input {
+    background: #333;
+    border-color: #555;
+    color: #eee;
+}
+
+body.dark-mode .exercise-tag-section h4 {
+    color: #43e97b;
+    border-bottom-color: #2d8a4e;
+}

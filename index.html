@@ -268,6 +268,15 @@
                 <input type="hidden" id="free-exercise-icon" value="fa-dumbbell">
                 <label for="free-exercise-rule">ルール説明</label>
                 <textarea id="free-exercise-rule" placeholder="例: 1分間で行った回数を記録" maxlength="200" rows="3" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:16px;resize:vertical;"></textarea>
+                <label>タグ</label>
+                <div id="free-exercise-tags" class="tag-selector">
+                    <div class="tag-preset-chips"></div>
+                    <div class="tag-free-input-container">
+                        <input type="text" class="tag-free-input" placeholder="フリータグを入力" maxlength="10">
+                        <button type="button" class="tag-add-btn"><i class="fa-solid fa-plus"></i></button>
+                    </div>
+                    <div class="tag-selected-list"></div>
+                </div>
                 <button id="add-free-exercise-btn" class="btn-primary">追加する</button>
             </div>
             <p id="free-exercise-error" class="error-message"></p>
@@ -290,6 +299,15 @@
                 <input type="hidden" id="edit-exercise-icon" value="fa-dumbbell">
                 <label for="edit-exercise-rule">ルール説明</label>
                 <textarea id="edit-exercise-rule" placeholder="ルール説明" maxlength="200" rows="3" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:16px;resize:vertical;"></textarea>
+                <label>タグ</label>
+                <div id="edit-exercise-tags" class="tag-selector">
+                    <div class="tag-preset-chips"></div>
+                    <div class="tag-free-input-container">
+                        <input type="text" class="tag-free-input" placeholder="フリータグを入力" maxlength="10">
+                        <button type="button" class="tag-add-btn"><i class="fa-solid fa-plus"></i></button>
+                    </div>
+                    <div class="tag-selected-list"></div>
+                </div>
                 <button id="save-edit-exercise-btn" class="btn-primary">保存する</button>
             </div>
             <p id="edit-exercise-error" class="error-message"></p>
