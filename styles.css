@@ -1456,24 +1456,6 @@ body.mode-interval header h1::after {
    3秒タイマータブ
    ==================================================================== */
 
-.timer-description {
-    background: #fff8e1;
-    border-left: 4px solid #ffc107;
-    padding: 15px;
-    margin-bottom: 20px;
-    border-radius: 8px;
-}
-
-.timer-description p {
-    margin-bottom: 10px;
-    color: #333;
-    line-height: 1.6;
-}
-
-.timer-description p:last-child {
-    margin-bottom: 0;
-}
-
 .timer-settings {
     background: #f8f9fa;
     padding: 15px;

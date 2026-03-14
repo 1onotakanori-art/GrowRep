@@ -1340,7 +1340,8 @@ function updateModeInfo() {
             ranking: 'ノーマルモードのランキング表示',
             progress: 'ノーマルモードの成長記録',
             rules: 'ノーマルモードのルールと倍率設定',
-            score: 'ノーマルモードの総合得点'
+            score: 'ノーマルモードの総合得点',
+            timer: ''
         },
         'interval': {
             post: 'インターバルモードの記録を投稿すること',
@@ -1348,7 +1349,8 @@ function updateModeInfo() {
             ranking: 'インターバルモードのランキング表示',
             progress: 'インターバルモードの成長記録',
             rules: 'インターバルモードのルールと倍率設定',
-            score: 'インターバルモードの総合得点'
+            score: 'インターバルモードの総合得点',
+            timer: '指定した秒数ごとに音が鳴り、カウントアップされます'
         },
         'free': {
             post: 'フリーモードの記録を投稿（自由種目）',
@@ -1356,7 +1358,8 @@ function updateModeInfo() {
             ranking: 'フリーモードのランキング表示',
             progress: 'フリーモードの成長記録',
             rules: 'フリーモードの種目管理（種目の追加・削除が可能）',
-            score: 'フリーモードの総合得点'
+            score: 'フリーモードの総合得点',
+            timer: '指定した秒数ごとに音が鳴り、カウントアップされます'
         },
         'weekly': {
             post: '週間チャレンジの記録を投稿（今週の3種目のみ）',
@@ -1365,7 +1368,8 @@ function updateModeInfo() {
             progress: '週間チャレンジ種目の成長記録',
             rules: '今週の3種目ルール（読み取り専用）',
             score: '今週の週間チャレンジ得点',
-            champions: '毎週の総合得点チャンピオンの記録'
+            champions: '毎週の総合得点チャンピオンの記録',
+            timer: '指定した秒数ごとに音が鳴り、カウントアップされます'
         }
     };
 
@@ -1383,6 +1387,7 @@ function updateModeInfo() {
         'progress-mode-info': currentTexts.progress,
         'rules-mode-info': currentTexts.rules,
         'score-mode-info': currentTexts.score,
+        'timer-mode-info': currentTexts.timer,
         'champions-mode-info': currentTexts.champions
     };
     

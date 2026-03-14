@@ -51,12 +51,12 @@
         </header>
 
         <nav class="tab-nav">
-            <button class="tab-btn active" data-tab="post">投稿</button>
-            <button class="tab-btn" data-tab="board">掲示板</button>
-            <button class="tab-btn" data-tab="ranking">ランキング</button>
-            <button class="tab-btn" data-tab="progress">成長グラフ</button>
+            <button class="tab-btn active" data-tab="post"><i class="fa-solid fa-pen-to-square"></i> 投稿</button>
+            <button class="tab-btn" data-tab="board"><i class="fa-solid fa-comments"></i> 掲示板</button>
+            <button class="tab-btn" data-tab="ranking"><i class="fa-solid fa-trophy"></i> ランキング</button>
+            <button class="tab-btn" data-tab="progress"><i class="fa-solid fa-chart-line"></i> 成長グラフ</button>
             <button class="tab-btn" data-tab="rules"><i class="fa-solid fa-clipboard-list"></i> ルール</button>
-            <button class="tab-btn" data-tab="score">総合得点</button>
+            <button class="tab-btn" data-tab="score"><i class="fa-solid fa-chart-bar"></i> 総合得点</button>
             <button class="tab-btn" data-tab="timer" data-mode="interval" style="display: none;"><i class="fa-solid fa-stopwatch"></i> タイマー</button>
             <button class="tab-btn" data-tab="timer" data-mode="free" style="display: none;"><i class="fa-solid fa-stopwatch"></i> タイマー</button>
             <button class="tab-btn" data-tab="timer" data-mode="weekly" style="display: none;"><i class="fa-solid fa-stopwatch"></i> タイマー</button>
@@ -224,9 +224,7 @@
         <!-- 3秒タイマータブ -->
         <div id="timer-tab" class="tab-content" data-mode="interval">
             <h2><i class="fa-solid fa-stopwatch"></i> インターバルタイマー</h2>
-            <div class="timer-description">
-                <p>指定した秒数ごとに音が鳴り、カウントアップされます</p>
-            </div>
+            <div id="timer-mode-info" class="mode-info"></div>
             
             <div class="timer-settings">
                 <label for="interval-input">インターバル（秒）:</label>
