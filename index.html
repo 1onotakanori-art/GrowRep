@@ -260,11 +260,34 @@
             <div class="free-exercise-form">
                 <label for="free-exercise-name">種目名</label>
                 <input type="text" id="free-exercise-name" placeholder="例: バーピー" maxlength="20">
+                <label>アイコン</label>
+                <div id="free-exercise-icon-grid" class="icon-grid"></div>
+                <input type="hidden" id="free-exercise-icon" value="fa-dumbbell">
                 <label for="free-exercise-rule">ルール説明</label>
                 <textarea id="free-exercise-rule" placeholder="例: 1分間で行った回数を記録" maxlength="200" rows="3" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:16px;resize:vertical;"></textarea>
                 <button id="add-free-exercise-btn" class="btn-primary">追加する</button>
             </div>
             <p id="free-exercise-error" class="error-message"></p>
+        </div>
+    </div>
+
+    <!-- フリーモード種目編集モーダル -->
+    <div id="edit-exercise-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close-edit-exercise-modal">&times;</span>
+            <h2><i class="fa-solid fa-pen-to-square"></i> 種目を編集</h2>
+            <div class="free-exercise-form">
+                <input type="hidden" id="edit-exercise-key">
+                <label for="edit-exercise-name">種目名</label>
+                <input type="text" id="edit-exercise-name" placeholder="種目名" maxlength="20">
+                <label>アイコン</label>
+                <div id="edit-exercise-icon-grid" class="icon-grid"></div>
+                <input type="hidden" id="edit-exercise-icon" value="fa-dumbbell">
+                <label for="edit-exercise-rule">ルール説明</label>
+                <textarea id="edit-exercise-rule" placeholder="ルール説明" maxlength="200" rows="3" style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:16px;resize:vertical;"></textarea>
+                <button id="save-edit-exercise-btn" class="btn-primary">保存する</button>
+            </div>
+            <p id="edit-exercise-error" class="error-message"></p>
         </div>
     </div>
 

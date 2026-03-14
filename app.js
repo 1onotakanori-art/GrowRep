@@ -2790,6 +2790,12 @@ async function loadFreeExercises() {
         const doc = await db.collection('settings_free').doc('exercises').get();
         if (doc.exists) {
             freeExercises = doc.data().exercises || {};
+            // 既存の種目にアイコンが未設定の場合、デフォルトアイコンを設定
+            Object.keys(freeExercises).forEach(key => {
+                if (!freeExercises[key].icon) {
+                    freeExercises[key].icon = 'fa-dumbbell';
+                }
+            });
         } else {
             freeExercises = {};
         }
@@ -2817,15 +2823,51 @@ async function saveFreeExercises() {
     }
 }
 
+// フリーモード種目用アイコンセット
+const freeExerciseIcons = [
+    'fa-dumbbell', 'fa-fire', 'fa-person-running', 'fa-shoe-prints', 'fa-stopwatch',
+    'fa-heart-pulse', 'fa-bolt', 'fa-hand-fist', 'fa-star', 'fa-medal',
+    'fa-person-walking', 'fa-bicycle', 'fa-person-swimming', 'fa-mountain',
+    'fa-weight-hanging', 'fa-gauge-high', 'fa-arrows-rotate', 'fa-circle-up',
+    'fa-bullseye', 'fa-shield'
+];
+
+/**
+ * アイコン選択グリッドを生成する
+ * @param {string} containerId - コンテナ要素のID
+ * @param {string} hiddenInputId - 選択値を保持するhidden inputのID
+ * @param {string} selectedIcon - 初期選択アイコン
+ */
+function renderIconGrid(containerId, hiddenInputId, selectedIcon = 'fa-dumbbell') {
+    const container = document.getElementById(containerId);
+    const hiddenInput = document.getElementById(hiddenInputId);
+    container.innerHTML = '';
+    hiddenInput.value = selectedIcon;
+
+    freeExerciseIcons.forEach(icon => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'icon-grid-btn' + (icon === selectedIcon ? ' selected' : '');
+        btn.innerHTML = `<i class="fa-solid ${icon}"></i>`;
+        btn.addEventListener('click', () => {
+            container.querySelectorAll('.icon-grid-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            hiddenInput.value = icon;
+        });
+        container.appendChild(btn);
+    });
+}
+
 /**
  * フリーモードの種目を追加
  * @param {string} name - 種目名
  * @param {string} rule - ルール説明
+ * @param {string} icon - アイコンクラス名
  */
-async function addFreeExercise(name, rule) {
+async function addFreeExercise(name, rule, icon = 'fa-dumbbell') {
     // キー名を生成（ユニークなID）
     const key = 'free_' + Date.now();
-    freeExercises[key] = { name: name, rule: rule };
+    freeExercises[key] = { name: name, rule: rule, icon: icon };
     await saveFreeExercises();
 
     // キャッシュクリア
@@ -2854,6 +2896,33 @@ async function deleteFreeExercise(key) {
     rankingCacheTime.free = null;
 
     updateFreeExerciseUI();
+}
+
+/**
+ * フリーモードの種目を編集
+ * @param {string} key - 種目キー
+ * @param {string} name - 新しい種目名
+ * @param {string} rule - 新しいルール説明
+ * @param {string} icon - 新しいアイコン
+ */
+async function editFreeExercise(key, name, rule, icon) {
+    freeExercises[key] = { name, rule, icon };
+    await saveFreeExercises();
+    updateFreeExerciseUI();
+}
+
+/**
+ * 編集モーダルを開く
+ */
+function openEditExerciseModal(key) {
+    const ex = freeExercises[key];
+    if (!ex) return;
+    document.getElementById('edit-exercise-key').value = key;
+    document.getElementById('edit-exercise-name').value = ex.name;
+    document.getElementById('edit-exercise-rule').value = ex.rule || '';
+    renderIconGrid('edit-exercise-icon-grid', 'edit-exercise-icon', ex.icon || 'fa-dumbbell');
+    document.getElementById('edit-exercise-error').textContent = '';
+    document.getElementById('edit-exercise-modal').style.display = 'block';
 }
 
 /**
@@ -2907,6 +2976,7 @@ function updateFreeRulesTab() {
         addBtn.className = 'add-exercise-btn';
         addBtn.innerHTML = '<i class="fa-solid fa-plus"></i> 種目を追加';
         addBtn.addEventListener('click', () => {
+            renderIconGrid('free-exercise-icon-grid', 'free-exercise-icon', 'fa-dumbbell');
             document.getElementById('free-exercise-modal').style.display = 'block';
         });
         rulesList.parentNode.insertBefore(addBtn, rulesList);
@@ -2915,16 +2985,27 @@ function updateFreeRulesTab() {
     // ルールリストを再構築
     rulesList.innerHTML = '';
     Object.entries(freeExercises).forEach(([key, ex]) => {
+        const iconClass = ex.icon || 'fa-dumbbell';
         const item = document.createElement('div');
         item.className = 'rule-item';
         item.innerHTML = `
             <div class="rule-info">
-                <h3>${escapeHtml(ex.name)}</h3>
+                <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)}</h3>
                 <p class="rule-detail">${escapeHtml(ex.rule)}</p>
             </div>
-            <button class="rule-delete-btn" data-key="${escapeHtml(key)}"><i class="fa-solid fa-trash-can"></i> 削除</button>
+            <div class="rule-actions">
+                <button class="rule-edit-btn" data-key="${escapeHtml(key)}"><i class="fa-solid fa-pen-to-square"></i></button>
+                <button class="rule-delete-btn" data-key="${escapeHtml(key)}"><i class="fa-solid fa-trash"></i></button>
+            </div>
         `;
         rulesList.appendChild(item);
+    });
+
+    // 編集ボタンにイベントリスナーを設定
+    rulesList.querySelectorAll('.rule-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            openEditExerciseModal(btn.dataset.key);
+        });
     });
 
     // 削除ボタンにイベントリスナーを設定
@@ -3071,21 +3152,34 @@ document.querySelector('.close-free-exercise-modal').addEventListener('click', (
     document.getElementById('free-exercise-error').textContent = '';
 });
 
+// フリーモード種目編集モーダルのイベント
+document.querySelector('.close-edit-exercise-modal').addEventListener('click', () => {
+    document.getElementById('edit-exercise-modal').style.display = 'none';
+    document.getElementById('edit-exercise-error').textContent = '';
+});
+
 window.addEventListener('click', (event) => {
-    const modal = document.getElementById('free-exercise-modal');
-    if (event.target === modal) {
-        modal.style.display = 'none';
+    const addModal = document.getElementById('free-exercise-modal');
+    if (event.target === addModal) {
+        addModal.style.display = 'none';
         document.getElementById('free-exercise-error').textContent = '';
+    }
+    const editModal = document.getElementById('edit-exercise-modal');
+    if (event.target === editModal) {
+        editModal.style.display = 'none';
+        document.getElementById('edit-exercise-error').textContent = '';
     }
 });
 
 document.getElementById('add-free-exercise-btn').addEventListener('click', async () => {
     const nameInput = document.getElementById('free-exercise-name');
     const ruleInput = document.getElementById('free-exercise-rule');
+    const iconInput = document.getElementById('free-exercise-icon');
     const errorEl = document.getElementById('free-exercise-error');
 
     const name = nameInput.value.trim();
     const rule = ruleInput.value.trim();
+    const icon = iconInput.value || 'fa-dumbbell';
 
     if (!name) {
         errorEl.textContent = '種目名を入力してください';
@@ -3097,14 +3191,45 @@ document.getElementById('add-free-exercise-btn').addEventListener('click', async
     }
 
     try {
-        await addFreeExercise(name, rule);
+        await addFreeExercise(name, rule, icon);
         nameInput.value = '';
         ruleInput.value = '';
+        renderIconGrid('free-exercise-icon-grid', 'free-exercise-icon', 'fa-dumbbell');
         errorEl.textContent = '';
         document.getElementById('free-exercise-modal').style.display = 'none';
         alert('種目を追加しました！');
     } catch (error) {
         errorEl.textContent = '種目の追加に失敗しました';
+    }
+});
+
+document.getElementById('save-edit-exercise-btn').addEventListener('click', async () => {
+    const key = document.getElementById('edit-exercise-key').value;
+    const nameInput = document.getElementById('edit-exercise-name');
+    const ruleInput = document.getElementById('edit-exercise-rule');
+    const iconInput = document.getElementById('edit-exercise-icon');
+    const errorEl = document.getElementById('edit-exercise-error');
+
+    const name = nameInput.value.trim();
+    const rule = ruleInput.value.trim();
+    const icon = iconInput.value || 'fa-dumbbell';
+
+    if (!name) {
+        errorEl.textContent = '種目名を入力してください';
+        return;
+    }
+    if (name.length > 20) {
+        errorEl.textContent = '種目名は20文字以内で入力してください';
+        return;
+    }
+
+    try {
+        await editFreeExercise(key, name, rule, icon);
+        errorEl.textContent = '';
+        document.getElementById('edit-exercise-modal').style.display = 'none';
+        alert('種目を更新しました！');
+    } catch (error) {
+        errorEl.textContent = '種目の更新に失敗しました';
     }
 });
 
