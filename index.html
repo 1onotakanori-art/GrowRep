@@ -68,17 +68,13 @@
             <div class="post-form">
                 <h2><i class="fa-solid fa-pen-to-square"></i> トレーニング記録を投稿</h2>
                 <div id="post-mode-info" class="mode-info"></div>
-                <select id="exercise-type" required>
-                    <option value="">種目を選択</option>
-                    <option value="pushup">プッシュアップ</option>
-                    <option value="dips">ディップス</option>
-                    <option value="squat">片足スクワット</option>
-                    <option value="Lsit">Lシット(秒)</option>
-                    <option value="pullup">懸垂(セット)</option>
-                </select>
-                <input type="number" id="exercise-value" placeholder="回数または秒数" min="0" required>
-                <button id="submit-post-btn" class="btn-primary">投稿する</button>
-                <p id="post-error" class="error-message"></p>
+                <!-- カードグリッドと値入力エリアはJavaScriptで生成 -->
+                <div id="post-exercises-grid" class="post-exercises-grid"></div>
+                <div id="post-value-container" style="display: none; margin-top: 20px;">
+                    <input type="number" id="exercise-value" placeholder="回数または秒数" min="0" required>
+                    <button id="submit-post-btn" class="btn-primary">投稿する</button>
+                    <p id="post-error" class="error-message"></p>
+                </div>
             </div>
         </div>
 
