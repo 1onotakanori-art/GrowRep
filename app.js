@@ -2867,7 +2867,14 @@ function renderIconGrid(containerId, hiddenInputId, selectedIcon = 'fa-dumbbell'
 async function addFreeExercise(name, rule, icon = 'fa-dumbbell') {
     // キー名を生成（ユニークなID）
     const key = 'free_' + Date.now();
-    freeExercises[key] = { name: name, rule: rule, icon: icon };
+    freeExercises[key] = { 
+        name: name, 
+        rule: rule, 
+        icon: icon,
+        createdBy: currentUser ? currentUser.uid : null,
+        createdByName: currentUserData ? currentUserData.userName : (currentUser ? currentUser.email : 'Unknown'),
+        createdAt: new Date().toISOString()
+    };
     await saveFreeExercises();
 
     // キャッシュクリア
@@ -2906,7 +2913,16 @@ async function deleteFreeExercise(key) {
  * @param {string} icon - 新しいアイコン
  */
 async function editFreeExercise(key, name, rule, icon) {
-    freeExercises[key] = { name, rule, icon };
+    const existing = freeExercises[key] || {};
+    freeExercises[key] = { 
+        name, 
+        rule, 
+        icon,
+        // 既存の作成者情報を保持
+        createdBy: existing.createdBy || null,
+        createdByName: existing.createdByName || 'Unknown',
+        createdAt: existing.createdAt || new Date().toISOString()
+    };
     await saveFreeExercises();
     updateFreeExerciseUI();
 }
@@ -2986,11 +3002,12 @@ function updateFreeRulesTab() {
     rulesList.innerHTML = '';
     Object.entries(freeExercises).forEach(([key, ex]) => {
         const iconClass = ex.icon || 'fa-dumbbell';
+        const createdByInfo = ex.createdByName ? `<span class="created-by-info">追加: ${escapeHtml(ex.createdByName)}</span>` : '';
         const item = document.createElement('div');
         item.className = 'rule-item';
         item.innerHTML = `
             <div class="rule-info">
-                <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)}</h3>
+                <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)} ${createdByInfo}</h3>
                 <p class="rule-detail">${escapeHtml(ex.rule)}</p>
             </div>
             <div class="rule-actions">
