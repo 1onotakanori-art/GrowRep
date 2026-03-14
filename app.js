@@ -1813,7 +1813,7 @@ async function renderComments(comments, postId) {
                     <div class="comment-author">${escapeHtml(userName)}</div>
                     <div class="comment-text">${escapeHtml(comment.text)}</div>
                 </div>
-                ${isOwner ? `<button class="comment-delete-btn" onclick="deleteComment('${escapeHtml(postId)}', ${i})">🗑️</button>` : ''}
+                ${isOwner ? `<button class="comment-delete-btn" onclick="deleteComment('${escapeHtml(postId)}', ${i})"><i class="fa-solid fa-trash-can"></i></button>` : ''}
             </div>
         `);
     }
@@ -2887,7 +2887,7 @@ function updateFreeRulesTab() {
 
     // タイトルを変更
     const title = rulesTab.querySelector('h2');
-    if (title) title.textContent = '📋 フリーモード種目管理';
+    if (title) title.innerHTML = '<i class="fa-solid fa-clipboard-list"></i> フリーモード種目管理';
 
     // 倍率の説明と更新ボタンを非表示に
     const rulesDesc = rulesTab.querySelector('.rules-description');
@@ -2917,7 +2917,7 @@ function updateFreeRulesTab() {
                 <h3>${escapeHtml(ex.name)}</h3>
                 <p class="rule-detail">${escapeHtml(ex.rule)}</p>
             </div>
-            <button class="rule-delete-btn" data-key="${escapeHtml(key)}">🗑️ 削除</button>
+            <button class="rule-delete-btn" data-key="${escapeHtml(key)}"><i class="fa-solid fa-trash-can"></i> 削除</button>
         `;
         rulesList.appendChild(item);
     });
@@ -2966,7 +2966,7 @@ function restoreStandardExerciseUI() {
     // ルールタブのタイトルを復元
     const rulesTab = document.getElementById('rules-tab');
     const title = rulesTab.querySelector('h2');
-    if (title) title.textContent = '📋 種目ルール';
+    if (title) title.innerHTML = '<i class="fa-solid fa-clipboard-list"></i> 種目ルール';
 
     // レーダーチャートの凡例注釈を削除
     const annotations = document.querySelector('.chart-legend-annotations');
@@ -4052,7 +4052,7 @@ function updateWeeklyRulesTab() {
     const rulesList = rulesTab.querySelector('.rules-list');
 
     const title = rulesTab.querySelector('h2');
-    if (title) title.textContent = '📋 今週のチャレンジ種目';
+    if (title) title.innerHTML = '<i class="fa-solid fa-clipboard-list"></i> 今週のチャレンジ種目';
 
     // 倍率説明・更新ボタンを非表示
     const rulesDesc = rulesTab.querySelector('.rules-description');
