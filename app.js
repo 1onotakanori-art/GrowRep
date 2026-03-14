@@ -49,9 +49,6 @@ const emailInput = document.getElementById('email');
 const passwordInput = document.getElementById('password');
 const authError = document.getElementById('auth-error');
 // const userName = document.getElementById('user-name');  // 削除
-const submitPostBtn = document.getElementById('submit-post-btn');
-const exerciseType = document.getElementById('exercise-type');
-const exerciseValue = document.getElementById('exercise-value');
 const postError = document.getElementById('post-error');
 const postsList = document.getElementById('posts-list');
 const rankingList = document.getElementById('ranking-list');
@@ -1003,6 +1000,11 @@ auth.onAuthStateChanged(async (user) => {
         // フリーモードが初期モードの場合はUI初期化
         if (currentMode === 'free') {
             await initFreeMode();
+        } else if (currentMode === 'weekly') {
+            await initWeeklyMode();
+        } else {
+            // 通常モード：投稿タブに標準種目カードを表示
+            restoreStandardExerciseUI();
         }
 
         loadPosts();
@@ -1602,16 +1604,16 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
 
 // 投稿の送信
 // バリデーション: 入力値の検証を強化
-submitPostBtn.addEventListener('click', async () => {
-    // フリーモードの場合は selectedPostExerciseKey を使用
-    const type = currentMode === 'free' ? selectedPostExerciseKey : exerciseType.value;
-    const value = parseInt(exerciseValue.value);
+// submitPost はカード内のボタンから呼ばれる
+async function submitPost(exerciseKey) {
+    const valueInput = document.querySelector(`.rule-item[data-key="${exerciseKey}"] .post-inline-value`);
+    const value = valueInput ? parseInt(valueInput.value) : NaN;
     
     // 種目の検証
     const validExercises = currentMode === 'free' ? freeExercises
                          : currentMode === 'weekly' ? getWeeklyExercisesObject()
                          : exerciseNames;
-    if (!type || !validExercises[type]) {
+    if (!exerciseKey || !validExercises[exerciseKey]) {
         postError.textContent = '種目を選択してください';
         return;
     }
@@ -1629,16 +1631,16 @@ submitPostBtn.addEventListener('click', async () => {
         await db.collection(collectionName).add({
             userId: currentUser.uid,
             userEmail: currentUser.email,
-            exerciseType: type,
+            exerciseType: exerciseKey,
             value: value,
             timestamp: firebase.firestore.FieldValue.serverTimestamp(),
             likes: [],
             comments: []
         });
         
-        console.log(`[submitPost] 投稿成功: ${exerciseNames[type]} ${value} (${currentMode}モード)`);
+        console.log(`[submitPost] 投稿成功: ${exerciseKey} ${value} (${currentMode}モード)`);
         
-        // 投稿後、現在のモードのキャッシュをクリア（新しいデータを反映させるため）
+        // 投稿後、現在のモードのキャッシュをクリア
         const mode = currentMode;
         rankingCache[mode] = null;
         rankingCacheTime[mode] = null;
@@ -1647,7 +1649,6 @@ submitPostBtn.addEventListener('click', async () => {
         progressCache[mode] = {};
         postsCache[mode] = null;
         postsCacheTime[mode] = null;
-        // 週間チャレンジはフリーモードと同じコレクションを使うため、freeキャッシュも無効化
         if (mode === 'weekly') {
             rankingCache.free = null;
             rankingCacheTime.free = null;
@@ -1657,16 +1658,11 @@ submitPostBtn.addEventListener('click', async () => {
             postsCacheTime.free = null;
         }
         
-        // フリーモードの場合は選択をクリア
-        if (currentMode === 'free') {
-            selectedPostExerciseKey = null;
-            document.querySelectorAll('.post-exercise-card.selected').forEach(c => c.classList.remove('selected'));
-            document.getElementById('post-value-container').style.display = 'none';
-        } else {
-            exerciseType.value = '';
-        }
-        
-        exerciseValue.value = '';
+        // 選択をクリア
+        selectedPostExerciseKey = null;
+        // カード内の入力エリアを閉じる
+        document.querySelectorAll('.post-inline-form').forEach(f => f.remove());
+        document.querySelectorAll('.rule-item.selected').forEach(c => c.classList.remove('selected'));
         postError.textContent = '';
         
         // 投稿後、掲示板タブに切り替え
@@ -1677,7 +1673,7 @@ submitPostBtn.addEventListener('click', async () => {
         postError.textContent = '投稿に失敗しました。もう一度お試しください。';
         console.error('投稿エラー:', error);
     }
-});
+}
 
 // 投稿の読み込み（キャッシュ対応）
 async function loadPosts(forceRefresh = false) {
@@ -3130,17 +3126,14 @@ async function updateFreeExerciseUI() {
  */
 function updateFreePostDropdown() {
     if (currentMode !== 'free') return;
-    const postForm = document.querySelector('.post-form');
+    const postTab = document.getElementById('post-tab');
     const exercisesGrid = document.getElementById('post-exercises-grid');
     
-    // 週間チャレンジモードではフィルタUIを表示しない
-    if (currentMode !== 'weekly') {
-        // フィルタUIを投稿フォーム内のグリッド直前に挿入
-        const existingFilter = postForm.querySelector('.exercise-filter-bar');
-        if (!existingFilter) {
-            const filterBar = createExerciseFilterUI(postForm, () => updateFreePostDropdownContent());
-            postForm.insertBefore(filterBar, exercisesGrid);
-        }
+    // フィルタUIを挿入
+    const existingFilter = postTab.querySelector('.exercise-filter-bar');
+    if (!existingFilter) {
+        const filterBar = createExerciseFilterUI(postTab, () => updateFreePostDropdownContent());
+        postTab.insertBefore(filterBar, exercisesGrid);
     }
     
     updateFreePostDropdownContent();
@@ -3153,108 +3146,95 @@ function updateFreePostDropdownContent() {
     const exercisesGrid = document.getElementById('post-exercises-grid');
     const entries = getFilteredAndSortedExercises(exerciseFilterState);
     
-    // グリッドをクリア
     exercisesGrid.innerHTML = '';
     
-    // タグでグループ化されている場合
     if (exerciseFilterState.sortBy === 'tags-group') {
         const groups = groupExercisesByTag(entries);
         Object.entries(groups).forEach(([tag, groupEntries]) => {
-            // グループヘッダー
             const groupHeader = document.createElement('div');
-            groupHeader.className = 'tag-group-header';
-            groupHeader.innerHTML = `<i class="fa-solid fa-tag"></i> ${tag}`;
+            groupHeader.className = 'exercise-tag-section';
+            groupHeader.innerHTML = `<h4><i class="fa-solid fa-tag"></i> ${escapeHtml(tag)}</h4>`;
             exercisesGrid.appendChild(groupHeader);
-            
-            // グループ内のカードを生成
-            groupEntries.forEach(([key, ex]) => {
-                const card = createPostExerciseCard(key, ex);
-                exercisesGrid.appendChild(card);
-            });
+            groupEntries.forEach(([key, ex]) => appendPostItem(exercisesGrid, key, ex));
         });
     } else {
-        // 通常のグリッド表示
-        entries.forEach(([key, ex]) => {
-            const card = createPostExerciseCard(key, ex);
-            exercisesGrid.appendChild(card);
-        });
+        entries.forEach(([key, ex]) => appendPostItem(exercisesGrid, key, ex));
     }
     
-    // 選択状態を復元
-    if (selectedPostExerciseKey) {
-        const selectedCard = exercisesGrid.querySelector(`[data-exercise-key="${selectedPostExerciseKey}"]`);
-        if (selectedCard) {
-            selectedCard.classList.add('selected');
+    if (entries.length === 0) {
+        if (Object.keys(freeExercises).length === 0) {
+            exercisesGrid.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">まだ種目が登録されていません。ルールタブから種目を追加してください。</p>';
+        } else {
+            exercisesGrid.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;"><i class="fa-solid fa-filter"></i> 該当する種目が見つかりません</p>';
         }
     }
 }
 
 /**
- * 投稿タブの種目カードを作成
+ * 投稿タブに1つの種目カードを追加（rule-itemと同じスタイル）
  */
-function createPostExerciseCard(key, exercise) {
-    const card = document.createElement('div');
-    card.className = 'post-exercise-card';
-    card.dataset.exerciseKey = key;
+function appendPostItem(container, key, ex) {
+    const iconClass = ex.icon || 'fa-dumbbell';
+    const tagsHtml = (ex.tags && ex.tags.length > 0) 
+        ? `<div class="rule-tags">${ex.tags.map(t => `<span class="tag-chip display-only">${escapeHtml(t)}</span>`).join('')}</div>` 
+        : '';
+    const item = document.createElement('div');
+    item.className = 'rule-item';
+    item.dataset.key = key;
+    item.style.cursor = 'pointer';
+    item.innerHTML = `
+        <div class="rule-info">
+            <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)}</h3>
+            <p class="rule-detail">${escapeHtml(ex.rule || '')}</p>
+            ${tagsHtml}
+        </div>
+    `;
     
-    if (selectedPostExerciseKey === key) {
-        card.classList.add('selected');
-    }
-    
-    const header = document.createElement('div');
-    header.className = 'post-exercise-header';
-    
-    const icon = document.createElement('div');
-    icon.className = 'post-exercise-icon';
-    icon.innerHTML = exercise.icon || '<i class="fa-solid fa-dumbbell"></i>';
-    
-    const name = document.createElement('div');
-    name.className = 'post-exercise-name';
-    name.textContent = exercise.name;
-    
-    header.appendChild(icon);
-    header.appendChild(name);
-    
-    const rule = document.createElement('div');
-    rule.className = 'post-exercise-rule';
-    rule.textContent = exercise.rule || '';
-    
-    const tagsContainer = document.createElement('div');
-    tagsContainer.className = 'post-exercise-tags';
-    if (exercise.tags && exercise.tags.length > 0) {
-        exercise.tags.forEach(tag => {
-            const tagChip = document.createElement('span');
-            tagChip.className = 'tag-chip tag-display';
-            tagChip.textContent = tag;
-            tagsContainer.appendChild(tagChip);
-        });
-    }
-    
-    card.appendChild(header);
-    card.appendChild(rule);
-    card.appendChild(tagsContainer);
-    
-    // カードクリックで選択
-    card.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+        // 入力フォーム内のクリックは無視
+        if (e.target.closest('.post-inline-form')) return;
+        
         // 以前の選択を解除
-        document.querySelectorAll('.post-exercise-card.selected').forEach(c => c.classList.remove('selected'));
+        document.querySelectorAll('#post-exercises-grid .rule-item.selected').forEach(c => {
+            c.classList.remove('selected');
+            const form = c.querySelector('.post-inline-form');
+            if (form) form.remove();
+        });
         
         // 新しい選択
-        card.classList.add('selected');
+        item.classList.add('selected');
         selectedPostExerciseKey = key;
+        postError.textContent = '';
         
-        // 値入力エリアを表示
-        const valueContainer = document.getElementById('post-value-container');
-        const valueInput = document.getElementById('exercise-value');
-        const errorMsg = document.getElementById('post-error');
+        // カード内に入力フォームを追加
+        const inlineForm = document.createElement('div');
+        inlineForm.className = 'post-inline-form';
+        inlineForm.innerHTML = `
+            <input type="number" class="post-inline-value" placeholder="回数または秒数" min="0" required>
+            <button type="button" class="btn-primary post-inline-submit">投稿する</button>
+        `;
+        item.appendChild(inlineForm);
         
-        valueContainer.style.display = 'block';
-        valueInput.value = '';
+        const valueInput = inlineForm.querySelector('.post-inline-value');
         valueInput.focus();
-        errorMsg.textContent = '';
+        
+        inlineForm.querySelector('.post-inline-submit').addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            submitPost(key);
+        });
+        
+        valueInput.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter') {
+                ev.preventDefault();
+                ev.stopPropagation();
+                submitPost(key);
+            }
+        });
+        
+        valueInput.addEventListener('click', (ev) => ev.stopPropagation());
     });
     
-    return card;
+    container.appendChild(item);
 }
 
 /**
@@ -3445,16 +3425,22 @@ function restoreStandardExerciseUI() {
     const annotations = document.querySelector('.chart-legend-annotations');
     if (annotations) annotations.remove();
 
-    // 投稿プルダウンを復元
-    const select = document.getElementById('exercise-type');
-    select.innerHTML = `
-        <option value="">種目を選択</option>
-        <option value="pushup">プッシュアップ</option>
-        <option value="dips">ディップス</option>
-        <option value="squat">片足スクワット</option>
-        <option value="Lsit">Lシット(秒)</option>
-        <option value="pullup">懸垂(セット)</option>
-    `;
+    // 投稿タブの種目カード・選択をクリアして通常種目を表示
+    selectedPostExerciseKey = null;
+    const exercisesGrid = document.getElementById('post-exercises-grid');
+    exercisesGrid.innerHTML = '';
+    
+    // 通常モードの5種目をカード表示
+    const standardExercises = {
+        'pushup': { name: 'プッシュアップ', rule: 'プッシュアップバーを使用。顎がマットにつくまで下げる。', icon: 'fa-dumbbell' },
+        'dips': { name: 'ディップス', rule: '顎がストレッチポールにタッチするまで下げる。幅、ポール位置は自由。', icon: 'fa-fire' },
+        'squat': { name: '片足スクワット', rule: 'マット3段重ねの上で、片足でしゃがんで立ち上がる。左右の合計回数。', icon: 'fa-shoe-prints' },
+        'Lsit': { name: 'Lシット(秒)', rule: 'プッシュアップバーを使って、足を水平に持ち上げてキープする秒数。', icon: 'fa-chair' },
+        'pullup': { name: '懸垂(セット)', rule: '順手か逆手で行う。1セットの回数は任意。', icon: 'fa-person-falling' }
+    };
+    Object.entries(standardExercises).forEach(([key, ex]) => {
+        appendPostItem(exercisesGrid, key, ex);
+    });
 
     // 成長グラフプルダウンを復元
     const graphSelect = document.getElementById('graph-exercise-type');
@@ -5001,21 +4987,24 @@ async function initWeeklyMode() {
  */
 function updateWeeklyPostDropdown() {
     if (currentMode !== 'weekly') return;
+    const postTab = document.getElementById('post-tab');
     const exercisesGrid = document.getElementById('post-exercises-grid');
 
-    // グリッドをクリア
+    // 週間チャレンジではフィルタUIを削除
+    const existingFilter = postTab.querySelector('.exercise-filter-bar');
+    if (existingFilter) existingFilter.remove();
+
     exercisesGrid.innerHTML = '';
 
     if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) {
-        exercisesGrid.innerHTML = '<p style="text-align: center; color: #999;">今週のチャレンジ種目はまだ設定されていません。</p>';
+        exercisesGrid.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">今週のチャレンジ種目はまだ設定されていません。</p>';
         return;
     }
 
     weeklyChallenge.exercises.forEach(key => {
         const ex = freeExercises[key];
         if (!ex) return;
-        const card = createPostExerciseCard(key, ex);
-        exercisesGrid.appendChild(card);
+        appendPostItem(exercisesGrid, key, ex);
     });
 }
 
@@ -5027,6 +5016,10 @@ function updateWeeklyRulesTab() {
 
     const rulesTab = document.getElementById('rules-tab');
     const rulesList = rulesTab.querySelector('.rules-list');
+
+    // フィルタバーを削除（週間チャレンジでは不要）
+    const existingFilter = rulesTab.querySelector('.exercise-filter-bar');
+    if (existingFilter) existingFilter.remove();
 
     const title = rulesTab.querySelector('h2');
     if (title) title.innerHTML = '<i class="fa-solid fa-clipboard-list"></i> 今週のチャレンジ種目';
@@ -5052,12 +5045,17 @@ function updateWeeklyRulesTab() {
     weeklyChallenge.exercises.forEach(key => {
         const ex = freeExercises[key];
         if (!ex) return;
+        const iconClass = ex.icon || 'fa-dumbbell';
+        const tagsHtml = (ex.tags && ex.tags.length > 0) 
+            ? `<div class="rule-tags">${ex.tags.map(t => `<span class="tag-chip display-only">${escapeHtml(t)}</span>`).join('')}</div>` 
+            : '';
         const item = document.createElement('div');
         item.className = 'rule-item';
         item.innerHTML = `
             <div class="rule-info">
-                <h3>🏋️ ${escapeHtml(ex.name)}</h3>
+                <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)}</h3>
                 <p class="rule-detail">${escapeHtml(ex.rule || 'ルール未設定')}</p>
+                ${tagsHtml}
             </div>
         `;
         rulesList.appendChild(item);

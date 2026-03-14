@@ -65,17 +65,11 @@
 
         <!-- 投稿タブ -->
         <div id="post-tab" class="tab-content active">
-            <div class="post-form">
-                <h2><i class="fa-solid fa-pen-to-square"></i> トレーニング記録を投稿</h2>
-                <div id="post-mode-info" class="mode-info"></div>
-                <!-- カードグリッドと値入力エリアはJavaScriptで生成 -->
-                <div id="post-exercises-grid" class="post-exercises-grid"></div>
-                <div id="post-value-container" style="display: none; margin-top: 20px;">
-                    <input type="number" id="exercise-value" placeholder="回数または秒数" min="0" required>
-                    <button id="submit-post-btn" class="btn-primary">投稿する</button>
-                    <p id="post-error" class="error-message"></p>
-                </div>
-            </div>
+            <h2><i class="fa-solid fa-pen-to-square"></i> トレーニング記録を投稿</h2>
+            <div id="post-mode-info" class="mode-info"></div>
+            <!-- カードグリッドはJavaScriptで生成 -->
+            <div id="post-exercises-grid" class="rules-list"></div>
+            <p id="post-error" class="error-message"></p>
         </div>
 
         <!-- 掲示板タブ -->
