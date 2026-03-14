@@ -991,9 +991,11 @@ auth.onAuthStateChanged(async (user) => {
         // モードセレクターの値を現在のモードに同期
         modeSelect.value = currentMode;
         
-        // 背景色クラスを設定
-        document.body.classList.remove('mode-normal', 'mode-interval', 'mode-free');
+        // 背景色クラスを設定（bodyとhtmlの両方）
+        document.body.classList.remove('mode-normal', 'mode-interval', 'mode-free', 'mode-weekly');
         document.body.classList.add(`mode-${currentMode}`);
+        document.documentElement.classList.remove('mode-normal', 'mode-interval', 'mode-free', 'mode-weekly');
+        document.documentElement.classList.add(`mode-${currentMode}`);
         
         // モードに応じたタブ表示を初期化
         updateTabsForMode();
@@ -1419,9 +1421,11 @@ async function changeMode(newMode) {
     // モードセレクターの値を同期
     modeSelect.value = newMode;
     
-    // 背景色クラスを切り替え（トランジション付き）
+    // 背景色クラスを切り替え（トランジション付き）（bodyとhtmlの両方）
     document.body.classList.remove('mode-normal', 'mode-interval', 'mode-free', 'mode-weekly');
     document.body.classList.add(`mode-${newMode}`);
+    document.documentElement.classList.remove('mode-normal', 'mode-interval', 'mode-free', 'mode-weekly');
+    document.documentElement.classList.add(`mode-${newMode}`);
     
     // タブの表示を更新
     updateTabsForMode();
