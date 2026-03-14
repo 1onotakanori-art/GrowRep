@@ -2825,11 +2825,7 @@ async function saveFreeExercises() {
 
 // フリーモード種目用アイコンセット
 const freeExerciseIcons = [
-    'fa-dumbbell', 'fa-fire', 'fa-person-running', 'fa-shoe-prints', 'fa-stopwatch',
-    'fa-heart-pulse', 'fa-bolt', 'fa-hand-fist', 'fa-star', 'fa-medal',
-    'fa-person-walking', 'fa-bicycle', 'fa-person-swimming', 'fa-mountain',
-    'fa-weight-hanging', 'fa-gauge-high', 'fa-arrows-rotate', 'fa-circle-up',
-    'fa-bullseye', 'fa-shield'
+    'fa-dumbbell', 'fa-person-running', 'fa-shoe-prints', 'fa-bolt', 'fa-stopwatch', 'fa-weight-hanging', 'fa-hand-fist', 'fa-star', 'fa-bone', 'fa-hand-peace', 'fa-heart', 'fa-heart-pulse', 'fa-explosion', 'fa-bolt-lightning', 'fa-fire', 'fa-water', 'fa-tree', 'fa-person-shelter', 'fa-person-rays', 'fa-volume-high'
 ];
 
 /**

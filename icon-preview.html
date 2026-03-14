@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>フリーモード種目アイコンセット - 拡張版</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 28px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .description {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .controls {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .control-info {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .control-info strong {
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+
+        .btn-ok {
+            background: #43e97b;
+            color: white;
+        }
+
+        .btn-ok:hover:not(:disabled) {
+            background: #38d966;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(67, 233, 123, 0.4);
+        }
+
+        .btn-ok:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .btn-clear {
+            background: #ffcccb;
+            color: #d32f2f;
+        }
+
+        .btn-clear:hover {
+            background: #ff9999;
+            transform: translateY(-2px);
+        }
+
+        .btn-copy {
+            background: #e3eafc;
+            color: #667eea;
+        }
+
+        .btn-copy:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .category {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .category h2 {
+            color: #667eea;
+            font-size: 18px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .category h2 i {
+            font-size: 24px;
+        }
+
+        .icon-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+            gap: 12px;
+        }
+
+        .icon-item {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: 2px solid transparent;
+            position: relative;
+        }
+
+        .icon-item:hover {
+            transform: translateY(-3px);
+            background: #e3eafc;
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .icon-item i {
+            display: block;
+            font-size: 32px;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .icon-item .name {
+            font-size: 11px;
+            color: #666;
+            word-break: break-word;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        }
+
+        .icon-item.selected {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: #667eea;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .icon-item.selected i {
+            color: white;
+        }
+
+        .icon-item.selected .name {
+            color: white;
+        }
+
+        .icon-item.selected::before {
+            content: '✓';
+            position: absolute;
+            top: 5px;
+            right: 8px;
+            background: #43e97b;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .current-set {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .current-set i {
+            color: white !important;
+        }
+
+        .current-set .name {
+            color: white !important;
+        }
+
+        .stats {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            margin-top: 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .stats p {
+            color: #667eea;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stats small {
+            color: #999;
+            font-size: 12px;
+        }
+
+        .output-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .output-modal.show {
+            display: flex;
+        }
+
+        .output-modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .output-modal-content h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+
+        .output-code {
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #333;
+            word-break: break-all;
+            margin-bottom: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .output-instructions {
+            background: #e8f5e9;
+            border-left: 4px solid #43e97b;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            color: #2e7d32;
+            line-height: 1.6;
+        }
+
+        .output-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .btn-modal-close {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .btn-modal-close:hover {
+            background: #bdbdbd;
+        }
+
+        .legend {
+            background: white;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 25px;
+            font-size: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .legend span {
+            display: inline-block;
+            margin-right: 20px;
+            margin-bottom: 8px;
+        }
+
+        .legend-default {
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .legend-other {
+            color: #999;
+        }
+
+        .footer {
+            color: white;
+            text-align: center;
+            margin-top: 30px;
+            font-size: 12px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 フリーモード種目アイコンセット - エディター</h1>
+        <p class="description">アイコンをクリックして選択し、OKボタンで新しいセットを生成できます</p>
+
+        <div class="controls">
+            <div class="control-info">
+                選択中: <strong id="selectedCount">0</strong> / 20個
+            </div>
+            <div class="control-buttons">
+                <button class="btn btn-clear" onclick="clearSelection()">クリア</button>
+                <button class="btn btn-ok" id="okBtn" onclick="generateOutput()" disabled>OK - セット生成</button>
+            </div>
+        </div>
+
+        <div class="legend">
+            <span><i class="fa-solid fa-dumbbell" style="color: #667eea;"></i> <span class="legend-default">紫色 = 現在選択可能な20種（デフォルト）</span></span>
+            <span><i class="fa-solid fa-person-biking" style="color: #999;"></i> <span class="legend-other">グレー = 他のアイコン候補</span></span>
+            <span><i class="fa-solid fa-check" style="color: #43e97b;"></i> <span class="legend-default">チェック = 選択済み</span></span>
+        </div>
+
+        <div id="categoriesContainer"></div>
+
+        <div class="stats">
+            <p>現在のセット: <span id="currentCount">20</span> 個</p>
+            <p>利用可能な全アイコン: <span id="allCount">0</span> 個</p>
+        </div>
+
+        <p class="footer">※ アイコンをクリックすると選択/解除できます（最大20個まで選択可能）</p>
+    </div>
+
+    <!-- 出力モーダル -->
+    <div class="output-modal" id="outputModal">
+        <div class="output-modal-content">
+            <h2>✅ 新しいアイコンセットが生成されました</h2>
+            <div class="output-instructions">
+                <strong>📋 使用方法：</strong><br>
+                1. 下記のコードをコピーします<br>
+                2. <code>app.js</code> の <code>freeExerciseIcons</code> 定義（2827行目付近）を置き換えます<br>
+                3. ページをリロードして確認
+            </div>
+            <div class="output-code" id="outputCode"></div>
+            <div class="output-buttons">
+                <button class="btn btn-copy" onclick="copyCode()">📋 コピー</button>
+                <button class="btn btn-modal-close" onclick="closeModal()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const currentSet = [
+            'fa-dumbbell', 'fa-fire', 'fa-person-running', 'fa-shoe-prints', 'fa-stopwatch',
+            'fa-heart-pulse', 'fa-bolt', 'fa-hand-fist', 'fa-star', 'fa-medal',
+            'fa-person-walking', 'fa-bicycle', 'fa-person-swimming', 'fa-mountain',
+            'fa-weight-hanging', 'fa-gauge-high', 'fa-arrows-rotate', 'fa-circle-up',
+            'fa-bullseye', 'fa-shield'
+        ];
+
+        const selectedIcons = new Set();
+        const currentSetNames = currentSet;
+
+        const otherIcons = {
+            'トレーニング・ウェイト系': [
+                { name: 'fa-dumbbell', label: 'ダンベル' },
+                { name: 'fa-weight-hanging', label: 'ウェイト' },
+                { name: 'fa-bone', label: '骨' },
+                { name: 'fa-person-biking', label: 'バイク' },
+                { name: 'fa-person-walking', label: 'ウォーキング' },
+                { name: 'fa-person-running', label: 'ランニング' },
+                { name: 'fa-person-hiking', label: 'ハイキング' },
+                { name: 'fa-person-swimming', label: '水泳' },
+                { name: 'fa-person-snowboarding', label: 'スノーボード' },
+                { name: 'fa-person-skiing', label: 'スキー' },
+                { name: 'fa-person-mountain-biking', label: 'マウンテンバイク' },
+                { name: 'fa-person-rowing-boat', label: 'ボート' },
+                { name: 'fa-person-booth', label: 'ブース' },
+                { name: 'fa-hand-fist', label: '拳' },
+                { name: 'fa-hand-peace', label: 'ピース' },
+                { name: 'fa-hand-holding', label: '手' },
+            ],
+            'スポーツ・競技': [
+                { name: 'fa-futbol', label: 'サッカー' },
+                { name: 'fa-basketball', label: 'バスケットボール' },
+                { name: 'fa-baseball', label: '野球' },
+                { name: 'fa-volleyball', label: 'バレーボール' },
+                { name: 'fa-american-football-ball', label: 'アメフト' },
+                { name: 'fa-golf-ball', label: 'ゴルフボール' },
+                { name: 'fa-person-golfing', label: 'ゴルフ' },
+                { name: 'fa-table-tennis-paddle-ball', label: '卓球' },
+                { name: 'fa-bowknot', label: 'リボン' },
+                { name: 'fa-archery', label: 'アーチェリー' },
+                { name: 'fa-chess', label: 'チェス' },
+                { name: 'fa-target', label: 'ターゲット' },
+                { name: 'fa-crosshairs', label: 'クロスヘアー' },
+            ],
+            '動作・運動': [
+                { name: 'fa-person-falling', label: '落下' },
+                { name: 'fa-person-falling-burst', label: 'バースト' },
+                { name: 'fa-person-circle-plus', label: 'サークル' },
+                { name: 'fa-person-shelter', label: 'シェルター' },
+                { name: 'fa-person-rays', label: 'レイズ' },
+                { name: 'fa-person-arrow-up-from-line', label: '上昇' },
+                { name: 'fa-person-arrow-down-to-line', label: '下降' },
+                { name: 'fa-arrows-rotate', label: '回転' },
+                { name: 'fa-arrow-up', label: '上矢印' },
+                { name: 'fa-arrow-down', label: '下矢印' },
+                { name: 'fa-circle-up', label: '上の円' },
+                { name: 'fa-circle-down', label: '下の円' },
+            ],
+            'ヘルス・身体': [
+                { name: 'fa-heart', label: 'ハート' },
+                { name: 'fa-heart-pulse', label: '心拍' },
+                { name: 'fa-heartbeat', label: 'ハートビート' },
+                { name: 'fa-stethoscope', label: '聴診器' },
+                { name: 'fa-brain', label: '脳' },
+                { name: 'fa-lungs', label: '肺' },
+                { name: 'fa-medical', label: '医療' },
+                { name: 'fa-user-doctor', label: 'ドクター' },
+                { name: 'fa-user-nurse', label: 'ナース' },
+                { name: 'fa-hospital', label: '病院' },
+                { name: 'fa-bed', label: 'ベッド' },
+                { name: 'fa-thermometer', label: '温度計' },
+            ],
+            'エネルギー・力': [
+                { name: 'fa-bolt', label: '稲妻' },
+                { name: 'fa-bolt-lightning', label: 'ライトニング' },
+                { name: 'fa-fire', label: '火' },
+                { name: 'fa-flame', label: '炎' },
+                { name: 'fa-rocket', label: 'ロケット' },
+                { name: 'fa-star', label: '星' },
+                { name: 'fa-star-of-david', label: 'スター' },
+                { name: 'fa-sun', label: '太陽' },
+                { name: 'fa-wind', label: '風' },
+                { name: 'fa-explosion', label: '爆発' },
+                { name: 'fa-boom', label: 'ブーム' },
+                { name: 'fa-diamond', label: 'ダイヤモンド' },
+            ],
+            'メダル・表彰': [
+                { name: 'fa-medal', label: 'メダル' },
+                { name: 'fa-trophy', label: 'トロフィー' },
+                { name: 'fa-crown', label: 'クラウン' },
+                { name: 'fa-award', label: 'アワード' },
+                { name: 'fa-ribbon', label: 'リボン' },
+                { name: 'fa-flag', label: 'フラッグ' },
+                { name: 'fa-shield', label: 'シールド' },
+                { name: 'fa-shield-halved', label: 'ハーフシールド' },
+                { name: 'fa-badge', label: 'バッジ' },
+                { name: 'fa-certificate', label: '証明書' },
+            ],
+            '時間・計測': [
+                { name: 'fa-stopwatch', label: 'ストップウォッチ' },
+                { name: 'fa-timer', label: 'タイマー' },
+                { name: 'fa-hourglass', label: '砂時計' },
+                { name: 'fa-hourglass-end', label: '砂時計終了' },
+                { name: 'fa-clock', label: '時計' },
+                { name: 'fa-calendar', label: 'カレンダー' },
+                { name: 'fa-calendar-days', label: 'カレンダー日' },
+                { name: 'fa-calendar-check', label: 'チェックカレンダー' },
+                { name: 'fa-chart-line', label: 'グラフ' },
+                { name: 'fa-chart-bar', label: 'バーグラフ' },
+                { name: 'fa-gauge', label: 'ゲージ' },
+                { name: 'fa-gauge-high', label: 'ハイゲージ' },
+            ],
+            'ナビゲーション・方向': [
+                { name: 'fa-compass', label: 'コンパス' },
+                { name: 'fa-location-dot', label: 'ロケーション' },
+                { name: 'fa-map', label: 'マップ' },
+                { name: 'fa-map-location-dot', label: 'マップロケーション' },
+                { name: 'fa-route', label: 'ルート' },
+                { name: 'fa-directions', label: '方向' },
+                { name: 'fa-mountains', label: '山々' },
+                { name: 'fa-mountain', label: '山' },
+                { name: 'fa-mountain-sun', label: '山と太陽' },
+                { name: 'fa-mountain-city', label: '山と街' },
+                { name: 'fa-bullseye', label: '的' },
+            ],
+            'テクノロジー': [
+                { name: 'fa-microchip', label: 'マイクロチップ' },
+                { name: 'fa-power-off', label: 'パワー' },
+                { name: 'fa-battery-full', label: 'バッテリー' },
+                { name: 'fa-plug', label: 'プラグ' },
+                { name: 'fa-bell', label: 'ベル' },
+                { name: 'fa-volume-high', label: 'ボリューム' },
+                { name: 'fa-tv', label: 'テレビ' },
+                { name: 'fa-computer', label: 'コンピュータ' },
+                { name: 'fa-keyboard', label: 'キーボード' },
+                { name: 'fa-mobile', label: 'モバイル' },
+            ],
+            'シンボル・その他': [
+                { name: 'fa-circle', label: '円' },
+                { name: 'fa-square', label: '四角' },
+                { name: 'fa-rectangle', label: '長方形' },
+                { name: 'fa-triangle', label: '三角' },
+                { name: 'fa-hexagon', label: '六角形' },
+                { name: 'fa-pentagon', label: '五角形' },
+                { name: 'fa-leaf', label: '葉' },
+                { name: 'fa-tree', label: '木' },
+                { name: 'fa-water', label: '水' },
+                { name: 'fa-droplet', label: '水滴' },
+                { name: 'fa-droplet-slash', label: 'ドロップレット' },
+                { name: 'fa-cloud', label: 'クラウド' },
+                { name: 'fa-cloud-sun', label: 'クラウド太陽' },
+                { name: 'fa-moon', label: '月' },
+            ],
+        };
+
+        const container = document.getElementById('categoriesContainer');
+
+        // 現在のセットをカテゴリ化
+        const currentCategory = document.createElement('div');
+        currentCategory.className = 'category';
+        currentCategory.innerHTML = '<h2><i class="fa-solid fa-star"></i> 現在選択可能な20種（デフォルトセット）</h2>';
+        const grid = document.createElement('div');
+        grid.className = 'icon-grid';
+        currentSet.forEach(icon => {
+            const item = createIconItem(icon, true);
+            grid.appendChild(item);
+        });
+        currentCategory.appendChild(grid);
+        container.appendChild(currentCategory);
+
+        // その他のカテゴリを表示
+        Object.entries(otherIcons).forEach(([categoryName, icons]) => {
+            const categoryDiv = document.createElement('div');
+            categoryDiv.className = 'category';
+            categoryDiv.innerHTML = `<h2><i class="fa-solid fa-folder"></i> ${categoryName}</h2>`;
+            const grid = document.createElement('div');
+            grid.className = 'icon-grid';
+            icons.forEach(icon => {
+                const item = createIconItem(icon, false);
+                grid.appendChild(item);
+            });
+            categoryDiv.appendChild(grid);
+            container.appendChild(categoryDiv);
+        });
+
+        function createIconItem(iconData, isCurrent) {
+            const item = document.createElement('div');
+            item.className = `icon-item ${isCurrent ? 'current-set' : ''}`;
+            item.innerHTML = `
+                <i class="fa-solid ${iconData.name || iconData}"></i>
+                <div class="name">${iconData.name || iconData}</div>
+            `;
+            const iconName = iconData.name || iconData;
+            item.addEventListener('click', () => {
+                toggleSelection(item, iconName);
+            });
+            return item;
+        }
+
+        function toggleSelection(element, iconName) {
+            if (selectedIcons.has(iconName)) {
+                selectedIcons.delete(iconName);
+                element.classList.remove('selected');
+            } else {
+                if (selectedIcons.size < 20) {
+                    selectedIcons.add(iconName);
+                    element.classList.add('selected');
+                } else {
+                    alert('最大20個までしか選択できません');
+                }
+            }
+            updateUI();
+        }
+
+        function updateUI() {
+            const count = selectedIcons.size;
+            document.getElementById('selectedCount').textContent = count;
+            document.getElementById('okBtn').disabled = count !== 20;
+        }
+
+        function clearSelection() {
+            selectedIcons.clear();
+            document.querySelectorAll('.icon-item.selected').forEach(el => {
+                el.classList.remove('selected');
+            });
+            updateUI();
+        }
+
+        function generateOutput() {
+            const icons = Array.from(selectedIcons);
+            const code = `const freeExerciseIcons = [\n    ${icons.map(icon => `'${icon}'`).join(', ')}\n];`;
+            document.getElementById('outputCode').textContent = code;
+            document.getElementById('outputModal').classList.add('show');
+        }
+
+        function copyCode() {
+            const code = document.getElementById('outputCode').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                alert('コピーしました！app.jsの該当箇所に貼り付けてください。');
+            });
+        }
+
+        function closeModal() {
+            document.getElementById('outputModal').classList.remove('show');
+        }
+
+        // 統計情報を更新
+        let allCount = 20;
+        Object.values(otherIcons).forEach(icons => {
+            allCount += icons.length;
+        });
+        document.getElementById('currentCount').textContent = currentSet.length;
+        document.getElementById('allCount').textContent = allCount;
+    </script>
+</body>
+</html>
