@@ -2965,7 +2965,7 @@ async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = []) {
  * @param {string} key - 種目キー
  */
 async function deleteFreeExercise(key) {
-    if (!confirm(`種目「${freeExercises[key]?.name}」を削除しますか？`)) return;
+    if (!confirm(`種目「${freeExercises[key]?.name}」を削除しますか？\n\nこの操作は取り消せません。`)) return;
     delete freeExercises[key];
     await saveFreeExercises();
 
@@ -2975,7 +2975,14 @@ async function deleteFreeExercise(key) {
     rankingCache.free = null;
     rankingCacheTime.free = null;
 
+    // モーダルが開いていれば閉じる
+    const editModal = document.getElementById('edit-exercise-modal');
+    if (editModal && editModal.style.display === 'block') {
+        editModal.style.display = 'none';
+    }
+
     updateFreeExerciseUI();
+    alert('種目を削除しました');
 }
 
 /**
@@ -3141,17 +3148,10 @@ function renderFreeRulesContent() {
         entries.forEach(([key, ex]) => appendRuleItem(rulesList, key, ex));
     }
 
-    // 編集ボタンにイベントリスナーを設定
-    rulesList.querySelectorAll('.rule-edit-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            openEditExerciseModal(btn.dataset.key);
-        });
-    });
-
-    // 削除ボタンにイベントリスナーを設定
-    rulesList.querySelectorAll('.rule-delete-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            deleteFreeExercise(btn.dataset.key);
+    // カードタップで編集画面を開く
+    rulesList.querySelectorAll('.rule-item').forEach(item => {
+        item.addEventListener('click', () => {
+            openEditExerciseModal(item.dataset.key);
         });
     });
 
@@ -3175,15 +3175,13 @@ function appendRuleItem(container, key, ex) {
         : '';
     const item = document.createElement('div');
     item.className = 'rule-item';
+    item.dataset.key = key;
+    item.style.cursor = 'pointer';
     item.innerHTML = `
         <div class="rule-info">
             <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)} ${createdByInfo}</h3>
             <p class="rule-detail">${escapeHtml(ex.rule)}</p>
             ${tagsHtml}
-        </div>
-        <div class="rule-actions">
-            <button class="rule-edit-btn" data-key="${escapeHtml(key)}"><i class="fa-solid fa-pen-to-square"></i></button>
-            <button class="rule-delete-btn" data-key="${escapeHtml(key)}"><i class="fa-solid fa-trash"></i></button>
         </div>
     `;
     container.appendChild(item);
@@ -3891,6 +3889,14 @@ document.getElementById('save-edit-exercise-btn').addEventListener('click', asyn
         alert('種目を更新しました！');
     } catch (error) {
         errorEl.textContent = '種目の更新に失敗しました';
+    }
+});
+
+// フリーモード種目編集モーダルの削除ボタン
+document.getElementById('delete-edit-exercise-btn').addEventListener('click', async () => {
+    const key = document.getElementById('edit-exercise-key').value;
+    if (key && freeExercises[key]) {
+        await deleteFreeExercise(key);
     }
 });
 

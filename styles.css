@@ -246,6 +246,34 @@ body.mode-weekly header h1::before {
     transform: scale(0.98);
 }
 
+.btn-danger {
+    width: 100%;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+    margin-bottom: 10px;
+    margin-top: 8px;
+    background: #e74c3c;
+    color: white;
+}
+
+@media (hover: hover) {
+    .btn-danger:hover {
+        background: #c0392b;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4);
+    }
+}
+
+.btn-danger:active {
+    background: #c0392b;
+    transform: scale(0.98);
+}
+
 .error-message {
     color: #e74c3c;
     font-size: 14px;
@@ -971,7 +999,6 @@ body.mode-interval header h1::after {
     align-items: center;
     margin-bottom: 12px;
     padding-bottom: 8px;
-    border-bottom: 2px solid #667eea;
 }
 
 .modal-header h2 {
@@ -1902,48 +1929,6 @@ body.mode-interval header h1::after {
     color: #333;
 }
 
-/* 種目アクションボタン */
-.rule-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-shrink: 0;
-}
-
-/* 種目編集ボタン */
-.rule-edit-btn {
-    padding: 6px 12px;
-    background: #e3eafc;
-    color: #667eea;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    transition: all 0.3s;
-}
-
-.rule-edit-btn:hover {
-    background: #667eea;
-    color: white;
-}
-
-/* 種目削除ボタン */
-.rule-delete-btn {
-    padding: 6px 12px;
-    background: #ffebe0;
-    color: #e67e22;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    transition: all 0.3s;
-}
-
-.rule-delete-btn:hover {
-    background: #e67e22;
-    color: white;
-}
-
 /* アイコン選択グリッド */
 .icon-grid {
     display: grid;
@@ -2602,4 +2587,12 @@ body.dark-mode .tag-free-input-container .tag-free-input {
 body.dark-mode .exercise-tag-section h4 {
     color: #43e97b;
     border-bottom-color: #2d8a4e;
+}
+
+body.dark-mode .btn-danger {
+    background: #c0392b;
+}
+
+body.dark-mode .btn-danger:hover {
+    background: #a93226;
 }
