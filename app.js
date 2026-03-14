@@ -2559,15 +2559,15 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // 毎秒の小さな音（チック音）
-function playTickSound() {
+async function playTickSound() {
     const ctx = initAudioContext();
     if (!ctx) return;
 
     try {
-        // AudioContextがsuspendedの場合は再開を試みる
+        // AudioContextがsuspendedの場合は再開を待つ
         if (ctx.state === 'suspended') {
-            ctx.resume().catch(() => {});
-            return;
+            await ctx.resume();
+            console.log('[タイマー] チック音再生前にAudioContext再開');
         }
         
         const oscillator = ctx.createOscillator();
@@ -2595,14 +2595,15 @@ function playTickSound() {
 }
 
 // インターバルごとの大きな音（ビープ音）
-function playBeepSound() {
+async function playBeepSound() {
     const ctx = initAudioContext();
     if (!ctx) return;
 
     try {
+        // AudioContextがsuspendedの場合は再開を待つ
         if (ctx.state === 'suspended') {
-            ctx.resume().catch(() => {});
-            return;
+            await ctx.resume();
+            console.log('[タイマー] ビープ音再生前にAudioContext再開');
         }
         
         const oscillator = ctx.createOscillator();
@@ -2637,14 +2638,15 @@ function playBeepSound() {
 }
 
 // 準備時間のカウントダウン音
-function playCountdownSound() {
+async function playCountdownSound() {
     const ctx = initAudioContext();
     if (!ctx) return;
 
     try {
+        // AudioContextがsuspendedの場合は再開を待つ
         if (ctx.state === 'suspended') {
-            ctx.resume().catch(() => {});
-            return;
+            await ctx.resume();
+            console.log('[タイマー] カウントダウン音再生前にAudioContext再開');
         }
         
         const oscillator = ctx.createOscillator();
@@ -2794,6 +2796,12 @@ function stopTimer() {
     stopSilentAudioKeepAlive();
     releaseWakeLock();
 
+    // AudioContextを再開（次回の音再生のため）
+    const ctx = initAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+    }
+
     // ボタンの状態を更新
     timerStartBtn.disabled = false;
     timerStopBtn.disabled = true;
@@ -2811,6 +2819,12 @@ function resetTimer() {
     elapsedSeconds = 0;
     preparationCountdown = 10;
     updateTimerDisplay();
+    
+    // AudioContextを再開（次回の音再生のため）
+    const ctx = initAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+    }
     
     // ボタンの状態を更新
     timerStartBtn.disabled = false;
