@@ -3179,13 +3179,12 @@ function appendPostItem(container, key, ex) {
         ? `<div class="rule-tags">${ex.tags.map(t => `<span class="tag-chip display-only">${escapeHtml(t)}</span>`).join('')}</div>` 
         : '';
     const item = document.createElement('div');
-    item.className = 'rule-item';
+    item.className = 'rule-item post-item';
     item.dataset.key = key;
     item.style.cursor = 'pointer';
     item.innerHTML = `
         <div class="rule-info">
-            <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)}</h3>
-            <p class="rule-detail">${escapeHtml(ex.rule || '')}</p>
+            <h3 class="post-item-title"><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)}</h3>
             ${tagsHtml}
         </div>
     `;
@@ -3193,6 +3192,18 @@ function appendPostItem(container, key, ex) {
     item.addEventListener('click', (e) => {
         // 入力フォーム内のクリックは無視
         if (e.target.closest('.post-inline-form')) return;
+        
+        // 既に選択済み（フォームが開いている）場合は閉じる（トグル）
+        if (item.classList.contains('selected')) {
+            item.classList.remove('selected');
+            selectedPostExerciseKey = null;
+            const form = item.querySelector('.post-inline-form');
+            if (form) {
+                form.style.animation = 'slideUp 0.2s ease forwards';
+                form.addEventListener('animationend', () => form.remove(), { once: true });
+            }
+            return;
+        }
         
         // 以前の選択を解除（アニメーションで閉じる）
         document.querySelectorAll('#post-exercises-grid .rule-item.selected').forEach(c => {
@@ -3219,7 +3230,6 @@ function appendPostItem(container, key, ex) {
         item.appendChild(inlineForm);
         
         const valueInput = inlineForm.querySelector('.post-inline-value');
-        valueInput.focus();
         
         inlineForm.querySelector('.post-inline-submit').addEventListener('click', (ev) => {
             ev.stopPropagation();
