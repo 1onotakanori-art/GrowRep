@@ -3232,18 +3232,27 @@ function appendPostItem(container, key, ex) {
     };
     
     const closeForm = (card) => {
-        card.classList.remove('selected');
         const form = card.querySelector('.post-inline-form');
-        if (!form) return Promise.resolve();
+        if (!form) {
+            card.classList.remove('selected');
+            return Promise.resolve();
+        }
         return new Promise(resolve => {
             const currentH = form.scrollHeight;
             form.style.height = currentH + 'px';
             form.style.overflow = 'hidden';
             requestAnimationFrame(() => {
-                form.style.transition = 'height 0.22s ease, opacity 0.22s ease';
-                form.style.height = '0';
-                form.style.opacity = '0';
-                form.addEventListener('transitionend', () => { form.remove(); resolve(); }, { once: true });
+                requestAnimationFrame(() => {
+                    form.style.transition = 'height 0.25s ease, opacity 0.25s ease';
+                    form.style.height = '0';
+                    form.style.opacity = '0';
+                    form.addEventListener('transitionend', () => {
+                        form.remove();
+                        // フォームが完全に消えてからselectedを外す→枠線・背景がCSSトランジションで滑らかに戻る
+                        card.classList.remove('selected');
+                        resolve();
+                    }, { once: true });
+                });
             });
         });
     };

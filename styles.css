@@ -1193,11 +1193,13 @@ body.mode-interval header h1::after {
     background: white;
     border-radius: 8px;
     padding: 15px;
+    /* 常に2px透明ボーダーを確保し、選択時のサイズ変化を防ぐ */
+    border: 2px solid transparent;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: transform 0.2s, box-shadow 0.25s, border-color 0.25s, background 0.25s;
 }
 
 @media (hover: hover) {
@@ -1265,7 +1267,8 @@ body.mode-interval header h1::after {
 
 /* 投稿タブ：カード選択状態 & インラインフォーム */
 .rule-item.selected {
-    border: 2px solid #43e97b;
+    /* border幅は既に2pxなので色だけ変える→横幅変化なし */
+    border-color: #43e97b;
     background: linear-gradient(135deg, #f0fff8, #fff);
     box-shadow: 0 4px 12px rgba(67, 233, 123, 0.3);
     /* フォーム追加時に縦並びに切り替え */
