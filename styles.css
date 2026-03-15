@@ -1272,21 +1272,41 @@ body.mode-interval header h1::after {
 
 .post-inline-form {
     display: flex;
+    flex-direction: column;
     gap: 10px;
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid #e0e0e0;
-    align-items: center;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    animation: slideDown 0.3s ease forwards;
+}
+
+@keyframes slideDown {
+    from {
+        max-height: 0;
+        opacity: 0;
+        margin-top: 0;
+        padding-top: 0;
+    }
+    to {
+        max-height: 120px;
+        opacity: 1;
+        margin-top: 12px;
+        padding-top: 12px;
+    }
 }
 
 .post-inline-value {
-    flex: 1;
+    width: 100%;
     padding: 10px 12px;
     border: 2px solid #e0e0e0;
     border-radius: 8px;
     font-size: 15px;
     outline: none;
     transition: border-color 0.2s;
+    box-sizing: border-box;
 }
 
 .post-inline-value:focus {
@@ -1294,10 +1314,9 @@ body.mode-interval header h1::after {
 }
 
 .post-inline-submit {
-    white-space: nowrap;
+    width: 100%;
     padding: 10px 20px;
     font-size: 14px;
-    flex-shrink: 0;
 }
 
 #update-multipliers-btn {
@@ -2638,6 +2657,21 @@ body.dark-mode .btn-danger:hover {
 body.dark-mode .rule-item.selected {
     border-color: #43e97b;
     background: linear-gradient(135deg, #1a3a2a, #2a2a2a);
+}
+
+@keyframes slideUp {
+    from {
+        max-height: 120px;
+        opacity: 1;
+        margin-top: 12px;
+        padding-top: 12px;
+    }
+    to {
+        max-height: 0;
+        opacity: 0;
+        margin-top: 0;
+        padding-top: 0;
+    }
 }
 
 body.dark-mode .post-inline-form {

@@ -3194,11 +3194,14 @@ function appendPostItem(container, key, ex) {
         // 入力フォーム内のクリックは無視
         if (e.target.closest('.post-inline-form')) return;
         
-        // 以前の選択を解除
+        // 以前の選択を解除（アニメーションで閉じる）
         document.querySelectorAll('#post-exercises-grid .rule-item.selected').forEach(c => {
             c.classList.remove('selected');
             const form = c.querySelector('.post-inline-form');
-            if (form) form.remove();
+            if (form) {
+                form.style.animation = 'slideUp 0.2s ease forwards';
+                form.addEventListener('animationend', () => form.remove(), { once: true });
+            }
         });
         
         // 新しい選択
