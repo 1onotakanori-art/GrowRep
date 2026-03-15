@@ -1556,11 +1556,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // 統合更新ボタンのイベントリスナー
 // ====================================================================
 
-// 統合更新ボタン（現在のタブに応じて更新処理を実行）
+// 統合更新ボタン（全ての主要データを更新）
 document.getElementById('refresh-all-btn').addEventListener('click', async function() {
     this.classList.add('loading');
-    const originalText = this.textContent;
-    this.textContent = '⏳ 更新中...';
+    const originalText = this.innerHTML;
+    this.innerHTML = '<i class="fa-solid fa-rotate fa-spin"></i> 更新中...';
     
     try {
         const mode = currentMode;
@@ -1569,10 +1569,14 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
         const activeTab = document.querySelector('.tab-content.active');
         const tabId = activeTab ? activeTab.id : null;
         
+        // 常に掲示板とランキングを更新
+        await Promise.all([
+            loadPosts(true),
+            loadRanking(true)
+        ]);
+        
+        // タブごとの追加更新処理
         switch(tabId) {
-            case 'ranking-tab':
-                await loadRanking(true);  // 強制更新
-                break;
             case 'progress-tab':
                 progressCache[mode] = {};  // グラフのキャッシュをクリア
                 await loadProgressChart();
@@ -1586,19 +1590,16 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
                     await loadUserCheckboxes(true);
                 }
                 break;
-            case 'board-tab':
-                await loadPosts(true);  // 掲示板を強制更新
-                break;
             case 'champions-tab':
                 await loadChampionsHistory();
                 break;
-            default:
-                // その他のタブでは特に何もしない
-                break;
         }
+    } catch (error) {
+        console.error('[更新ボタン] エラー:', error);
+        alert('データの更新中にエラーが発生しました。もう一度お試しください。');
     } finally {
         this.classList.remove('loading');
-        this.textContent = originalText;
+        this.innerHTML = originalText;
     }
 });
 
