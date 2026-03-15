@@ -1223,6 +1223,12 @@ body.mode-interval header h1::after {
     margin-bottom: 6px;
 }
 
+.rule-info h3 i {
+    display: inline-block;
+    width: 1.3em;
+    text-align: center;
+}
+
 .created-by-info {
     font-size: 0.75em;
     color: #999;
@@ -1285,6 +1291,12 @@ body.mode-interval header h1::after {
     font-size: 1em;
     color: #667eea;
     margin-bottom: 4px;
+}
+
+.post-entry-title i {
+    display: inline-block;
+    width: 1.3em;
+    text-align: center;
 }
 
 .post-exercise-entry .rule-tags {
