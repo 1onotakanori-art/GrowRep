@@ -3179,72 +3179,91 @@ function appendPostItem(container, key, ex) {
         ? `<div class="rule-tags">${ex.tags.map(t => `<span class="tag-chip display-only">${escapeHtml(t)}</span>`).join('')}</div>` 
         : '';
     const item = document.createElement('div');
-    item.className = 'rule-item post-item';
+    item.className = 'rule-item post-exercise-entry';
     item.dataset.key = key;
     item.style.cursor = 'pointer';
     item.innerHTML = `
-        <div class="rule-info">
-            <h3 class="post-item-title"><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)}</h3>
+        <div class="post-exercise-entry-info">
+            <h3 class="post-entry-title"><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)}</h3>
             ${tagsHtml}
         </div>
     `;
     
-    item.addEventListener('click', (e) => {
-        // 入力フォーム内のクリックは無視
-        if (e.target.closest('.post-inline-form')) return;
-        
-        // 既に選択済み（フォームが開いている）場合は閉じる（トグル）
-        if (item.classList.contains('selected')) {
-            item.classList.remove('selected');
-            selectedPostExerciseKey = null;
-            const form = item.querySelector('.post-inline-form');
-            if (form) {
-                form.style.animation = 'slideUp 0.2s ease forwards';
-                form.addEventListener('animationend', () => form.remove(), { once: true });
-            }
-            return;
-        }
-        
-        // 以前の選択を解除（アニメーションで閉じる）
-        document.querySelectorAll('#post-exercises-grid .rule-item.selected').forEach(c => {
-            c.classList.remove('selected');
-            const form = c.querySelector('.post-inline-form');
-            if (form) {
-                form.style.animation = 'slideUp 0.2s ease forwards';
-                form.addEventListener('animationend', () => form.remove(), { once: true });
-            }
-        });
-        
-        // 新しい選択
+    const openForm = () => {
         item.classList.add('selected');
         selectedPostExerciseKey = key;
         postError.textContent = '';
         
-        // カード内に入力フォームを追加
         const inlineForm = document.createElement('div');
         inlineForm.className = 'post-inline-form';
         inlineForm.innerHTML = `
             <input type="number" class="post-inline-value" placeholder="回数または秒数" min="0" required>
             <button type="button" class="btn-primary post-inline-submit">投稿する</button>
         `;
+        
+        // 初期状態: 高さ　0
+        inlineForm.style.height = '0';
+        inlineForm.style.opacity = '0';
+        inlineForm.style.overflow = 'hidden';
+        inlineForm.style.transition = 'none';
         item.appendChild(inlineForm);
         
-        const valueInput = inlineForm.querySelector('.post-inline-value');
+        // 実際の高さを取得してアニメーション
+        requestAnimationFrame(() => {
+            const h = inlineForm.scrollHeight;
+            inlineForm.style.transition = 'height 0.3s ease, opacity 0.3s ease';
+            inlineForm.style.height = h + 'px';
+            inlineForm.style.opacity = '1';
+            inlineForm.addEventListener('transitionend', () => {
+                inlineForm.style.height = 'auto';
+            }, { once: true });
+        });
         
         inlineForm.querySelector('.post-inline-submit').addEventListener('click', (ev) => {
             ev.stopPropagation();
             submitPost(key);
         });
         
+        const valueInput = inlineForm.querySelector('.post-inline-value');
         valueInput.addEventListener('keydown', (ev) => {
-            if (ev.key === 'Enter') {
-                ev.preventDefault();
-                ev.stopPropagation();
-                submitPost(key);
-            }
+            if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); submitPost(key); }
+        });
+        valueInput.addEventListener('click', (ev) => ev.stopPropagation());
+    };
+    
+    const closeForm = (card) => {
+        card.classList.remove('selected');
+        const form = card.querySelector('.post-inline-form');
+        if (!form) return Promise.resolve();
+        return new Promise(resolve => {
+            const currentH = form.scrollHeight;
+            form.style.height = currentH + 'px';
+            form.style.overflow = 'hidden';
+            requestAnimationFrame(() => {
+                form.style.transition = 'height 0.22s ease, opacity 0.22s ease';
+                form.style.height = '0';
+                form.style.opacity = '0';
+                form.addEventListener('transitionend', () => { form.remove(); resolve(); }, { once: true });
+            });
+        });
+    };
+    
+    item.addEventListener('click', async (e) => {
+        if (e.target.closest('.post-inline-form')) return;
+        
+        if (item.classList.contains('selected')) {
+            selectedPostExerciseKey = null;
+            closeForm(item);
+            return;
+        }
+        
+        // 以前の選択を閉じる
+        const openCards = [...document.querySelectorAll('#post-exercises-grid .rule-item.selected')];
+        openCards.forEach(c => {
+            if (c !== item) closeForm(c);
         });
         
-        valueInput.addEventListener('click', (ev) => ev.stopPropagation());
+        openForm();
     });
     
     container.appendChild(item);
