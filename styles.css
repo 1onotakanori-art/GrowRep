@@ -2707,3 +2707,96 @@ body.dark-mode .post-inline-value {
 body.dark-mode .post-inline-value:focus {
     border-color: #43e97b;
 }
+
+/* ====================================================================
+   削除済み種目復元UI
+   ==================================================================== */
+
+/* ルールタブの復元ボタン */
+.restore-exercise-btn {
+    width: 100%;
+    padding: 10px;
+    background: white;
+    color: #e67e22;
+    border: 2px dashed #e67e22;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+    margin-bottom: 10px;
+}
+
+@media (hover: hover) {
+    .restore-exercise-btn:hover {
+        background: #fff8f0;
+        border-color: #d35400;
+        color: #d35400;
+    }
+}
+
+.restore-exercise-btn:active {
+    transform: scale(0.98);
+}
+
+/* 復元モーダル内の各カード */
+.restore-orphan-card {
+    background: #fafafa;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    transition: border-color 0.2s;
+}
+
+.restore-orphan-card:last-child {
+    margin-bottom: 0;
+}
+
+.restore-orphan-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.restore-orphan-id {
+    font-size: 12px;
+    color: #999;
+    font-family: monospace;
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.restore-orphan-count {
+    font-size: 12px;
+    color: #667eea;
+    font-weight: 600;
+}
+
+.restore-orphan-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.restore-name-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.restore-name-input:focus {
+    border-color: #e67e22;
+}
+
+.restore-name-input:disabled {
+    background: #f0f0f0;
+    color: #999;
+}

@@ -3074,6 +3074,114 @@ async function deleteFreeExercise(key) {
 }
 
 /**
+ * 削除された種目（投稿に残っているが freeExercises に存在しないもの）を検索して復元モーダルを開く
+ */
+async function openRestoreExercisesModal() {
+    const modal = document.getElementById('restore-exercise-modal');
+    const statusEl = document.getElementById('restore-exercise-status');
+    const listEl = document.getElementById('restore-exercise-list');
+
+    modal.style.display = 'block';
+    statusEl.textContent = '削除された種目を検索中...';
+    listEl.innerHTML = '<p style="text-align:center;padding:20px;color:#999;"><i class="fa-solid fa-spinner fa-spin"></i></p>';
+
+    try {
+        const snapshot = await db.collection('posts_free').get();
+        const orphanCount = {};
+        snapshot.forEach(doc => {
+            const t = doc.data().exerciseType;
+            if (t && t.startsWith('free_') && !freeExercises[t]) {
+                orphanCount[t] = (orphanCount[t] || 0) + 1;
+            }
+        });
+
+        const orphanKeys = Object.keys(orphanCount);
+        if (orphanKeys.length === 0) {
+            statusEl.textContent = '復元できる削除済み種目は見つかりませんでした。';
+            listEl.innerHTML = '';
+            return;
+        }
+
+        statusEl.textContent = `${orphanKeys.length}件の削除済み種目が見つかりました。種目名を入力して復元できます。`;
+        listEl.innerHTML = '';
+
+        orphanKeys.sort().forEach(key => {
+            const count = orphanCount[key];
+            const card = document.createElement('div');
+            card.className = 'restore-orphan-card';
+            card.dataset.key = key;
+            card.innerHTML = `
+                <div class="restore-orphan-meta">
+                    <span class="restore-orphan-id"><i class="fa-solid fa-key"></i> ${escapeHtml(key)}</span>
+                    <span class="restore-orphan-count"><i class="fa-solid fa-chart-bar"></i> ${count}件の投稿</span>
+                </div>
+                <div class="restore-orphan-form">
+                    <input type="text" class="restore-name-input" placeholder="種目名を入力（必須）" maxlength="20">
+                    <button class="restore-confirm-btn btn-primary" style="white-space:nowrap;">
+                        <i class="fa-solid fa-rotate-left"></i> 復元
+                    </button>
+                </div>
+                <p class="restore-result-msg" style="font-size:13px;margin-top:4px;display:none;"></p>
+            `;
+
+            const btn = card.querySelector('.restore-confirm-btn');
+            const input = card.querySelector('.restore-name-input');
+            const msg = card.querySelector('.restore-result-msg');
+
+            btn.addEventListener('click', async () => {
+                const name = input.value.trim();
+                if (!name) {
+                    input.focus();
+                    msg.style.display = 'block';
+                    msg.style.color = '#e74c3c';
+                    msg.textContent = '種目名を入力してください。';
+                    return;
+                }
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 復元中...';
+                try {
+                    freeExercises[key] = {
+                        name: name,
+                        rule: '',
+                        icon: 'fa-dumbbell',
+                        tags: [],
+                        createdBy: currentUser ? currentUser.uid : null,
+                        createdByName: '（復元）',
+                        createdAt: new Date().toISOString()
+                    };
+                    await saveFreeExercises();
+                    scoreCache.free = null;
+                    scoreCacheTime.free = null;
+                    rankingCache.free = null;
+                    rankingCacheTime.free = null;
+                    updateFreeExerciseUI();
+                    msg.style.display = 'block';
+                    msg.style.color = '#27ae60';
+                    msg.textContent = `「${name}」として復元しました。`;
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i> 復元済み';
+                    btn.style.background = '#27ae60';
+                    input.disabled = true;
+                    card.style.opacity = '0.7';
+                } catch (e) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> 復元';
+                    msg.style.display = 'block';
+                    msg.style.color = '#e74c3c';
+                    msg.textContent = '復元に失敗しました。';
+                }
+            });
+
+            listEl.appendChild(card);
+        });
+
+    } catch (e) {
+        statusEl.textContent = '検索中にエラーが発生しました。';
+        listEl.innerHTML = '';
+        console.error('[復元] エラー:', e);
+    }
+}
+
+/**
  * フリーモードの種目を編集
  * @param {string} key - 種目キー
  * @param {string} name - 新しい種目名
@@ -3310,6 +3418,16 @@ function updateFreeRulesTab() {
             document.getElementById('free-exercise-modal').style.display = 'block';
         });
         rulesList.parentNode.insertBefore(addBtn, rulesList);
+    }
+
+    // 削除済み種目の復元ボタン
+    let restoreBtn = rulesTab.querySelector('.restore-exercise-btn');
+    if (!restoreBtn) {
+        restoreBtn = document.createElement('button');
+        restoreBtn.className = 'restore-exercise-btn';
+        restoreBtn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> 削除済み種目を復元';
+        restoreBtn.addEventListener('click', () => openRestoreExercisesModal());
+        rulesList.parentNode.insertBefore(restoreBtn, rulesList);
     }
 
     // フィルタUIをルールリストの直前に挿入（週間チャレンジモードでは表示しない）
@@ -4019,6 +4137,11 @@ document.querySelector('.close-edit-exercise-modal').addEventListener('click', (
     document.getElementById('edit-exercise-error').textContent = '';
 });
 
+// 削除済み種目復元モーダルのイベント
+document.querySelector('.close-restore-exercise-modal').addEventListener('click', () => {
+    document.getElementById('restore-exercise-modal').style.display = 'none';
+});
+
 window.addEventListener('click', (event) => {
     const addModal = document.getElementById('free-exercise-modal');
     if (event.target === addModal) {
@@ -4029,6 +4152,10 @@ window.addEventListener('click', (event) => {
     if (event.target === editModal) {
         editModal.style.display = 'none';
         document.getElementById('edit-exercise-error').textContent = '';
+    }
+    const restoreModal = document.getElementById('restore-exercise-modal');
+    if (event.target === restoreModal) {
+        restoreModal.style.display = 'none';
     }
 });
 
