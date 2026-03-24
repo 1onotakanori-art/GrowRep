@@ -1760,7 +1760,7 @@ function createPostElement(postId, post, userName) {
     
     // XSS対策: エスケープ処理を適用
     const safeUserName = escapeHtml(userName);
-    const currentExNames = currentMode === 'free' ? getFreeExerciseNames() : exerciseNames;
+    const currentExNames = (currentMode === 'free' || currentMode === 'weekly') ? getFreeExerciseNames() : exerciseNames;
     const safeExerciseName = escapeHtml(currentExNames[post.exerciseType] || post.exerciseType);
     const safeValue = parseInt(post.value) || 0; // 数値として扱う
     const safePostId = escapeHtml(postId);
@@ -1772,7 +1772,7 @@ function createPostElement(postId, post, userName) {
         </div>
         <div class="post-content">
             <span class="post-exercise">${safeExerciseName}</span>
-            <span class="post-value">${safeValue} ${currentMode === 'free' ? '' : (post.exerciseType === 'Lsit' ? '秒' : post.exerciseType === 'pullup' ? 'セット' : '回')}</span>
+            <span class="post-value">${safeValue} ${(currentMode === 'free' || currentMode === 'weekly') ? '' : (post.exerciseType === 'Lsit' ? '秒' : post.exerciseType === 'pullup' ? 'セット' : '回')}</span>
         </div>
         <div class="post-actions">
             <button class="like-btn ${isLiked ? 'liked' : ''}" onclick="toggleLike('${safePostId}')">
@@ -5199,9 +5199,11 @@ function updateWeeklyRulesTab() {
     const updateBtn = document.getElementById('update-multipliers-btn');
     if (updateBtn) updateBtn.style.display = 'none';
 
-    // 種目追加ボタンがあれば削除（フリーモードからの復帰時）
+    // 種目追加・復元ボタンがあれば削除（フリーモードからの復帰時）
     const addBtn = rulesTab.querySelector('.add-exercise-btn');
     if (addBtn) addBtn.remove();
+    const restoreBtn = rulesTab.querySelector('.restore-exercise-btn');
+    if (restoreBtn) restoreBtn.remove();
 
     // 今週の3種目を読み取り専用で表示
     rulesList.innerHTML = '';
