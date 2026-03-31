@@ -2429,6 +2429,16 @@ let intervalSeconds = 3; // デフォルト3秒
 let isPreparationPhase = false;
 let preparationCountdown = 10;
 
+// 高精度タイマー用の追加状態
+const TIMER_POLL_MS = 200;           // ポーリング間隔 (ms)
+const AUDIO_LOOKAHEAD_SEC = 0.3;     // 音声先読みスケジュール時間 (秒)
+let timerRAF = null;                  // requestAnimationFrame ID
+let audioTimeOffset = 0;             // Date.now()/1000 と audioContext.currentTime の差分
+let nextScheduledSecond = 0;         // 次にスケジュールすべき経過秒
+let nextScheduledPrepSecond = 0;     // 準備フェーズでスケジュール済みの経過秒
+let prepStartTime = null;            // 準備フェーズ開始時刻 (Date.now())
+let scheduledNodes = [];             // スケジュール済み音ノード（クリーンアップ用）
+
 // Web Audio APIでビープ音を生成
 let audioContext = null;
 
@@ -2520,6 +2530,220 @@ function getComputedVolume(individualVolume) {
     return Math.max(0, Math.min(1, (individualVolume * masterVolume)));
 }
 
+// ====================================================================
+// 高精度音声スケジューリング
+// ====================================================================
+
+/**
+ * AudioContextのcurrentTimeとDate.now()の差分を校正する
+ * audioContext.currentTimeはハードウェアレベルの精密な時計
+ * Date.now()はウォールクロック（JSの時計）
+ * この差分を使ってウォールクロック時刻をAudioContext時刻に変換する
+ */
+function calibrateAudioTimeOffset() {
+    if (audioContext && audioContext.state === 'running') {
+        audioTimeOffset = Date.now() / 1000 - audioContext.currentTime;
+    }
+}
+
+/**
+ * ウォールクロック時刻(ms)をAudioContext時刻(秒)に変換する
+ * @param {number} wallMs - Date.now()ベースの時刻 (ms)
+ * @returns {number} audioContext.currentTimeベースの時刻 (秒)
+ */
+function wallMsToAudioTime(wallMs) {
+    return wallMs / 1000 - audioTimeOffset;
+}
+
+/**
+ * 低レベル音スケジュール関数 - 指定時刻にオシレーター音をスケジュール
+ * Web Audio APIのハードウェアスケジューラを利用して
+ * JS実行タイミングに依存しない正確な音再生を実現
+ * @param {number} frequency - 周波数 (Hz)
+ * @param {number} volume - 音量 (0-1)
+ * @param {number} duration - 長さ (秒)
+ * @param {number} when - 再生開始のaudioContext時刻 (省略時は即座に再生)
+ * @returns {OscillatorNode|null}
+ */
+function scheduleOscillator(frequency, volume, duration, when) {
+    const ctx = audioContext;
+    if (!ctx || ctx.state !== 'running') return null;
+
+    try {
+        const now = ctx.currentTime;
+        const startTime = (when !== undefined && when > now) ? when : now;
+
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        oscillator.frequency.value = frequency;
+        oscillator.type = 'sine';
+
+        const startVol = Math.max(0.001, volume);
+        const endVol = Math.max(0.001, volume / 50);
+        gainNode.gain.setValueAtTime(startVol, startTime);
+        gainNode.gain.exponentialRampToValueAtTime(endVol, startTime + duration);
+
+        oscillator.start(startTime);
+        oscillator.stop(startTime + duration);
+
+        return oscillator;
+    } catch (error) {
+        console.error('[タイマー] 音のスケジュールに失敗:', error);
+        return null;
+    }
+}
+
+/**
+ * 指定audioContext時刻にチック音をスケジュール
+ */
+function scheduleTickAt(audioTime) {
+    const osc = scheduleOscillator(
+        tickSoundFrequency,
+        getComputedVolume(tickSoundVolume),
+        tickSoundDuration,
+        audioTime
+    );
+    if (osc) scheduledNodes.push(osc);
+}
+
+/**
+ * 指定audioContext時刻にビープ音をスケジュール（視覚フィードバック付き）
+ */
+function scheduleBeepAt(audioTime) {
+    const osc = scheduleOscillator(
+        beepSoundFrequency,
+        getComputedVolume(beepSoundVolume),
+        beepSoundDuration,
+        audioTime
+    );
+    if (osc) {
+        scheduledNodes.push(osc);
+        // 視覚的フィードバック（音のタイミングに合わせて表示）
+        const delay = Math.max(0, (audioTime - (audioContext ? audioContext.currentTime : 0)) * 1000);
+        setTimeout(() => {
+            const countDisplay = document.querySelector('.count-display');
+            if (countDisplay) {
+                countDisplay.classList.add('beep');
+                setTimeout(() => countDisplay.classList.remove('beep'), 300);
+            }
+        }, delay);
+    }
+}
+
+/**
+ * 指定audioContext時刻にカウントダウン音をスケジュール
+ */
+function scheduleCountdownAt(audioTime) {
+    const osc = scheduleOscillator(
+        countdownSoundFrequency,
+        getComputedVolume(countdownSoundVolume),
+        countdownSoundDuration,
+        audioTime
+    );
+    if (osc) scheduledNodes.push(osc);
+}
+
+/**
+ * スケジュール済み音ノードをすべて停止・クリーンアップ
+ */
+function cancelAllScheduledNodes() {
+    for (const node of scheduledNodes) {
+        try { node.stop(); } catch (e) { /* already stopped */ }
+    }
+    scheduledNodes = [];
+}
+
+/**
+ * 今後再生すべき音を先読みしてスケジュールする
+ * AudioContextのハードウェアスケジューラにより、JS実行タイミングの
+ * ブレに影響されない正確なタイミングでの音再生を実現
+ */
+function scheduleUpcomingAudio() {
+    if (!audioContext || audioContext.state !== 'running') {
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().catch(() => {});
+        }
+        return;
+    }
+
+    const currentAudioTime = audioContext.currentTime;
+    const lookAheadUntil = currentAudioTime + AUDIO_LOOKAHEAD_SEC;
+
+    if (isPreparationPhase && prepStartTime) {
+        // 長時間バックグラウンドからの復帰時に高速スキップ
+        const currentPrepSecond = Math.floor((Date.now() - prepStartTime) / 1000);
+        if (nextScheduledPrepSecond < currentPrepSecond - 1) {
+            nextScheduledPrepSecond = Math.max(1, currentPrepSecond - 1);
+        }
+
+        // 準備フェーズ: カウントダウン音をスケジュール（秒1〜9）
+        while (nextScheduledPrepSecond <= 9) {
+            const wallMs = prepStartTime + nextScheduledPrepSecond * 1000;
+            const audioTime = wallMsToAudioTime(wallMs);
+
+            if (audioTime > lookAheadUntil) break;
+
+            if (audioTime >= currentAudioTime - 0.3) {
+                scheduleCountdownAt(Math.max(audioTime, currentAudioTime));
+            }
+            nextScheduledPrepSecond++;
+        }
+    } else if (timerStartTime) {
+        // 長時間バックグラウンドからの復帰時に高速スキップ
+        const currentSecond = Math.floor((Date.now() - timerStartTime) / 1000);
+        if (nextScheduledSecond < currentSecond - 1) {
+            nextScheduledSecond = Math.max(0, currentSecond - 1);
+        }
+
+        // メインフェーズ: チック音・ビープ音をスケジュール
+        let safety = 0;
+        while (safety++ < 100) {
+            const wallMs = timerStartTime + nextScheduledSecond * 1000;
+            const audioTime = wallMsToAudioTime(wallMs);
+
+            if (audioTime > lookAheadUntil) break;
+
+            if (audioTime >= currentAudioTime - 0.3) {
+                if (nextScheduledSecond % intervalSeconds === 0) {
+                    scheduleBeepAt(Math.max(audioTime, currentAudioTime));
+                } else {
+                    scheduleTickAt(Math.max(audioTime, currentAudioTime));
+                }
+            }
+            nextScheduledSecond++;
+        }
+    }
+
+    // 完了済みノードのメモリクリーンアップ
+    if (scheduledNodes.length > 50) {
+        scheduledNodes = scheduledNodes.slice(-20);
+    }
+}
+
+/**
+ * requestAnimationFrameベースのUI更新ループ
+ * setIntervalよりフレームレートに同期した滑らかな表示更新を実現
+ */
+function timerUILoop() {
+    if (!timerInterval) return;
+
+    // 現在の表示値を実時間から計算（状態遷移はポーリングコールバックで管理）
+    if (isPreparationPhase && prepStartTime) {
+        const prepElapsed = Math.floor((Date.now() - prepStartTime) / 1000);
+        preparationCountdown = Math.max(0, 10 - prepElapsed);
+    } else if (timerStartTime) {
+        elapsedSeconds = Math.floor((Date.now() - timerStartTime) / 1000);
+        currentCount = 1 + Math.floor(elapsedSeconds / intervalSeconds);
+    }
+
+    updateTimerDisplay();
+    timerRAF = requestAnimationFrame(timerUILoop);
+}
+
 function initAudioContext() {
     if (!audioContext) {
         try {
@@ -2605,6 +2829,11 @@ document.addEventListener('visibilitychange', () => {
         if (audioContext && audioContext.state === 'suspended') {
             audioContext.resume().then(() => {
                 console.log('[タイマー] visibilitychange: AudioContext再開成功');
+                // 再開後に音声スケジュールを再校正
+                if (timerInterval) {
+                    calibrateAudioTimeOffset();
+                    scheduleUpcomingAudio();
+                }
             }).catch(err => {
                 console.error('[タイマー] visibilitychange: AudioContext再開失敗:', err);
             });
@@ -2617,7 +2846,7 @@ document.addEventListener('visibilitychange', () => {
         if (timerInterval) {
             requestWakeLock();
         }
-        // タイマーが動作中なら経過時間を補正
+        // タイマーが動作中なら経過時間を補正し、音声を再スケジュール
         if (timerInterval && timerStartTime && !isPreparationPhase) {
             const now = Date.now();
             const realElapsed = Math.floor((now - timerStartTime) / 1000);
@@ -2628,6 +2857,9 @@ document.addEventListener('visibilitychange', () => {
                 currentCount = 1 + Math.floor(elapsedSeconds / intervalSeconds);
                 updateTimerDisplay();
             }
+            // 音声スケジュールの再校正
+            calibrateAudioTimeOffset();
+            scheduleUpcomingAudio();
         }
     }
 });
@@ -2770,7 +3002,7 @@ function updateTimerDisplay() {
     }
 }
 
-function startTimer() {
+async function startTimer() {
     if (timerInterval) return; // 既に実行中の場合は何もしない
 
     console.log('[タイマー] スタートボタンが押されました');
@@ -2782,12 +3014,12 @@ function startTimer() {
     // AudioContextを初期化して再開（ブラウザのオートプレイポリシー対応）
     const ctx = initAudioContext();
     if (ctx && ctx.state === 'suspended') {
-        console.log('[タイマー] AudioContextを再開します:', ctx.state);
-        ctx.resume().then(() => {
+        try {
+            await ctx.resume();
             console.log('[タイマー] AudioContext再開成功:', ctx.state);
-        }).catch(error => {
+        } catch (error) {
             console.error('[タイマー] AudioContext再開失敗:', error);
-        });
+        }
     }
 
     // ロック画面でもオーディオセッションを維持するためのサイレント音声開始
@@ -2803,14 +3035,16 @@ function startTimer() {
     // 準備時間のカウントダウン開始
     isPreparationPhase = true;
     preparationCountdown = 10;
+    prepStartTime = Date.now();
+    nextScheduledPrepSecond = 1; // 最初のカウントダウン音は1秒後
     updateTimerDisplay();
 
-    // 準備フェーズの開始時刻を記録
-    let prepStartTime = Date.now();
-    let lastPrepCountdown = preparationCountdown;
+    // AudioContext時刻の校正
+    calibrateAudioTimeOffset();
 
-    console.log('[タイマー] setIntervalを開始します');
+    console.log('[タイマー] 高精度タイマーを開始します (ポーリング間隔: ' + TIMER_POLL_MS + 'ms)');
 
+    // 200msポーリングで状態更新 + 音声スケジューリング
     timerInterval = setInterval(() => {
         // AudioContextがsuspendedなら自動再開を試みる
         if (audioContext && audioContext.state === 'suspended') {
@@ -2822,41 +3056,44 @@ function startTimer() {
             const prepElapsed = Math.floor((Date.now() - prepStartTime) / 1000);
             preparationCountdown = Math.max(0, 10 - prepElapsed);
 
-            // 1秒進んだタイミングでのみ音を鳴らす
-            if (preparationCountdown < lastPrepCountdown && preparationCountdown > 0) {
-                playCountdownSound();
-            }
-            lastPrepCountdown = preparationCountdown;
-
-            updateTimerDisplay();
-
             if (preparationCountdown <= 0) {
-                // 準備時間終了、メインタイマー開始
+                // 準備時間終了 → メインフェーズへ移行
                 isPreparationPhase = false;
                 elapsedSeconds = 0;
                 currentCount = 1;  // 0秒時点で1にセット
-                timerStartTime = Date.now(); // メインタイマーの開始時刻を記録
-                playBeepSound();    // 0秒時点の音を再生
+                timerStartTime = prepStartTime + 10000; // 正確な切り替え時刻
+
+                // AudioContext時刻の校正
+                calibrateAudioTimeOffset();
+                nextScheduledSecond = 0;
+
+                // 最初のビープ音を即座にスケジュール
+                if (audioContext && audioContext.state === 'running') {
+                    const firstBeepAudioTime = wallMsToAudioTime(timerStartTime);
+                    const now = audioContext.currentTime;
+                    scheduleBeepAt(Math.max(firstBeepAudioTime, now));
+                    nextScheduledSecond = 1; // 秒0はスケジュール済み
+                }
+
                 updateTimerDisplay();
             }
-        } else {
-            // メインタイマー（実時間ベース）
+        } else if (timerStartTime) {
+            // メインタイマー（実時間ベース）の状態更新
             const realElapsed = Math.floor((Date.now() - timerStartTime) / 1000);
-            const prevElapsed = elapsedSeconds;
             elapsedSeconds = realElapsed;
-            const newCount = 1 + Math.floor(elapsedSeconds / intervalSeconds);
-
-            // インターバルごとに回数をカウント
-            if (newCount > currentCount) {
-                playBeepSound(); // 大きな音
-                currentCount = newCount;
-            } else if (elapsedSeconds > prevElapsed) {
-                playTickSound(); // 小さな音
-            }
-
-            updateTimerDisplay();
+            currentCount = 1 + Math.floor(elapsedSeconds / intervalSeconds);
         }
-    }, 1000); // 1秒間隔
+
+        // 音声の先読みスケジュール
+        calibrateAudioTimeOffset();
+        scheduleUpcomingAudio();
+
+        // UI更新（rAFのバックアップ）
+        updateTimerDisplay();
+    }, TIMER_POLL_MS);
+
+    // requestAnimationFrameで滑らかなUI更新
+    timerRAF = requestAnimationFrame(timerUILoop);
 }
 
 function stopTimer() {
@@ -2865,6 +3102,15 @@ function stopTimer() {
     clearInterval(timerInterval);
     timerInterval = null;
     isPreparationPhase = false;
+
+    // requestAnimationFrameを停止
+    if (timerRAF) {
+        cancelAnimationFrame(timerRAF);
+        timerRAF = null;
+    }
+
+    // スケジュール済み音ノードをクリーンアップ
+    cancelAllScheduledNodes();
 
     // サイレント音声とWake Lockを停止
     stopSilentAudioKeepAlive();
@@ -2892,6 +3138,9 @@ async function resetTimer() {
     currentCount = 0;
     elapsedSeconds = 0;
     preparationCountdown = 10;
+    prepStartTime = null;
+    nextScheduledSecond = 0;
+    nextScheduledPrepSecond = 0;
     updateTimerDisplay();
     
     // AudioContextを完全リセットしてテスト音を再生
