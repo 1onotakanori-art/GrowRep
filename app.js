@@ -4009,31 +4009,32 @@ function renderTagSelector(containerId, selectedTags = []) {
     
     renderChips();
     
-    // フリータグ追加
+    // 既存リスナーを削除して再設定（cloneNodeで古いリスナーを除去）
+    const newAddBtn = addBtn.cloneNode(true);
+    addBtn.parentNode.replaceChild(newAddBtn, addBtn);
+    
+    const newFreeInput = freeInput.cloneNode(true);
+    freeInput.parentNode.replaceChild(newFreeInput, freeInput);
+    
+    // フリータグ追加（新しいDOM要素を参照）
     const handleAddFreeTag = () => {
-        const val = freeInput.value.trim();
+        const val = newFreeInput.value.trim();
         if (val && val.length <= 10 && !currentSelected.has(val)) {
             currentSelected.add(val);
             if (!PRESET_TAGS.includes(val)) allFreeTags.add(val);
-            freeInput.value = '';
+            newFreeInput.value = '';
             renderChips();
         }
     };
     
-    // 既存リスナーを削除して再設定
-    const newAddBtn = addBtn.cloneNode(true);
-    addBtn.parentNode.replaceChild(newAddBtn, addBtn);
     newAddBtn.addEventListener('click', handleAddFreeTag);
-    
-    const newFreeInput = freeInput.cloneNode(true);
-    freeInput.parentNode.replaceChild(newFreeInput, freeInput);
     newFreeInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             handleAddFreeTag();
         }
     });
-    // Update reference for handleAddFreeTag
+    
     container._getSelectedTags = () => Array.from(currentSelected);
     container._freeInput = newFreeInput;
 }
