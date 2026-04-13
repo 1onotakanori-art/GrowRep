@@ -951,7 +951,8 @@ body.mode-interval header h1::after {
 
 .close-modal,
 .close-free-exercise-modal,
-.close-edit-exercise-modal {
+.close-edit-exercise-modal,
+.close-champion-detail-modal {
     color: #aaa;
     font-size: 28px;
     font-weight: bold;
@@ -968,14 +969,16 @@ body.mode-interval header h1::after {
 @media (hover: hover) {
     .close-modal:hover,
     .close-free-exercise-modal:hover,
-    .close-edit-exercise-modal:hover {
+    .close-edit-exercise-modal:hover,
+    .close-champion-detail-modal:hover {
         color: #333;
     }
 }
 
 .close-modal:active,
 .close-free-exercise-modal:active,
-.close-edit-exercise-modal:active {
+.close-edit-exercise-modal:active,
+.close-champion-detail-modal:active {
     color: #333;
 }
 
@@ -2218,6 +2221,12 @@ body.mode-weekly .ranking-category h3 {
     color: #555;
     padding: 4px 0;
     border-bottom: 1px solid rgba(0,0,0,0.05);
+    background: transparent;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    text-align: left;
+    cursor: pointer;
 }
 
 .champ-exercise-item:last-child {
@@ -2227,6 +2236,87 @@ body.mode-weekly .ranking-category h3 {
 .champ-exercise-item i {
     color: #f7971e;
     margin-right: 4px;
+}
+
+.champion-detail-modal-content {
+    max-width: 700px;
+}
+
+.champ-detail-subtitle {
+    font-size: 0.9em;
+    color: #666;
+    margin-bottom: 10px;
+}
+
+.champ-detail-rankings {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.champ-detail-header-row,
+.champ-detail-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 90px 90px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+}
+
+.champ-detail-header-row {
+    background: #f6f8ff;
+    color: #667eea;
+    font-size: 0.85em;
+    font-weight: 700;
+}
+
+.champ-detail-row {
+    background: #fff;
+    border: 1px solid #e9edf7;
+}
+
+.champ-detail-rank {
+    font-weight: 700;
+    color: #e67e00;
+}
+
+.champ-detail-user {
+    color: #333;
+    font-weight: 600;
+}
+
+.champ-detail-value,
+.champ-detail-percent {
+    color: #555;
+    font-weight: 600;
+    text-align: right;
+}
+
+.champ-mini-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 8px;
+    font-size: 0.72em;
+    border-radius: 10px;
+    color: #fff;
+    background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+}
+
+.champ-detail-empty {
+    text-align: center;
+    color: #999;
+    padding: 20px;
+}
+
+@media (max-width: 640px) {
+    .champ-detail-header-row,
+    .champ-detail-row {
+        grid-template-columns: 62px 1fr 72px 72px;
+        font-size: 0.84em;
+        gap: 6px;
+        padding: 7px;
+    }
 }
 
 /* ====================================================================

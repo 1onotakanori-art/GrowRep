@@ -106,6 +106,13 @@ const confirmPasswordInput = document.getElementById('confirm-password');
 const updatePasswordBtn = document.getElementById('update-password-btn');
 const passwordError = document.getElementById('password-error');
 
+// 歴代チャンプ詳細モーダル関連
+const championDetailModal = document.getElementById('champion-detail-modal');
+const closeChampionDetailModal = document.querySelector('.close-champion-detail-modal');
+const championDetailTitle = document.getElementById('champion-detail-title');
+const championDetailSubtitle = document.getElementById('champion-detail-subtitle');
+const championDetailRankings = document.getElementById('champion-detail-rankings');
+
 // 種目名の日本語マッピング
 const exerciseNames = {
     'pushup': 'プッシュアップ',
@@ -167,6 +174,13 @@ let progressCache = {
     weekly: {}
 };  // 種目ごとにキャッシュ
 const CACHE_DURATION = 5 * 60 * 1000;  // キャッシュ有効期間: 5分
+const RANKING_TIE_EPSILON = 1e-6;
+
+// 歴代チャンプ詳細表示用のメモリキャッシュ
+let championsHistoryCache = [];
+const championDetailRetryMap = {};
+let championDetailEventsBound = false;
+let weeklyChampionBackfillDoneInSession = false;
 
 // ====================================================================
 // Firestoreユーティリティ関数
@@ -4407,6 +4421,9 @@ window.addEventListener('click', (event) => {
     if (event.target === restoreModal) {
         restoreModal.style.display = 'none';
     }
+    if (championDetailModal && event.target === championDetailModal) {
+        championDetailModal.style.display = 'none';
+    }
 });
 
 document.getElementById('add-free-exercise-btn').addEventListener('click', async () => {
@@ -5399,6 +5416,12 @@ async function initWeeklyMode() {
     if (weeklyChallenge && weeklyChallenge.exercises.length > 0) {
         saveWeeklyChallengeHistory(weeklyChallenge);
     }
+
+    // 過去週の詳細データをセッション中1回だけバックフィル
+    if (!weeklyChampionBackfillDoneInSession) {
+        await checkAndFinalizePassedWeeks();
+        weeklyChampionBackfillDoneInSession = true;
+    }
 }
 
 /**
@@ -5519,125 +5542,295 @@ function getWeekNumberOfYear(date) {
 }
 
 /**
+ * 週開始日時から歴代チャンプdocIdを作成
+ * @param {Date} weekStart
+ * @returns {{ docId: string, year: number, weekNumber: number, monJST: Date, friJST: Date }}
+ */
+function buildChampionDocMeta(weekStart) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const monJST = new Date(weekStart.getTime() + JST_OFFSET_MS + 1 * 24 * 60 * 60 * 1000);
+    const friJST = new Date(weekStart.getTime() + JST_OFFSET_MS + 5 * 24 * 60 * 60 * 1000);
+    const weekNumber = getWeekNumberOfYear(monJST);
+    const year = monJST.getUTCFullYear();
+    const docId = `${year}_W${String(weekNumber).padStart(2, '0')}`;
+    return { docId, year, weekNumber, monJST, friJST };
+}
+
+/**
+ * 週間表示ラベルを作成
+ * @param {Date} monJST
+ * @param {Date} friJST
+ * @returns {string}
+ */
+function formatWeeklyPeriodLabel(monJST, friJST) {
+    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    const formatDate = (d) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${dayNames[d.getUTCDay()]})`;
+    return `${formatDate(monJST)} 〜 ${formatDate(friJST)}`;
+}
+
+/**
+ * 対象週の種目別Top5・総合チャンプ情報を作成
+ * @param {Object} weeklyData - { weekStart, weekEnd, exercises }
+ * @param {Object} options
+ * @returns {Promise<Object|null>}
+ */
+async function buildWeeklyChampionPayload(weeklyData, options = {}) {
+    const { postsSnapshot: externalPostsSnapshot = null, usersSnapshot: externalUsersSnapshot = null } = options;
+    const { weekStart, weekEnd, exercises } = weeklyData;
+
+    if (!freeExercisesLoaded) {
+        await loadFreeExercises();
+    }
+
+    const exerciseKeys = (exercises || []).filter(k => freeExercises[k]);
+    if (exerciseKeys.length === 0) return null;
+
+    const postsSnapshot = externalPostsSnapshot || await db.collection('posts_free').get();
+    const usersSnapshot = externalUsersSnapshot || await db.collection('users').get();
+
+    const usersData = {};
+    usersSnapshot.forEach(doc => {
+        const data = doc.data();
+        usersData[doc.id] = data.userName || data.email;
+    });
+
+    const userRecords = {};
+
+    postsSnapshot.forEach(doc => {
+        const post = doc.data();
+        if (!post.timestamp) return;
+
+        const postDate = post.timestamp.toDate();
+        if (postDate < weekStart || postDate >= weekEnd) return;
+        if (!isWeekdayJST(postDate)) return;
+        if (!exerciseKeys.includes(post.exerciseType)) return;
+
+        const { userId, exerciseType, value } = post;
+        const numericValue = Number(value) || 0;
+        if (numericValue <= 0) return;
+
+        if (!userRecords[userId]) {
+            userRecords[userId] = {
+                userName: usersData[userId] || post.userEmail || 'Unknown',
+                exercises: {},
+                scores: {},
+                totalScore: 0
+            };
+        }
+
+        if (!userRecords[userId].exercises[exerciseType] || userRecords[userId].exercises[exerciseType] < numericValue) {
+            userRecords[userId].exercises[exerciseType] = numericValue;
+        }
+    });
+
+    const exerciseTop5 = {};
+    const exerciseRecords = {};
+
+    exerciseKeys.forEach(exerciseKey => {
+        const leaderboard = Object.entries(userRecords)
+            .map(([userId, user]) => ({
+                userId,
+                userName: user.userName,
+                value: Number(user.exercises[exerciseKey] || 0)
+            }))
+            .filter(item => item.value > 0)
+            .sort((a, b) => {
+                if (Math.abs(b.value - a.value) > RANKING_TIE_EPSILON) return b.value - a.value;
+                return a.userId.localeCompare(b.userId);
+            });
+
+        const maxValue = leaderboard.length > 0 ? leaderboard[0].value : 0;
+        const top5 = [];
+        let previousValue = null;
+        let currentRank = 0;
+
+        leaderboard.slice(0, 5).forEach((entry, index) => {
+            if (previousValue !== null && Math.abs(entry.value - previousValue) <= RANKING_TIE_EPSILON) {
+                // 同率順位(競技順位): rank据え置き
+            } else {
+                currentRank = index + 1;
+            }
+            previousValue = entry.value;
+
+            const percent = maxValue > 0 ? (entry.value / maxValue) * 100 : 0;
+            top5.push({
+                rank: currentRank,
+                userId: entry.userId,
+                userName: entry.userName,
+                value: entry.value,
+                percent,
+                champion: currentRank === 1
+            });
+        });
+
+        exerciseTop5[exerciseKey] = {
+            name: freeExercises[exerciseKey] ? freeExercises[exerciseKey].name : exerciseKey,
+            maxValue,
+            top5
+        };
+
+        exerciseRecords[exerciseKey] = {
+            name: freeExercises[exerciseKey] ? freeExercises[exerciseKey].name : exerciseKey,
+            value: 0
+        };
+    });
+
+    // %計算（各種目1位を100%）
+    exerciseKeys.forEach(exerciseKey => {
+        const maxValue = exerciseTop5[exerciseKey] ? exerciseTop5[exerciseKey].maxValue : 0;
+        Object.values(userRecords).forEach(user => {
+            const userValue = Number(user.exercises[exerciseKey] || 0);
+            const percent = maxValue > 0 ? (userValue / maxValue) * 100 : 0;
+            user.scores[exerciseKey] = percent;
+            user.totalScore += percent;
+        });
+    });
+
+    const championCandidates = Object.entries(userRecords)
+        .map(([userId, user]) => ({
+            userId,
+            userName: user.userName,
+            totalScore: user.totalScore,
+            exercises: user.exercises,
+            scores: user.scores
+        }))
+        .sort((a, b) => {
+            if (Math.abs(b.totalScore - a.totalScore) > RANKING_TIE_EPSILON) return b.totalScore - a.totalScore;
+            return a.userId.localeCompare(b.userId);
+        });
+
+    const champion = championCandidates[0] || null;
+    if (!champion) return null;
+
+    exerciseKeys.forEach(exerciseKey => {
+        exerciseRecords[exerciseKey].value = Number(champion.exercises[exerciseKey] || 0);
+    });
+
+    const championBreakdown = {};
+    exerciseKeys.forEach(exerciseKey => {
+        const detail = exerciseTop5[exerciseKey] || { top5: [] };
+        const championInExercise = detail.top5.find(item => item.userId === champion.userId);
+        championBreakdown[exerciseKey] = {
+            value: Number(champion.exercises[exerciseKey] || 0),
+            percent: Number(champion.scores[exerciseKey] || 0),
+            rank: championInExercise ? championInExercise.rank : null
+        };
+    });
+
+    return {
+        champUserId: champion.userId,
+        champUserName: champion.userName,
+        champTotalScore: champion.totalScore,
+        exercises: exerciseRecords,
+        exerciseTop5,
+        championBreakdown
+    };
+}
+
+/**
+ * loadPostsで取得済みのキャッシュから擬似Snapshotを作成
+ * @param {Array} cachedPosts
+ * @returns {{ postsSnapshot: Object, usersSnapshot: Object }}
+ */
+function buildPseudoSnapshotsFromCachedPosts(cachedPosts) {
+    const safePosts = Array.isArray(cachedPosts) ? cachedPosts : [];
+
+    const userNameMap = {};
+    safePosts.forEach(postItem => {
+        if (!postItem || !postItem.data || !postItem.data.userId) return;
+        const userId = postItem.data.userId;
+        if (!userNameMap[userId]) {
+            userNameMap[userId] = postItem.userName || postItem.data.userEmail || 'Unknown';
+        }
+    });
+
+    const postsSnapshot = {
+        forEach: (callback) => {
+            safePosts.forEach(postItem => {
+                callback({
+                    data: () => postItem.data
+                });
+            });
+        }
+    };
+
+    const usersSnapshot = {
+        forEach: (callback) => {
+            Object.entries(userNameMap).forEach(([userId, userName]) => {
+                callback({
+                    id: userId,
+                    data: () => ({ userName, email: userName })
+                });
+            });
+        }
+    };
+
+    return { postsSnapshot, usersSnapshot };
+}
+
+/**
  * 歴代チャンプの集計・保存処理
  * 各週の集計期間終了後に、最も得点の高かったユーザーをチャンピオンとして記録する
  * @param {Object} weeklyData - { weekStart, weekEnd, exercises }
  * @returns {Promise<void>}
  */
-async function finalizeWeeklyChampion(weeklyData) {
+async function finalizeWeeklyChampion(weeklyData, options = {}) {
     try {
+        const {
+            upsertDetails = false,
+            postsSnapshot = null,
+            usersSnapshot = null,
+            detailSource = 'finalizeWeeklyChampion_v2'
+        } = options;
+
         const { weekStart, weekEnd, exercises } = weeklyData;
-        const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
-        const monJST = new Date(weekStart.getTime() + JST_OFFSET_MS + 1 * 24 * 60 * 60 * 1000);
-        const weekNumber = getWeekNumberOfYear(monJST);
-        const year = monJST.getUTCFullYear();
-        const docId = `${year}_W${String(weekNumber).padStart(2, '0')}`;
+        const { docId, year, weekNumber, monJST, friJST } = buildChampionDocMeta(weekStart);
 
         // 既に記録済みか確認
         const existingDoc = await db.collection('weekly_champions').doc(docId).get();
-        if (existingDoc.exists) {
+        if (existingDoc.exists && !upsertDetails) {
             console.log(`[歴代チャンプ] ${docId} は既に記録済み`);
             return;
         }
 
-        // スコア計算
-        if (!freeExercisesLoaded) {
-            await loadFreeExercises();
-        }
+        const championPayload = await buildWeeklyChampionPayload(
+            { weekStart, weekEnd, exercises },
+            { postsSnapshot, usersSnapshot }
+        );
+        if (!championPayload) return;
 
-        const exerciseKeys = exercises.filter(k => freeExercises[k]);
-        if (exerciseKeys.length === 0) return;
-
-        const postsSnapshot = await db.collection('posts_free').get();
-        const usersSnapshot = await db.collection('users').get();
-
-        const usersData = {};
-        usersSnapshot.forEach(doc => {
-            const data = doc.data();
-            usersData[doc.id] = data.userName || data.email;
-        });
-
-        const userRecords = {};
-
-        postsSnapshot.forEach(doc => {
-            const post = doc.data();
-            if (!post.timestamp) return;
-            const postDate = post.timestamp.toDate();
-
-            if (postDate < weekStart || postDate >= weekEnd) return;
-            if (!isWeekdayJST(postDate)) return;
-            if (!exerciseKeys.includes(post.exerciseType)) return;
-
-            const { userId, exerciseType, value } = post;
-            if (!userRecords[userId]) {
-                userRecords[userId] = {
-                    userName: usersData[userId] || 'Unknown',
-                    exercises: {}
-                };
-            }
-
-            if (!userRecords[userId].exercises[exerciseType] ||
-                userRecords[userId].exercises[exerciseType] < value) {
-                userRecords[userId].exercises[exerciseType] = value;
-            }
-        });
-
-        // %計算で総合得点算出
-        let totalScores = {};
-        exerciseKeys.forEach(exercise => {
-            let maxVal = 0;
-            Object.values(userRecords).forEach(user => {
-                const val = user.exercises[exercise] || 0;
-                if (val > maxVal) maxVal = val;
-            });
-            Object.entries(userRecords).forEach(([userId, user]) => {
-                const val = user.exercises[exercise] || 0;
-                const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
-                if (!totalScores[userId]) totalScores[userId] = 0;
-                totalScores[userId] += pct;
-            });
-        });
-
-        // 最高得点のユーザーをチャンプに
-        let champUserId = null;
-        let champScore = -1;
-        Object.entries(totalScores).forEach(([userId, score]) => {
-            if (score > champScore) {
-                champScore = score;
-                champUserId = userId;
-            }
-        });
-
-        if (!champUserId) return;
-
-        const champUser = userRecords[champUserId];
-        const exerciseRecords = {};
-        exerciseKeys.forEach(key => {
-            const ex = freeExercises[key];
-            exerciseRecords[key] = {
-                name: ex ? ex.name : key,
-                value: champUser.exercises[key] || 0
-            };
-        });
-
-        const friJST = new Date(weekStart.getTime() + JST_OFFSET_MS + 5 * 24 * 60 * 60 * 1000);
-        const dayNames = ['日','月','火','水','木','金','土'];
-        const formatDate = (d) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${dayNames[d.getUTCDay()]})`;
-
-        await db.collection('weekly_champions').doc(docId).set({
+        const baseData = {
             year,
             weekNumber,
             weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
             weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
-            periodLabel: `${formatDate(monJST)} 〜 ${formatDate(friJST)}`,
-            champUserId,
-            champUserName: champUser.userName,
-            champTotalScore: champScore,
-            exercises: exerciseRecords,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+            periodLabel: formatWeeklyPeriodLabel(monJST, friJST),
+            champUserId: championPayload.champUserId,
+            champUserName: championPayload.champUserName,
+            champTotalScore: championPayload.champTotalScore,
+            exercises: championPayload.exercises,
+            schemaVersion: 2,
+            rankingMethod: 'competition',
+            scoringBase: 'exercise_top_is_100',
+            exerciseTop5: championPayload.exerciseTop5,
+            championBreakdown: championPayload.championBreakdown,
+            detailGeneratedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            detailSource
+        };
 
-        console.log(`[歴代チャンプ] ${docId} チャンプ記録完了: ${champUser.userName}`);
+        if (existingDoc.exists) {
+            await db.collection('weekly_champions').doc(docId).set({
+                ...baseData,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            console.log(`[歴代チャンプ] ${docId} の詳細データを更新`);
+        } else {
+            await db.collection('weekly_champions').doc(docId).set({
+                ...baseData,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`[歴代チャンプ] ${docId} チャンプ記録完了: ${championPayload.champUserName}`);
+        }
 
     } catch (error) {
         console.error('[歴代チャンプ] チャンプ記録エラー:', error);
@@ -5645,49 +5838,250 @@ async function finalizeWeeklyChampion(weeklyData) {
 }
 
 /**
+ * 歴代チャンプの1件データをメモリキャッシュに反映
+ * @param {string} docId
+ * @param {Object} data
+ */
+function upsertChampionHistoryCache(docId, data) {
+    const index = championsHistoryCache.findIndex(item => item.id === docId);
+    if (index >= 0) {
+        championsHistoryCache[index] = { id: docId, ...data };
+    } else {
+        championsHistoryCache.push({ id: docId, ...data });
+    }
+}
+
+/**
+ * 詳細不足時に1回だけ再取得して補完
+ * @param {Object} champData
+ * @returns {Promise<Object|null>}
+ */
+async function ensureChampionDetailData(champData) {
+    if (!champData || !champData.id) return null;
+    if (champData.exerciseTop5 && champData.schemaVersion >= 2) return champData;
+
+    if (championDetailRetryMap[champData.id]) {
+        return championsHistoryCache.find(item => item.id === champData.id) || champData;
+    }
+    championDetailRetryMap[champData.id] = true;
+
+    try {
+        let weekStart = champData.weekStart && typeof champData.weekStart.toDate === 'function'
+            ? champData.weekStart.toDate()
+            : null;
+        let weekEnd = champData.weekEnd && typeof champData.weekEnd.toDate === 'function'
+            ? champData.weekEnd.toDate()
+            : null;
+        let exercises = Object.keys(champData.exercises || {});
+
+        // まずは他タブで取得済みの投稿キャッシュから補完を試行（Firebase追加アクセスなし）
+        const cachedPosts = postsCache.weekly || postsCache.free;
+        if (weekStart && weekEnd && Array.isArray(exercises) && exercises.length > 0 && Array.isArray(cachedPosts) && cachedPosts.length > 0) {
+            const pseudoSnapshots = buildPseudoSnapshotsFromCachedPosts(cachedPosts);
+            await finalizeWeeklyChampion(
+                { weekStart, weekEnd, exercises },
+                {
+                    upsertDetails: true,
+                    postsSnapshot: pseudoSnapshots.postsSnapshot,
+                    usersSnapshot: pseudoSnapshots.usersSnapshot,
+                    detailSource: 'cache_rebuild_v1'
+                }
+            );
+
+            const refreshedDocByCache = await db.collection('weekly_champions').doc(champData.id).get();
+            if (refreshedDocByCache.exists) {
+                const refreshedDataByCache = refreshedDocByCache.data();
+                if (refreshedDataByCache.exerciseTop5) {
+                    upsertChampionHistoryCache(champData.id, refreshedDataByCache);
+                    return { id: champData.id, ...refreshedDataByCache };
+                }
+            }
+        }
+
+        const historyDoc = await db.collection('weekly_challenge_history').doc(champData.id).get();
+        if (historyDoc.exists) {
+            const historyData = historyDoc.data();
+            if (historyData.weekStart && typeof historyData.weekStart.toDate === 'function') {
+                weekStart = historyData.weekStart.toDate();
+            }
+            if (historyData.weekEnd && typeof historyData.weekEnd.toDate === 'function') {
+                weekEnd = historyData.weekEnd.toDate();
+            }
+            if (Array.isArray(historyData.exercises) && historyData.exercises.length > 0) {
+                exercises = historyData.exercises;
+            }
+        }
+
+        if (!weekStart || !weekEnd || !Array.isArray(exercises) || exercises.length === 0) {
+            return championsHistoryCache.find(item => item.id === champData.id) || champData;
+        }
+
+        await finalizeWeeklyChampion(
+            { weekStart, weekEnd, exercises },
+            { upsertDetails: true, detailSource: 'detail_retry_v1' }
+        );
+
+        const refreshedDoc = await db.collection('weekly_champions').doc(champData.id).get();
+        if (refreshedDoc.exists) {
+            const refreshedData = refreshedDoc.data();
+            upsertChampionHistoryCache(champData.id, refreshedData);
+            return { id: champData.id, ...refreshedData };
+        }
+    } catch (error) {
+        console.error('[歴代チャンプ] 詳細補完エラー:', error);
+    }
+
+    return championsHistoryCache.find(item => item.id === champData.id) || champData;
+}
+
+/**
+ * 種目詳細モーダルを描画
+ * @param {Object} champData
+ * @param {string} exerciseKey
+ */
+function renderChampionDetailModal(champData, exerciseKey) {
+    if (!championDetailModal || !championDetailRankings || !championDetailTitle || !championDetailSubtitle) return;
+
+    const exerciseDetail = champData.exerciseTop5 && champData.exerciseTop5[exerciseKey]
+        ? champData.exerciseTop5[exerciseKey]
+        : null;
+
+    const weekText = typeof champData.weekNumber === 'number' ? `第${champData.weekNumber}週` : '該当週';
+    const exerciseName = exerciseDetail && exerciseDetail.name
+        ? exerciseDetail.name
+        : (freeExercises[exerciseKey] ? freeExercises[exerciseKey].name : exerciseKey);
+
+    championDetailTitle.textContent = `${weekText} ${exerciseName} 詳細`;
+    championDetailSubtitle.textContent = champData.periodLabel || '';
+
+    if (!exerciseDetail || !Array.isArray(exerciseDetail.top5) || exerciseDetail.top5.length === 0) {
+        championDetailRankings.innerHTML = '<p class="champ-detail-empty">この週の詳細データが不足しています。</p>';
+        championDetailModal.style.display = 'block';
+        return;
+    }
+
+    const rowsHtml = exerciseDetail.top5.map(item => {
+        const championBadge = item.champion ? '<span class="champ-mini-badge">種目別チャンプ</span>' : '';
+        return `
+            <div class="champ-detail-row">
+                <div class="champ-detail-rank">${item.rank}位</div>
+                <div class="champ-detail-user">${escapeHtml(item.userName)} ${championBadge}</div>
+                <div class="champ-detail-value">${Math.round(item.value)}回</div>
+                <div class="champ-detail-percent">${Math.round(item.percent)}%</div>
+            </div>
+        `;
+    }).join('');
+
+    championDetailRankings.innerHTML = `
+        <div class="champ-detail-header-row">
+            <div>順位</div>
+            <div>ユーザー</div>
+            <div>回数</div>
+            <div>点数(%)</div>
+        </div>
+        ${rowsHtml}
+    `;
+    championDetailModal.style.display = 'block';
+}
+
+/**
+ * 種目詳細モーダルを開く
+ * @param {string} docId
+ * @param {string} exerciseKey
+ */
+async function openChampionExerciseDetail(docId, exerciseKey) {
+    let champData = championsHistoryCache.find(item => item.id === docId);
+    if (!champData) return;
+
+    if (!champData.exerciseTop5 || !champData.exerciseTop5[exerciseKey]) {
+        champData = await ensureChampionDetailData(champData);
+    }
+
+    renderChampionDetailModal(champData, exerciseKey);
+}
+
+/**
+ * 歴代チャンプタブのクリック/モーダルイベントをバインド
+ */
+function setupChampionDetailEvents() {
+    if (championDetailEventsBound) return;
+
+    const championsList = document.getElementById('champions-list');
+    if (championsList) {
+        championsList.addEventListener('click', async (event) => {
+            const trigger = event.target.closest('.js-champ-detail-trigger');
+            if (!trigger) return;
+
+            const docId = trigger.getAttribute('data-doc-id');
+            const exerciseKey = trigger.getAttribute('data-exercise-key');
+            if (!docId || !exerciseKey) return;
+
+            await openChampionExerciseDetail(docId, exerciseKey);
+        });
+    }
+
+    if (closeChampionDetailModal) {
+        closeChampionDetailModal.addEventListener('click', () => {
+            if (championDetailModal) championDetailModal.style.display = 'none';
+        });
+    }
+
+    championDetailEventsBound = true;
+}
+
+/**
  * 過去の週でまだチャンプが記録されていないものを自動集計する
  */
 async function checkAndFinalizePassedWeeks() {
     try {
-        // settings_free/weekly_challenge から過去の記録をチェック
-        const currentBounds = getWeekBoundaries();
-        const doc = await db.collection('settings_free').doc('weekly_challenge').get();
-        if (!doc.exists) return;
+        const historySnap = await db.collection('weekly_challenge_history')
+            .orderBy(firebase.firestore.FieldPath.documentId(), 'asc')
+            .get();
+        if (historySnap.empty) return;
 
-        const data = doc.data();
-        const savedWeekStart = data.weekStart ? data.weekStart.toDate() : null;
+        const champsSnap = await db.collection('weekly_champions').get();
+        const champMap = new Map();
+        champsSnap.forEach(doc => {
+            champMap.set(doc.id, doc.data());
+        });
 
-        // 現在の週が既にFirestoreの週と同じなら、過去の週がまだ未集計の可能性
-        // 1週間前の情報を手動でチェック
-        const oneWeekAgo = new Date(currentBounds.start.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const prevWeekBounds = getWeekBoundaries(new Date(oneWeekAgo.getTime() + 3 * 24 * 60 * 60 * 1000));
+        let postsSnapshot = null;
+        let usersSnapshot = null;
+        let updatedCount = 0;
 
-        // 過去のチャレンジドキュメント（weekly_challenge_history）があれば使う
-        const historySnap = await db.collection('weekly_challenge_history').get();
-        
-        // 現在のweekly_challengeデータで前週分を試行
-        if (savedWeekStart && Math.abs(savedWeekStart.getTime() - currentBounds.start.getTime()) < 60 * 1000) {
-            // 現在の週のデータが保存されている → 前の週を集計
-            const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
-            const prevMonJST = new Date(prevWeekBounds.start.getTime() + JST_OFFSET_MS + 1 * 24 * 60 * 60 * 1000);
-            const prevWeekNumber = getWeekNumberOfYear(prevMonJST);
-            const prevYear = prevMonJST.getUTCFullYear();
-            const prevDocId = `${prevYear}_W${String(prevWeekNumber).padStart(2, '0')}`;
+        for (const historyDoc of historySnap.docs) {
+            const historyData = historyDoc.data();
+            const champData = champMap.get(historyDoc.id) || null;
 
-            const prevChampDoc = await db.collection('weekly_champions').doc(prevDocId).get();
-            if (!prevChampDoc.exists) {
-                // 前の週のチャレンジ種目を取得する必要がある
-                // weekly_challenge_history から取得
-                const prevHistDoc = await db.collection('weekly_challenge_history').doc(prevDocId).get();
-                if (prevHistDoc.exists) {
-                    const prevData = prevHistDoc.data();
-                    await finalizeWeeklyChampion({
-                        weekStart: prevData.weekStart.toDate(),
-                        weekEnd: prevData.weekEnd.toDate(),
-                        exercises: prevData.exercises || []
-                    });
-                }
+            const hasDetail = !!(champData && champData.schemaVersion >= 2 && champData.exerciseTop5);
+            if (hasDetail) continue;
+
+            if (!historyData.weekStart || !historyData.weekEnd || !Array.isArray(historyData.exercises) || historyData.exercises.length === 0) {
+                continue;
             }
+
+            if (!postsSnapshot) {
+                postsSnapshot = await db.collection('posts_free').get();
+            }
+            if (!usersSnapshot) {
+                usersSnapshot = await db.collection('users').get();
+            }
+
+            await finalizeWeeklyChampion({
+                weekStart: historyData.weekStart.toDate(),
+                weekEnd: historyData.weekEnd.toDate(),
+                exercises: historyData.exercises
+            }, {
+                upsertDetails: true,
+                postsSnapshot,
+                usersSnapshot,
+                detailSource: 'backfill_v1'
+            });
+            updatedCount += 1;
+        }
+
+        if (updatedCount > 0) {
+            console.log(`[歴代チャンプ] バックフィル更新: ${updatedCount}週`);
         }
 
     } catch (error) {
@@ -5742,11 +6136,20 @@ async function loadChampionsHistory() {
             return;
         }
 
+        setupChampionDetailEvents();
+
+        championsHistoryCache = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
         let html = '';
         snapshot.forEach(doc => {
             const data = doc.data();
-            const exercisesHtml = Object.values(data.exercises || {}).map(ex => {
-                return `<div class="champ-exercise-item"><i class="fa-solid fa-dumbbell"></i> ${escapeHtml(ex.name)}: <strong>${ex.value}</strong></div>`;
+            const exercisesEntries = Object.entries(data.exercises || {});
+            const exercisesHtml = exercisesEntries.map(([exerciseKey, ex]) => {
+                const value = Number(ex.value || 0);
+                return `<button class="champ-exercise-item js-champ-detail-trigger" data-doc-id="${escapeHtml(doc.id)}" data-exercise-key="${escapeHtml(exerciseKey)}"><i class="fa-solid fa-dumbbell"></i> ${escapeHtml(ex.name)}: <strong>${Math.round(value)}</strong></button>`;
             }).join('');
 
             html += `
