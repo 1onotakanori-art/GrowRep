@@ -5569,6 +5569,29 @@ function formatWeeklyPeriodLabel(monJST, friJST) {
 }
 
 /**
+ * その週のチャンプ確定時刻（JST土曜0:00）をUTC Dateで取得
+ * @param {Date} weekStart
+ * @returns {Date|null}
+ */
+function getChampionDecisionTimeUTC(weekStart) {
+    if (!weekStart || !(weekStart instanceof Date)) return null;
+    const { monJST } = buildChampionDocMeta(weekStart);
+    return new Date(monJST.getTime() + 5 * 24 * 60 * 60 * 1000); // 土曜0:00 JST
+}
+
+/**
+ * その週のチャンプが確定済みか
+ * @param {Date} weekStart
+ * @param {Date} [now]
+ * @returns {boolean}
+ */
+function isChampionWeekDecided(weekStart, now = new Date()) {
+    const decisionTime = getChampionDecisionTimeUTC(weekStart);
+    if (!decisionTime) return true;
+    return now.getTime() >= decisionTime.getTime();
+}
+
+/**
  * 対象週の種目別Top5・総合チャンプ情報を作成
  * @param {Object} weeklyData - { weekStart, weekEnd, exercises }
  * @param {Object} options
@@ -5780,10 +5803,16 @@ async function finalizeWeeklyChampion(weeklyData, options = {}) {
             upsertDetails = false,
             postsSnapshot = null,
             usersSnapshot = null,
-            detailSource = 'finalizeWeeklyChampion_v2'
+            detailSource = 'finalizeWeeklyChampion_v2',
+            allowUndecided = false
         } = options;
 
         const { weekStart, weekEnd, exercises } = weeklyData;
+        if (!allowUndecided && !isChampionWeekDecided(weekStart)) {
+            console.log('[歴代チャンプ] 未確定週のため記録をスキップ');
+            return;
+        }
+
         const { docId, year, weekNumber, monJST, friJST } = buildChampionDocMeta(weekStart);
 
         // 既に記録済みか確認
@@ -6053,6 +6082,13 @@ async function checkAndFinalizePassedWeeks() {
             const historyData = historyDoc.data();
             const champData = champMap.get(historyDoc.id) || null;
 
+            const weekStartDate = historyData.weekStart && typeof historyData.weekStart.toDate === 'function'
+                ? historyData.weekStart.toDate()
+                : null;
+            if (!weekStartDate || !isChampionWeekDecided(weekStartDate)) {
+                continue;
+            }
+
             const hasDetail = !!(champData && champData.schemaVersion >= 2 && champData.exerciseTop5);
             if (hasDetail) continue;
 
@@ -6068,7 +6104,7 @@ async function checkAndFinalizePassedWeeks() {
             }
 
             await finalizeWeeklyChampion({
-                weekStart: historyData.weekStart.toDate(),
+                weekStart: weekStartDate,
                 weekEnd: historyData.weekEnd.toDate(),
                 exercises: historyData.exercises
             }, {
@@ -6136,15 +6172,30 @@ async function loadChampionsHistory() {
             return;
         }
 
+        const now = new Date();
+        const visibleDocs = snapshot.docs.filter(doc => {
+            const data = doc.data();
+            const weekStartDate = data.weekStart && typeof data.weekStart.toDate === 'function'
+                ? data.weekStart.toDate()
+                : null;
+            return isChampionWeekDecided(weekStartDate, now);
+        });
+
+        if (visibleDocs.length === 0) {
+            championsList.innerHTML = '<p style="text-align:center; color:#999; padding:20px;">確定済みの歴代チャンプはまだありません</p>';
+            championsHistoryCache = [];
+            return;
+        }
+
         setupChampionDetailEvents();
 
-        championsHistoryCache = snapshot.docs.map(doc => ({
+        championsHistoryCache = visibleDocs.map(doc => ({
             id: doc.id,
             ...doc.data()
         }));
 
         let html = '';
-        snapshot.forEach(doc => {
+        visibleDocs.forEach(doc => {
             const data = doc.data();
             const exercisesEntries = Object.entries(data.exercises || {});
             const exercisesHtml = exercisesEntries.map(([exerciseKey, ex]) => {
