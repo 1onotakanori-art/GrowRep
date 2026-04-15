@@ -1779,6 +1779,15 @@ function createPostElement(postId, post, userName) {
     const safeValue = parseInt(post.value) || 0; // 数値として扱う
     const safePostId = escapeHtml(postId);
     
+    // バーバリアン種目判定
+    const isBarbarian = freeExercises[post.exerciseType] && freeExercises[post.exerciseType].barbarian;
+    let unitText = '';
+    if (isBarbarian) {
+        unitText = '秒';
+    } else if (currentMode !== 'free' && currentMode !== 'weekly') {
+        unitText = post.exerciseType === 'Lsit' ? '秒' : post.exerciseType === 'pullup' ? 'セット' : '回';
+    }
+    
     div.innerHTML = `
         <div class="post-header">
             <span class="post-user">${safeUserName}</span>
@@ -1786,7 +1795,7 @@ function createPostElement(postId, post, userName) {
         </div>
         <div class="post-content">
             <span class="post-exercise">${safeExerciseName}</span>
-            <span class="post-value">${safeValue} ${(currentMode === 'free' || currentMode === 'weekly') ? '' : (post.exerciseType === 'Lsit' ? '秒' : post.exerciseType === 'pullup' ? 'セット' : '回')}</span>
+            <span class="post-value">${safeValue} ${unitText}</span>
         </div>
         <div class="post-actions">
             <button class="like-btn ${isLiked ? 'liked' : ''}" onclick="toggleLike('${safePostId}')">
@@ -2097,12 +2106,24 @@ async function loadRanking(forceRefresh = false) {
             rankings[type] = {};
         }
 
-        if (!rankings[type][userId] || rankings[type][userId].value < value) {
-            rankings[type][userId] = {
-                value: value,
-                userId: userId,
-                email: post.userEmail
-            };
+        // バーバリアン方式の場合は最小値をベストとする
+        const isBarbarian = freeExercises[type] && freeExercises[type].barbarian;
+        if (isBarbarian) {
+            if (!rankings[type][userId] || rankings[type][userId].value > value) {
+                rankings[type][userId] = {
+                    value: value,
+                    userId: userId,
+                    email: post.userEmail
+                };
+            }
+        } else {
+            if (!rankings[type][userId] || rankings[type][userId].value < value) {
+                rankings[type][userId] = {
+                    value: value,
+                    userId: userId,
+                    email: post.userEmail
+                };
+            }
         }
     });
     
@@ -2197,6 +2218,9 @@ async function renderRankingCategory(container, type, currentExNames, rankings) 
         const categoryDiv = document.createElement('div');
         categoryDiv.className = 'ranking-category';
         
+        // バーバリアン方式か判定
+        const isBarbarian = freeExercises[type] && freeExercises[type].barbarian;
+        
         // 各ユーザーのユーザー名を取得
         const entries = [];
         for (const [userId, data] of Object.entries(rankings[type] || {})) {
@@ -2208,9 +2232,13 @@ async function renderRankingCategory(container, type, currentExNames, rankings) 
             });
         }
         
-        const sorted = entries.sort((a, b) => b.value - a.value);
+        // バーバリアンは昇順（短いタイムが上位）、通常は降順
+        const sorted = isBarbarian 
+            ? entries.sort((a, b) => a.value - b.value)
+            : entries.sort((a, b) => b.value - a.value);
         
-        let rankingHTML = `<h3>${currentExNames[type] || type}</h3>`;
+        const barbarianLabel = isBarbarian ? ' <span class="barbarian-badge-sm"><i class="fa-solid fa-stopwatch"></i></span>' : '';
+        let rankingHTML = `<h3>${currentExNames[type] || type}${barbarianLabel}</h3>`;
         
         if (sorted.length === 0) {
             rankingHTML += '<p style="color: #999;">まだ記録がありません</p>';
@@ -2225,12 +2253,20 @@ async function renderRankingCategory(container, type, currentExNames, rankings) 
                 }
                 previousValue = data.value;
                 
+                // 単位表示: バーバリアンは「秒」、それ以外はモード別
+                let unitText = '';
+                if (isBarbarian) {
+                    unitText = '秒';
+                } else if (currentMode !== 'free' && currentMode !== 'weekly') {
+                    unitText = type === 'Lsit' ? '秒' : type === 'pullup' ? 'セット' : '回';
+                }
+                
                 const positionClass = currentRank === 1 ? 'first' : currentRank === 2 ? 'second' : currentRank === 3 ? 'third' : '';
                 rankingHTML += `
                     <div class="ranking-item">
                         <div class="ranking-position ${positionClass}">${currentRank}</div>
                         <div class="ranking-user">${escapeHtml(data.userName)}</div>
-                        <div class="ranking-value">${data.value} ${currentMode === 'free' ? '' : (type === 'Lsit' ? '秒' : type === 'pullup' ? 'セット' : '回')}</div>
+                        <div class="ranking-value">${data.value} ${unitText}</div>
                     </div>
                 `;
             });
@@ -3287,7 +3323,7 @@ function renderIconGrid(containerId, hiddenInputId, selectedIcon = 'fa-dumbbell'
  * @param {string} rule - ルール説明
  * @param {string} icon - アイコンクラス名
  */
-async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = []) {
+async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = [], barbarian = false) {
     // キー名を生成（ユニークなID）
     const key = 'free_' + Date.now();
     freeExercises[key] = { 
@@ -3295,6 +3331,7 @@ async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = []) {
         rule: rule, 
         icon: icon,
         tags: tags,
+        barbarian: barbarian,
         createdBy: currentUser ? currentUser.uid : null,
         createdByName: currentUserData ? currentUserData.userName : (currentUser ? currentUser.email : 'Unknown'),
         createdAt: new Date().toISOString()
@@ -3408,6 +3445,7 @@ async function openRestoreExercisesModal() {
                         rule: '',
                         icon: 'fa-dumbbell',
                         tags: [],
+                        barbarian: false,
                         createdBy: currentUser ? currentUser.uid : null,
                         createdByName: '（復元）',
                         createdAt: new Date().toISOString()
@@ -3451,13 +3489,14 @@ async function openRestoreExercisesModal() {
  * @param {string} rule - 新しいルール説明
  * @param {string} icon - 新しいアイコン
  */
-async function editFreeExercise(key, name, rule, icon, tags = []) {
+async function editFreeExercise(key, name, rule, icon, tags = [], barbarian = false) {
     const existing = freeExercises[key] || {};
     freeExercises[key] = { 
         name, 
         rule, 
         icon,
         tags: tags,
+        barbarian: barbarian,
         // 既存の作成者情報を保持
         createdBy: existing.createdBy || null,
         createdByName: existing.createdByName || 'Unknown',
@@ -3478,6 +3517,7 @@ function openEditExerciseModal(key) {
     document.getElementById('edit-exercise-rule').value = ex.rule || '';
     renderIconGrid('edit-exercise-icon-grid', 'edit-exercise-icon', ex.icon || 'fa-dumbbell');
     renderTagSelector('edit-exercise-tags', ex.tags || []);
+    document.getElementById('edit-exercise-barbarian').checked = ex.barbarian || false;
     document.getElementById('edit-exercise-error').textContent = '';
     document.getElementById('edit-exercise-modal').style.display = 'block';
 }
@@ -3547,16 +3587,18 @@ function updateFreePostDropdownContent() {
  */
 function appendPostItem(container, key, ex) {
     const iconClass = ex.icon || 'fa-dumbbell';
+    const isBarbarian = ex.barbarian || false;
+    const barbarianBadge = isBarbarian ? '<span class="barbarian-badge"><i class="fa-solid fa-stopwatch"></i> バーバリアン</span>' : '';
     const tagsHtml = (ex.tags && ex.tags.length > 0) 
         ? `<div class="rule-tags">${ex.tags.map(t => `<span class="tag-chip display-only">${escapeHtml(t)}</span>`).join('')}</div>` 
         : '';
     const item = document.createElement('div');
-    item.className = 'rule-item post-exercise-entry';
+    item.className = 'rule-item post-exercise-entry' + (isBarbarian ? ' barbarian-exercise' : '');
     item.dataset.key = key;
     item.style.cursor = 'pointer';
     item.innerHTML = `
         <div class="post-exercise-entry-info">
-            <h3 class="post-entry-title"><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)}</h3>
+            <h3 class="post-entry-title"><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)} ${barbarianBadge}</h3>
             ${tagsHtml}
         </div>
     `;
@@ -3568,8 +3610,9 @@ function appendPostItem(container, key, ex) {
         
         const inlineForm = document.createElement('div');
         inlineForm.className = 'post-inline-form';
+        const placeholderText = isBarbarian ? '秒数を入力' : '回数または秒数';
         inlineForm.innerHTML = `
-            <input type="number" class="post-inline-value" placeholder="回数または秒数" min="0" required>
+            <input type="number" class="post-inline-value" placeholder="${placeholderText}" min="0" required>
             <button type="button" class="btn-primary post-inline-submit">投稿する</button>
         `;
         
@@ -3746,17 +3789,19 @@ function renderFreeRulesContent() {
  */
 function appendRuleItem(container, key, ex) {
     const iconClass = ex.icon || 'fa-dumbbell';
+    const isBarbarian = ex.barbarian || false;
+    const barbarianBadge = isBarbarian ? '<span class="barbarian-badge"><i class="fa-solid fa-stopwatch"></i> バーバリアン</span>' : '';
     const createdByInfo = ex.createdByName ? `<span class="created-by-info">追加: ${escapeHtml(ex.createdByName)}</span>` : '';
     const tagsHtml = (ex.tags && ex.tags.length > 0) 
         ? `<div class="rule-tags">${ex.tags.map(t => `<span class="tag-chip display-only">${escapeHtml(t)}</span>`).join('')}</div>` 
         : '';
     const item = document.createElement('div');
-    item.className = 'rule-item';
+    item.className = 'rule-item' + (isBarbarian ? ' barbarian-exercise' : '');
     item.dataset.key = key;
     item.style.cursor = 'pointer';
     item.innerHTML = `
         <div class="rule-info">
-            <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)} ${createdByInfo}</h3>
+            <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)} ${barbarianBadge} ${createdByInfo}</h3>
             <p class="rule-detail">${escapeHtml(ex.rule)}</p>
             ${tagsHtml}
         </div>
@@ -4447,11 +4492,13 @@ document.getElementById('add-free-exercise-btn').addEventListener('click', async
 
     try {
         const tags = getSelectedTags('free-exercise-tags');
-        await addFreeExercise(name, rule, icon, tags);
+        const barbarian = document.getElementById('free-exercise-barbarian').checked;
+        await addFreeExercise(name, rule, icon, tags, barbarian);
         nameInput.value = '';
         ruleInput.value = '';
         renderIconGrid('free-exercise-icon-grid', 'free-exercise-icon', 'fa-dumbbell');
         renderTagSelector('free-exercise-tags', []);
+        document.getElementById('free-exercise-barbarian').checked = false;
         errorEl.textContent = '';
         document.getElementById('free-exercise-modal').style.display = 'none';
         alert('種目を追加しました！');
@@ -4482,7 +4529,8 @@ document.getElementById('save-edit-exercise-btn').addEventListener('click', asyn
 
     try {
         const tags = getSelectedTags('edit-exercise-tags');
-        await editFreeExercise(key, name, rule, icon, tags);
+        const barbarian = document.getElementById('edit-exercise-barbarian').checked;
+        await editFreeExercise(key, name, rule, icon, tags, barbarian);
         errorEl.textContent = '';
         document.getElementById('edit-exercise-modal').style.display = 'none';
         alert('種目を更新しました！');
@@ -4555,26 +4603,54 @@ async function getAllUsersScoresFree(forceRefresh = false) {
                 };
             }
 
-            if (!userRecords[userId].exercises[exerciseType] ||
-                userRecords[userId].exercises[exerciseType] < value) {
-                userRecords[userId].exercises[exerciseType] = value;
+            // バーバリアン方式: 最小値をベストとする、通常: 最大値をベストとする
+            const isBarbarian = freeExercises[exerciseType] && freeExercises[exerciseType].barbarian;
+            if (isBarbarian) {
+                if (userRecords[userId].exercises[exerciseType] === undefined ||
+                    userRecords[userId].exercises[exerciseType] > value) {
+                    userRecords[userId].exercises[exerciseType] = value;
+                }
+            } else {
+                if (!userRecords[userId].exercises[exerciseType] ||
+                    userRecords[userId].exercises[exerciseType] < value) {
+                    userRecords[userId].exercises[exerciseType] = value;
+                }
             }
         });
 
-        // %計算（最高得点を100%とする）
+        // %計算（通常: 最高得点を100%、バーバリアン: 最短タイムを100%）
         exerciseKeys.forEach(exercise => {
-            let maxVal = 0;
-            Object.values(userRecords).forEach(user => {
-                const val = user.exercises[exercise] || 0;
-                if (val > maxVal) maxVal = val;
-            });
+            const isBarbarian = freeExercises[exercise] && freeExercises[exercise].barbarian;
 
-            Object.values(userRecords).forEach(user => {
-                const val = user.exercises[exercise] || 0;
-                const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
-                user.scores[exercise] = pct;
-                user.totalScore += pct;
-            });
+            if (isBarbarian) {
+                // バーバリアン方式: bestTime / selfTime * 100
+                let minVal = Infinity;
+                Object.values(userRecords).forEach(user => {
+                    const val = user.exercises[exercise];
+                    if (val !== undefined && val > 0 && val < minVal) minVal = val;
+                });
+
+                Object.values(userRecords).forEach(user => {
+                    const val = user.exercises[exercise];
+                    const pct = (val !== undefined && val > 0 && minVal !== Infinity) ? (minVal / val) * 100 : 0;
+                    user.scores[exercise] = pct;
+                    user.totalScore += pct;
+                });
+            } else {
+                // 通常方式: selfValue / maxValue * 100
+                let maxVal = 0;
+                Object.values(userRecords).forEach(user => {
+                    const val = user.exercises[exercise] || 0;
+                    if (val > maxVal) maxVal = val;
+                });
+
+                Object.values(userRecords).forEach(user => {
+                    const val = user.exercises[exercise] || 0;
+                    const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                    user.scores[exercise] = pct;
+                    user.totalScore += pct;
+                });
+            }
         });
 
         scoreCache[mode] = userRecords;
@@ -4738,10 +4814,14 @@ function displayFreeScores(usersScores, exerciseKeys) {
         let breakdownHtml = exerciseKeys.map(key => {
             const ex = freeExercises[key];
             if (!ex) return '';
+            const isBarbarian = ex.barbarian || false;
+            const valueDisplay = userData.exercises[key] || 0;
+            const unitText = isBarbarian ? '秒' : '';
+            const barbarianIcon = isBarbarian ? '<i class="fa-solid fa-stopwatch" style="color:#e74c3c;margin-left:2px;font-size:10px;"></i>' : '';
             return `
                 <div class="breakdown-item breakdown-deviation">
-                    <span class="breakdown-label">${escapeHtml(ex.name)}</span>
-                    <span class="breakdown-num">${userData.exercises[key] || 0}</span>
+                    <span class="breakdown-label">${escapeHtml(ex.name)}${barbarianIcon}</span>
+                    <span class="breakdown-num">${valueDisplay}${unitText}</span>
                     <span class="breakdown-score">-</span>
                     <span class="breakdown-pct">${(userData.scores[key] || 0).toFixed(1)}%</span>
                 </div>
@@ -5127,12 +5207,24 @@ async function loadWeeklyRanking(forceRefresh = false) {
             const { userId, exerciseType, value } = post;
             if (!rankings[exerciseType]) rankings[exerciseType] = {};
 
-            if (!rankings[exerciseType][userId] || rankings[exerciseType][userId].value < value) {
-                rankings[exerciseType][userId] = {
-                    value,
-                    userId,
-                    email: post.userEmail
-                };
+            // バーバリアン方式の場合は最小値をベストとする
+            const isBarbarian = freeExercises[exerciseType] && freeExercises[exerciseType].barbarian;
+            if (isBarbarian) {
+                if (!rankings[exerciseType][userId] || rankings[exerciseType][userId].value > value) {
+                    rankings[exerciseType][userId] = {
+                        value,
+                        userId,
+                        email: post.userEmail
+                    };
+                }
+            } else {
+                if (!rankings[exerciseType][userId] || rankings[exerciseType][userId].value < value) {
+                    rankings[exerciseType][userId] = {
+                        value,
+                        userId,
+                        email: post.userEmail
+                    };
+                }
             }
         });
 
@@ -5205,26 +5297,54 @@ async function getAllUsersScoresWeekly(forceRefresh = false) {
                 };
             }
 
-            if (!userRecords[userId].exercises[exerciseType] ||
-                userRecords[userId].exercises[exerciseType] < value) {
-                userRecords[userId].exercises[exerciseType] = value;
+            // バーバリアン方式: 最小値をベストとする、通常: 最大値をベストとする
+            const isBarbarian = freeExercises[exerciseType] && freeExercises[exerciseType].barbarian;
+            if (isBarbarian) {
+                if (userRecords[userId].exercises[exerciseType] === undefined ||
+                    userRecords[userId].exercises[exerciseType] > value) {
+                    userRecords[userId].exercises[exerciseType] = value;
+                }
+            } else {
+                if (!userRecords[userId].exercises[exerciseType] ||
+                    userRecords[userId].exercises[exerciseType] < value) {
+                    userRecords[userId].exercises[exerciseType] = value;
+                }
             }
         });
 
-        // %計算（最高得点を100%とする）
+        // %計算（通常: 最高得点を100%、バーバリアン: 最短タイムを100%）
         exerciseKeys.forEach(exercise => {
-            let maxVal = 0;
-            Object.values(userRecords).forEach(user => {
-                const val = user.exercises[exercise] || 0;
-                if (val > maxVal) maxVal = val;
-            });
+            const isBarbarian = freeExercises[exercise] && freeExercises[exercise].barbarian;
 
-            Object.values(userRecords).forEach(user => {
-                const val = user.exercises[exercise] || 0;
-                const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
-                user.scores[exercise] = pct;
-                user.totalScore += pct;
-            });
+            if (isBarbarian) {
+                // バーバリアン方式: bestTime / selfTime * 100
+                let minVal = Infinity;
+                Object.values(userRecords).forEach(user => {
+                    const val = user.exercises[exercise];
+                    if (val !== undefined && val > 0 && val < minVal) minVal = val;
+                });
+
+                Object.values(userRecords).forEach(user => {
+                    const val = user.exercises[exercise];
+                    const pct = (val !== undefined && val > 0 && minVal !== Infinity) ? (minVal / val) * 100 : 0;
+                    user.scores[exercise] = pct;
+                    user.totalScore += pct;
+                });
+            } else {
+                // 通常方式: selfValue / maxValue * 100
+                let maxVal = 0;
+                Object.values(userRecords).forEach(user => {
+                    const val = user.exercises[exercise] || 0;
+                    if (val > maxVal) maxVal = val;
+                });
+
+                Object.values(userRecords).forEach(user => {
+                    const val = user.exercises[exercise] || 0;
+                    const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                    user.scores[exercise] = pct;
+                    user.totalScore += pct;
+                });
+            }
         });
 
         scoreCache.weekly = userRecords;
@@ -5641,8 +5761,16 @@ async function buildWeeklyChampionPayload(weeklyData, options = {}) {
             };
         }
 
-        if (!userRecords[userId].exercises[exerciseType] || userRecords[userId].exercises[exerciseType] < numericValue) {
-            userRecords[userId].exercises[exerciseType] = numericValue;
+        // バーバリアン方式: 最小値をベストとする
+        const isBarbarian = freeExercises[exerciseType] && freeExercises[exerciseType].barbarian;
+        if (isBarbarian) {
+            if (!userRecords[userId].exercises[exerciseType] || userRecords[userId].exercises[exerciseType] > numericValue) {
+                userRecords[userId].exercises[exerciseType] = numericValue;
+            }
+        } else {
+            if (!userRecords[userId].exercises[exerciseType] || userRecords[userId].exercises[exerciseType] < numericValue) {
+                userRecords[userId].exercises[exerciseType] = numericValue;
+            }
         }
     });
 
@@ -5650,6 +5778,7 @@ async function buildWeeklyChampionPayload(weeklyData, options = {}) {
     const exerciseRecords = {};
 
     exerciseKeys.forEach(exerciseKey => {
+        const isBarbarian = freeExercises[exerciseKey] && freeExercises[exerciseKey].barbarian;
         const leaderboard = Object.entries(userRecords)
             .map(([userId, user]) => ({
                 userId,
@@ -5658,11 +5787,13 @@ async function buildWeeklyChampionPayload(weeklyData, options = {}) {
             }))
             .filter(item => item.value > 0)
             .sort((a, b) => {
-                if (Math.abs(b.value - a.value) > RANKING_TIE_EPSILON) return b.value - a.value;
+                // バーバリアン: 昇順（短いタイムが上位）、通常: 降順
+                const diff = isBarbarian ? (a.value - b.value) : (b.value - a.value);
+                if (Math.abs(diff) > RANKING_TIE_EPSILON) return diff;
                 return a.userId.localeCompare(b.userId);
             });
 
-        const maxValue = leaderboard.length > 0 ? leaderboard[0].value : 0;
+        const bestValue = leaderboard.length > 0 ? leaderboard[0].value : 0;
         const top5 = [];
         let previousValue = null;
         let currentRank = 0;
@@ -5675,7 +5806,10 @@ async function buildWeeklyChampionPayload(weeklyData, options = {}) {
             }
             previousValue = entry.value;
 
-            const percent = maxValue > 0 ? (entry.value / maxValue) * 100 : 0;
+            // バーバリアン: bestTime / selfTime * 100, 通常: selfValue / maxValue * 100
+            const percent = isBarbarian
+                ? (bestValue > 0 ? (bestValue / entry.value) * 100 : 0)
+                : (bestValue > 0 ? (entry.value / bestValue) * 100 : 0);
             top5.push({
                 rank: currentRank,
                 userId: entry.userId,
@@ -5688,7 +5822,8 @@ async function buildWeeklyChampionPayload(weeklyData, options = {}) {
 
         exerciseTop5[exerciseKey] = {
             name: freeExercises[exerciseKey] ? freeExercises[exerciseKey].name : exerciseKey,
-            maxValue,
+            maxValue: bestValue,
+            barbarian: isBarbarian || false,
             top5
         };
 
@@ -5698,12 +5833,18 @@ async function buildWeeklyChampionPayload(weeklyData, options = {}) {
         };
     });
 
-    // %計算（各種目1位を100%）
+    // %計算（各種目1位を100%、バーバリアンは反転）
     exerciseKeys.forEach(exerciseKey => {
-        const maxValue = exerciseTop5[exerciseKey] ? exerciseTop5[exerciseKey].maxValue : 0;
+        const isBarbarian = freeExercises[exerciseKey] && freeExercises[exerciseKey].barbarian;
+        const bestValue = exerciseTop5[exerciseKey] ? exerciseTop5[exerciseKey].maxValue : 0;
         Object.values(userRecords).forEach(user => {
             const userValue = Number(user.exercises[exerciseKey] || 0);
-            const percent = maxValue > 0 ? (userValue / maxValue) * 100 : 0;
+            let percent;
+            if (isBarbarian) {
+                percent = (userValue > 0 && bestValue > 0) ? (bestValue / userValue) * 100 : 0;
+            } else {
+                percent = bestValue > 0 ? (userValue / bestValue) * 100 : 0;
+            }
             user.scores[exerciseKey] = percent;
             user.totalScore += percent;
         });
@@ -5989,13 +6130,17 @@ function renderChampionDetailModal(champData, exerciseKey) {
         return;
     }
 
+    const isBarbarian = (exerciseDetail && exerciseDetail.barbarian) || 
+        (freeExercises[exerciseKey] && freeExercises[exerciseKey].barbarian) || false;
+    const unitText = isBarbarian ? '秒' : '回';
+
     const rowsHtml = exerciseDetail.top5.map(item => {
         const championBadge = item.champion ? '<span class="champ-mini-badge">種目別チャンプ</span>' : '';
         return `
             <div class="champ-detail-row">
                 <div class="champ-detail-rank">${item.rank}位</div>
                 <div class="champ-detail-user">${escapeHtml(item.userName)} ${championBadge}</div>
-                <div class="champ-detail-value">${Math.round(item.value)}回</div>
+                <div class="champ-detail-value">${Math.round(item.value)}${unitText}</div>
                 <div class="champ-detail-percent">${Math.round(item.percent)}%</div>
             </div>
         `;
@@ -6005,7 +6150,7 @@ function renderChampionDetailModal(champData, exerciseKey) {
         <div class="champ-detail-header-row">
             <div>順位</div>
             <div>ユーザー</div>
-            <div>回数</div>
+            <div>${unitText}</div>
             <div>点数(%)</div>
         </div>
         ${rowsHtml}
@@ -6200,7 +6345,10 @@ async function loadChampionsHistory() {
             const exercisesEntries = Object.entries(data.exercises || {});
             const exercisesHtml = exercisesEntries.map(([exerciseKey, ex]) => {
                 const value = Number(ex.value || 0);
-                return `<button class="champ-exercise-item js-champ-detail-trigger" data-doc-id="${escapeHtml(doc.id)}" data-exercise-key="${escapeHtml(exerciseKey)}"><i class="fa-solid fa-dumbbell"></i> ${escapeHtml(ex.name)}: <strong>${Math.round(value)}</strong></button>`;
+                const isBarbarian = freeExercises[exerciseKey] && freeExercises[exerciseKey].barbarian;
+                const iconClass = isBarbarian ? 'fa-stopwatch' : 'fa-dumbbell';
+                const unitText = isBarbarian ? '秒' : '';
+                return `<button class="champ-exercise-item js-champ-detail-trigger" data-doc-id="${escapeHtml(doc.id)}" data-exercise-key="${escapeHtml(exerciseKey)}"><i class="fa-solid ${iconClass}"></i> ${escapeHtml(ex.name)}: <strong>${Math.round(value)}${unitText}</strong></button>`;
             }).join('');
 
             html += `
