@@ -4951,21 +4951,39 @@ function isWeekdayJST(date) {
 }
 
 /**
+ * 週間チャレンジの選出設定を取得
+ * @returns {Promise<Object>} { weightExponent: number }
+ */
+async function getWeeklyConfig() {
+    try {
+        const doc = await db.collection('settings_free').doc('weekly_config').get();
+        if (doc.exists) {
+            return doc.data();
+        }
+    } catch (e) {
+        console.warn('[週間チャレンジ] weekly_config取得失敗、デフォルト使用:', e);
+    }
+    return { weightExponent: 2 };
+}
+
+/**
  * 加重ランダムで count 個の種目を選出（偏りを防ぐ）
+ * 重み = 1 / (過去選出回数 + 1) ^ weightExponent
  * @param {string[]} allKeys - 全種目キー
  * @param {Object} history - { [key]: 選出回数 }
  * @param {number} count
+ * @param {number} weightExponent - 重み指数（大きいほど再選出されにくい）
  * @returns {string[]}
  */
-function selectWeeklyExercises(allKeys, history, count = 3) {
+function selectWeeklyExercises(allKeys, history, count = 3, weightExponent = 2) {
     if (allKeys.length <= count) return [...allKeys];
 
     const remaining = [...allKeys];
     const selected = [];
 
     for (let i = 0; i < count; i++) {
-        // 重み = 1 / (過去選出回数 + 1)
-        const weights = remaining.map(key => 1 / ((history[key] || 0) + 1));
+        // 重み = 1 / (過去選出回数 + 1) ^ weightExponent
+        const weights = remaining.map(key => 1 / Math.pow((history[key] || 0) + 1, weightExponent));
         const total = weights.reduce((s, w) => s + w, 0);
 
         let rand = Math.random() * total;
@@ -5041,9 +5059,13 @@ async function getOrUpdateWeeklyChallenge() {
         const allKeys = Object.keys(freeExercises);
         const existingHistory = (doc.exists && doc.data().selectionHistory) ? doc.data().selectionHistory : {};
 
+        // 週間チャレンジ設定（重み指数）を取得
+        const weeklyConfig = await getWeeklyConfig();
+        const weightExponent = weeklyConfig.weightExponent || 2;
+
         let selectedExercises = [];
         if (allKeys.length > 0) {
-            selectedExercises = selectWeeklyExercises(allKeys, existingHistory);
+            selectedExercises = selectWeeklyExercises(allKeys, existingHistory, 3, weightExponent);
         }
 
         // 選出履歴を更新

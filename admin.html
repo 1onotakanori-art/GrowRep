@@ -3,1168 +3,625 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GrowRep Admin - データ一覧</title>
+    <title>GrowRep Admin</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        /* ====================================================================
-           Admin CSS - 自己完結型
-           ==================================================================== */
-        :root {
-            --primary: #667eea;
-            --primary-dark: #5568d3;
-            --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --card-bg: #fff;
-            --card-shadow: 0 2px 12px rgba(0,0,0,0.08);
-            --text: #333;
-            --text-muted: #888;
-            --border: #e0e0e0;
-            --success: #27ae60;
-            --danger: #e74c3c;
-            --warning: #f39c12;
-            --info: #3498db;
-        }
-
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        html {
-            background: var(--bg-gradient);
-            min-height: 100vh;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-            color: var(--text);
-            min-height: 100vh;
-            padding: 10px;
-        }
-
-        /* ---- ログイン画面 ---- */
-        .login-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-        }
-
-        .login-box {
-            background: white;
-            border-radius: 12px;
-            padding: 30px;
-            max-width: 400px;
-            width: 100%;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            text-align: center;
-        }
-
-        .login-box h1 {
-            font-size: 1.8em;
-            margin-bottom: 4px;
-            color: var(--primary);
-        }
-
-        .login-box .subtitle {
-            color: var(--text-muted);
-            margin-bottom: 20px;
-            font-size: 14px;
-        }
-
-        .login-box input {
-            width: 100%;
-            padding: 10px 12px;
-            margin-bottom: 12px;
-            border: 2px solid var(--border);
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-
-        .login-box input:focus {
-            outline: none;
-            border-color: var(--primary);
-        }
-
-        .btn-primary {
-            width: 100%;
-            padding: 10px 16px;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: bold;
-            cursor: pointer;
-            background: var(--primary);
-            color: white;
-            transition: all 0.3s;
-        }
-
-        .btn-primary:hover {
-            background: var(--primary-dark);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(102,126,234,0.4);
-        }
-
-        .error-message {
-            color: var(--danger);
-            font-size: 13px;
-            margin-top: 10px;
-            min-height: 0;
-        }
-
-        .error-message:empty { display: none; }
-
-        /* ---- メインコンテナ ---- */
-        .admin-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: none;
-        }
-
-        .admin-header {
-            background: white;
-            border-radius: 12px;
-            padding: 16px 24px;
-            margin-bottom: 16px;
-            box-shadow: var(--card-shadow);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-
-        .admin-header h1 {
-            font-size: 1.4em;
-            color: var(--primary);
-        }
-
-        .admin-header h1 i { margin-right: 6px; }
-
-        .header-actions {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .header-actions button {
-            padding: 8px 14px;
-            border: none;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-refresh {
-            background: var(--info);
-            color: white;
-        }
-
-        .btn-refresh:hover { background: #2980b9; }
-
-        .btn-logout {
-            background: var(--danger);
-            color: white;
-        }
-
-        .btn-logout:hover { background: #c0392b; }
-
-        .loading-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(255,255,255,0.85);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            font-size: 1.2em;
-            color: var(--primary);
-        }
-
-        .loading-overlay.hidden { display: none; }
-
-        /* ---- セクションカード ---- */
-        .section-card {
-            background: var(--card-bg);
-            border-radius: 12px;
-            margin-bottom: 16px;
-            box-shadow: var(--card-shadow);
-            overflow: hidden;
-        }
-
-        .section-header {
-            background: linear-gradient(135deg, var(--primary) 0%, #764ba2 100%);
-            color: white;
-            padding: 14px 20px;
-            font-size: 1em;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .section-header.green {
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-            color: #1a5c2e;
-        }
-
-        .section-header.orange {
-            background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
-            color: #6b3a00;
-        }
-
-        .section-header.pink {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: #5c0a2e;
-        }
-
-        .section-header .toggle-icon {
-            margin-left: auto;
-            transition: transform 0.3s;
-        }
-
-        .section-header.collapsed .toggle-icon {
-            transform: rotate(-90deg);
-        }
-
-        .section-body {
-            padding: 16px 20px;
-            overflow-x: auto;
-        }
-
-        .section-body.collapsed {
-            display: none;
-        }
-
-        /* ---- テーブル ---- */
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-
-        .data-table th {
-            background: #f8f9ff;
-            padding: 8px 12px;
-            text-align: left;
-            border-bottom: 2px solid var(--primary);
-            font-weight: 600;
-            white-space: nowrap;
-            position: sticky;
-            top: 0;
-        }
-
-        .data-table td {
-            padding: 7px 12px;
-            border-bottom: 1px solid #f0f0f0;
-            vertical-align: top;
-        }
-
-        .data-table tr:hover td {
-            background: #f8f9ff;
-        }
-
-        .data-table .mono {
-            font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
-            font-size: 12px;
-            color: #555;
-        }
-
-        /* ---- タグバッジ ---- */
-        .tag-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            margin: 1px 2px;
-            background: #eef2ff;
-            color: var(--primary);
-        }
-
-        .barbarian-badge {
-            background: #fff3e0;
-            color: #e65100;
-        }
-
-        .selected-badge {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-
-        .weight-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 700;
-        }
-
-        .weight-high {
-            background: #c8e6c9;
-            color: #1b5e20;
-        }
-
-        .weight-mid {
-            background: #fff9c4;
-            color: #f57f17;
-        }
-
-        .weight-low {
-            background: #ffcdd2;
-            color: #b71c1c;
-        }
-
-        /* ---- 統計サマリー ---- */
-        .stats-row {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-bottom: 16px;
-        }
-
-        .stat-chip {
-            background: #f8f9ff;
-            border: 1px solid #e0e4ff;
-            border-radius: 10px;
-            padding: 10px 16px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-width: 100px;
-        }
-
-        .stat-chip .stat-value {
-            font-size: 1.6em;
-            font-weight: 800;
-            color: var(--primary);
-        }
-
-        .stat-chip .stat-label {
-            font-size: 11px;
-            color: var(--text-muted);
-            margin-top: 2px;
-        }
-
-        /* ---- 週間チャレンジ情報パネル ---- */
-        .challenge-info-panel {
-            background: linear-gradient(135deg, #fff8e1, #fff3e0);
-            border: 1px solid #ffe0b2;
-            border-radius: 10px;
-            padding: 14px 18px;
-            margin-bottom: 14px;
-        }
-
-        .challenge-info-panel h4 {
-            color: #e65100;
-            margin-bottom: 8px;
-        }
-
-        .challenge-info-panel .info-grid {
-            display: grid;
-            grid-template-columns: auto 1fr;
-            gap: 4px 12px;
-            font-size: 13px;
-        }
-
-        .challenge-info-panel .info-label {
-            font-weight: 600;
-            color: #bf360c;
-        }
-
-        /* ---- 重み付けビジュアル ---- */
-        .weight-bar-container {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .weight-bar {
-            height: 14px;
-            border-radius: 7px;
-            background: var(--primary);
-            opacity: 0.8;
-            min-width: 4px;
-            transition: width 0.3s;
-        }
-
-        /* ---- カウンターリスト ---- */
-        .counter-inline {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-        }
-
-        .counter-chip {
-            font-size: 12px;
-            background: #f5f5f5;
-            border-radius: 6px;
-            padding: 2px 8px;
-        }
-
-        /* ---- ユーザーリスト ---- */
-        .user-list-compact {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-            gap: 10px;
-        }
-
-        .user-card-mini {
-            background: #f8f9ff;
-            border: 1px solid #e8ecff;
-            border-radius: 8px;
-            padding: 10px 14px;
-            font-size: 13px;
-        }
-
-        .user-card-mini .user-name {
-            font-weight: 700;
-            color: var(--primary);
-        }
-
-        .user-card-mini .user-email {
-            color: var(--text-muted);
-            font-size: 12px;
-        }
-
-        .user-card-mini .user-meta {
-            color: var(--text-muted);
-            font-size: 11px;
-            margin-top: 4px;
-        }
-
-        /* ---- レスポンシブ ---- */
-        @media (max-width: 768px) {
-            .admin-header {
-                padding: 12px 16px;
-            }
-            .section-body {
-                padding: 12px;
-            }
-            .stats-row {
-                gap: 8px;
-            }
-            .stat-chip {
-                min-width: 80px;
-                padding: 8px 12px;
-            }
-        }
-
-        /* ---- 倍率一覧テーブル ---- */
-        .multiplier-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: 8px;
-        }
-
-        .multiplier-item {
-            background: #f8f9ff;
-            border: 1px solid #e8ecff;
-            border-radius: 8px;
-            padding: 10px 14px;
-            text-align: center;
-        }
-
-        .multiplier-item .m-name {
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-
-        .multiplier-item .m-value {
-            font-size: 1.4em;
-            font-weight: 800;
-            color: var(--primary);
-        }
-
-        /* 歴代チャンプカード */
-        .champ-card {
-            background: linear-gradient(135deg, #fffde7, #fff8e1);
-            border: 1px solid #ffe082;
-            border-radius: 10px;
-            padding: 12px 16px;
-            margin-bottom: 10px;
-        }
-
-        .champ-card h4 {
-            color: #f57f17;
-            margin-bottom: 6px;
-        }
-
-        .champ-card .champ-detail {
-            font-size: 13px;
-            color: #555;
-        }
-
-        .no-data {
-            color: var(--text-muted);
-            font-style: italic;
-            padding: 20px;
-            text-align: center;
-        }
-
-        /* スクロール可能テーブル */
-        .table-scroll {
-            max-height: 500px;
-            overflow-y: auto;
-        }
+:root {
+    --pri: #667eea; --pri-d: #5568d3; --bg: linear-gradient(135deg,#667eea,#764ba2);
+    --card: #fff; --sh: 0 1px 8px rgba(0,0,0,.07); --tx: #333; --tx2: #888; --bdr: #e8e8e8;
+    --ok: #27ae60; --ng: #e74c3c; --warn: #f39c12; --info: #3498db;
+    --r: 10px; --fs: 12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:var(--bg);min-height:100vh}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;color:var(--tx);font-size:var(--fs);padding:6px;min-height:100vh}
+
+/* ---- Login ---- */
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh}
+.login-box{background:#fff;border-radius:var(--r);padding:24px;max-width:340px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.18);text-align:center}
+.login-box h1{font-size:1.5em;color:var(--pri);margin-bottom:2px}
+.login-box .sub{color:var(--tx2);font-size:12px;margin-bottom:16px}
+.login-box input{width:100%;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--bdr);border-radius:7px;font-size:13px}
+.login-box input:focus{outline:none;border-color:var(--pri)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:8px 14px;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:.2s}
+.btn-pri{background:var(--pri);color:#fff;width:100%}.btn-pri:active{background:var(--pri-d)}
+.btn-sm{padding:5px 10px;font-size:11px;border-radius:6px}
+.btn-info{background:var(--info);color:#fff}.btn-info:active{background:#2980b9}
+.btn-ng{background:var(--ng);color:#fff}.btn-ng:active{background:#c0392b}
+.btn-warn{background:var(--warn);color:#fff}.btn-warn:active{background:#e67e22}
+.btn-ok{background:var(--ok);color:#fff}.btn-ok:active{background:#219a52}
+.btn-ghost{background:transparent;color:var(--pri);border:1.5px solid var(--pri)}.btn-ghost:active{background:#eef2ff}
+.err{color:var(--ng);font-size:11px;margin-top:6px}.err:empty{display:none}
+
+/* ---- Header ---- */
+.hdr{background:#fff;border-radius:var(--r);padding:10px 14px;margin-bottom:8px;box-shadow:var(--sh);display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.hdr h1{font-size:1.1em;color:var(--pri);white-space:nowrap}
+.hdr-acts{display:flex;gap:5px;align-items:center}
+.hdr-user{font-size:10px;color:var(--tx2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- Loading ---- */
+.loading{position:fixed;inset:0;background:rgba(255,255,255,.85);display:flex;align-items:center;justify-content:center;z-index:999;font-size:13px;color:var(--pri)}
+.loading.hide{display:none}
+
+/* ---- Accordion Card ---- */
+.card{background:var(--card);border-radius:var(--r);margin-bottom:8px;box-shadow:var(--sh);overflow:hidden}
+.card-h{padding:10px 14px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.card-h .ico{font-size:13px}.card-h .arr{margin-left:auto;transition:.2s;font-size:10px}
+.card-h.shut .arr{transform:rotate(-90deg)}
+.card-b{padding:10px 14px}.card-b.shut{display:none}
+
+/* Color themes */
+.th-green{background:linear-gradient(135deg,#43e97b,#38f9d7);color:#1a5c2e}
+.th-orange{background:linear-gradient(135deg,#f7971e,#ffd200);color:#6b3a00}
+.th-pink{background:linear-gradient(135deg,#f093fb,#f5576c);color:#5c0a2e}
+.th-purple{background:linear-gradient(135deg,var(--pri),#764ba2);color:#fff}
+
+/* ---- Stats chips ---- */
+.stats{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.chip{background:#f5f7ff;border:1px solid #e0e4ff;border-radius:8px;padding:6px 10px;text-align:center;min-width:58px}
+.chip .v{font-size:1.3em;font-weight:800;color:var(--pri);line-height:1.1}
+.chip .l{font-size:9px;color:var(--tx2)}
+
+/* ---- Exercise card list ---- */
+.ex-card{background:#f8f9ff;border:1px solid #eef1ff;border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;gap:8px;align-items:flex-start}
+.ex-card .ex-icon{font-size:16px;color:var(--pri);min-width:20px;text-align:center;padding-top:1px}
+.ex-card .ex-body{flex:1;min-width:0}
+.ex-card .ex-name{font-weight:700;font-size:12px}
+.ex-card .ex-meta{font-size:10px;color:var(--tx2);margin-top:2px;word-break:break-word}
+.ex-card .ex-tags{margin-top:3px;display:flex;flex-wrap:wrap;gap:3px}
+
+/* ---- Badges ---- */
+.badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600}
+.badge-tag{background:#eef2ff;color:var(--pri)}
+.badge-barb{background:#fff3e0;color:#e65100}
+.badge-sel{background:#e8f5e9;color:#2e7d32}
+.badge-star{background:#fff8e1;color:#f57f17}
+
+/* ---- Weekly challenge exercise cards ---- */
+.wk-ex{background:linear-gradient(135deg,#fff8e1,#fff3e0);border:1px solid #ffe0b2;border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.wk-ex .wk-icon{font-size:18px;color:#f57f17}
+.wk-ex .wk-body{flex:1;min-width:0}
+.wk-ex .wk-name{font-weight:700;font-size:12px}
+.wk-ex .wk-sub{font-size:10px;color:#888;margin-top:1px}
+.wk-ex .wk-acts{display:flex;gap:4px}
+
+/* ---- Weight list ---- */
+.wt-item{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f3f3f3}
+.wt-item:last-child{border-bottom:none}
+.wt-rank{font-size:10px;color:var(--tx2);min-width:16px;text-align:right}
+.wt-name{flex:1;font-size:11px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wt-count{font-size:10px;color:var(--tx2);min-width:28px;text-align:center}
+.wt-bar-wrap{width:60px;height:10px;background:#f0f0f0;border-radius:5px;overflow:hidden;flex-shrink:0}
+.wt-bar{height:100%;border-radius:5px;transition:.3s}
+.wt-pct{font-size:10px;font-weight:700;min-width:34px;text-align:right}
+
+/* ---- Info panel ---- */
+.info-panel{background:#f8f9ff;border:1px solid #e0e4ff;border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:11px}
+.info-panel .ip-row{display:flex;justify-content:space-between;padding:2px 0}
+.info-panel .ip-label{color:var(--tx2);font-weight:600}
+.info-panel .ip-val{font-weight:700;color:var(--tx)}
+
+/* ---- Config controls ---- */
+.cfg-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.cfg-row label{font-size:11px;font-weight:600;color:var(--tx);white-space:nowrap}
+.cfg-row input[type=number],.cfg-row select{padding:6px 8px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px;width:70px}
+.cfg-hint{font-size:10px;color:var(--tx2);margin-bottom:8px;line-height:1.4}
+.cfg-result{font-size:11px;padding:8px 10px;background:#e8f5e9;border-radius:7px;color:var(--ok);margin-top:6px}
+.cfg-result:empty{display:none}
+.cfg-result.cfg-err{background:#fde8e8;color:var(--ng)}
+
+/* ---- Multiplier grid ---- */
+.mul-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:5px;margin-bottom:10px}
+.mul-item{background:#f8f9ff;border:1px solid #e8ecff;border-radius:7px;padding:6px 8px;text-align:center}
+.mul-item .mn{font-size:9px;color:var(--tx2)}
+.mul-item .mv{font-size:1.2em;font-weight:800;color:var(--pri)}
+
+/* ---- Champ cards ---- */
+.champ-card{background:linear-gradient(135deg,#fffde7,#fff8e1);border:1px solid #ffe082;border-radius:8px;padding:8px 10px;margin-bottom:6px}
+.champ-card .cc-week{font-size:10px;color:#bf8f00;font-weight:600}
+.champ-card .cc-name{font-size:12px;font-weight:700;color:#f57f17}
+.champ-card .cc-score{font-size:11px;color:var(--tx)}
+.champ-card .cc-ex{margin-top:3px;display:flex;flex-wrap:wrap;gap:3px}
+
+/* ---- History list ---- */
+.hist-item{padding:6px 0;border-bottom:1px solid #f3f3f3;font-size:11px}
+.hist-item:last-child{border-bottom:none}
+.hist-id{font-size:10px;color:var(--tx2);font-family:monospace}
+.hist-date{color:var(--tx2)}
+.hist-ex{margin-top:2px;display:flex;flex-wrap:wrap;gap:3px}
+
+/* ---- User grid ---- */
+.usr-grid{display:grid;grid-template-columns:1fr;gap:5px}
+.usr-card{background:#f8f9ff;border:1px solid #e8ecff;border-radius:7px;padding:7px 10px}
+.usr-card .un{font-weight:700;color:var(--pri);font-size:11px}
+.usr-card .ue{font-size:10px;color:var(--tx2)}
+
+/* ---- Confirm overlay ---- */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.overlay.hide{display:none}
+.overlay-box{background:#fff;border-radius:var(--r);padding:18px;max-width:340px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.15)}
+.overlay-box h3{font-size:14px;margin-bottom:8px;color:var(--tx)}
+.overlay-box p{font-size:12px;color:var(--tx2);margin-bottom:12px}
+.overlay-btns{display:flex;gap:8px;justify-content:flex-end}
+
+/* ---- Toast ---- */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;z-index:2000;opacity:0;transition:.3s;pointer-events:none}
+.toast.show{opacity:1}
+
+/* ---- Responsive ---- */
+@media(min-width:600px){
+    body{padding:10px;max-width:600px;margin:0 auto}
+    .usr-grid{grid-template-columns:1fr 1fr}
+}
+@media(min-width:900px){
+    body{max-width:800px;font-size:13px}
+}
     </style>
 </head>
 <body>
-    <!-- ============================================================ -->
-    <!-- ログイン画面 -->
-    <!-- ============================================================ -->
-    <div id="login-container" class="login-container" style="display: none;">
-        <div class="login-box">
-            <h1><i class="fa-solid fa-shield-halved"></i> GrowRep</h1>
-            <p class="subtitle">管理者データビューア</p>
-            <div id="login-form">
-                <input type="email" id="email" placeholder="メールアドレス" required>
-                <input type="password" id="password" placeholder="パスワード" required>
-                <button id="login-btn" class="btn-primary"><i class="fa-solid fa-right-to-bracket"></i> ログイン</button>
-                <p id="auth-error" class="error-message"></p>
-            </div>
+
+<!-- ========== Login ========== -->
+<div id="login-wrap" class="login-wrap" style="display:none">
+    <div class="login-box">
+        <h1><i class="fa-solid fa-shield-halved"></i> GrowRep</h1>
+        <p class="sub">管理者ダッシュボード</p>
+        <input type="email" id="email" placeholder="メールアドレス">
+        <input type="password" id="password" placeholder="パスワード">
+        <button id="login-btn" class="btn btn-pri"><i class="fa-solid fa-right-to-bracket"></i> ログイン</button>
+        <p id="auth-error" class="err"></p>
+    </div>
+</div>
+
+<!-- ========== Main ========== -->
+<div id="app" style="display:none">
+
+<!-- Header -->
+<div class="hdr">
+    <h1><i class="fa-solid fa-shield-halved"></i> Admin</h1>
+    <div class="hdr-acts">
+        <span id="user-label" class="hdr-user"></span>
+        <button id="refresh-btn" class="btn btn-sm btn-info"><i class="fa-solid fa-rotate"></i></button>
+        <button id="logout-btn" class="btn btn-sm btn-ng"><i class="fa-solid fa-right-from-bracket"></i></button>
+    </div>
+</div>
+
+<div id="loading" class="loading hide"><i class="fa-solid fa-spinner fa-spin"></i> 読込中...</div>
+
+<!-- ===== 1. Weekly Challenge (top priority) ===== -->
+<div class="card">
+    <div class="card-h th-orange" onclick="tog(this)">
+        <i class="ico fa-solid fa-bolt"></i> 今週のチャレンジ
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b" id="sec-weekly"></div>
+</div>
+
+<!-- ===== 2. Weight Config ===== -->
+<div class="card">
+    <div class="card-h th-orange" onclick="tog(this)">
+        <i class="ico fa-solid fa-scale-balanced"></i> 選出確率 / 重み設定
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b" id="sec-weight"></div>
+</div>
+
+<!-- ===== 3. Free exercises ===== -->
+<div class="card">
+    <div class="card-h th-green shut" onclick="tog(this)">
+        <i class="ico fa-solid fa-dumbbell"></i> フリーモード種目
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b shut" id="sec-free"></div>
+</div>
+
+<!-- ===== 4. Multipliers ===== -->
+<div class="card">
+    <div class="card-h th-purple shut" onclick="tog(this)">
+        <i class="ico fa-solid fa-sliders"></i> 倍率設定
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b shut" id="sec-mul"></div>
+</div>
+
+<!-- ===== 5. Champions ===== -->
+<div class="card">
+    <div class="card-h th-orange shut" onclick="tog(this)">
+        <i class="ico fa-solid fa-crown"></i> 歴代チャンピオン
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b shut" id="sec-champ"></div>
+</div>
+
+<!-- ===== 6. Challenge history ===== -->
+<div class="card">
+    <div class="card-h th-orange shut" onclick="tog(this)">
+        <i class="ico fa-solid fa-clock-rotate-left"></i> チャレンジ履歴
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b shut" id="sec-hist"></div>
+</div>
+
+<!-- ===== 7. Users ===== -->
+<div class="card">
+    <div class="card-h th-pink shut" onclick="tog(this)">
+        <i class="ico fa-solid fa-users"></i> ユーザー
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b shut" id="sec-users"></div>
+</div>
+
+</div><!-- /app -->
+
+<!-- Confirm overlay -->
+<div id="confirm-overlay" class="overlay hide">
+    <div class="overlay-box">
+        <h3 id="confirm-title"></h3>
+        <p id="confirm-msg"></p>
+        <div class="overlay-btns">
+            <button class="btn btn-sm btn-ghost" onclick="closeConfirm()">キャンセル</button>
+            <button class="btn btn-sm btn-warn" id="confirm-ok">実行</button>
         </div>
     </div>
+</div>
 
-    <!-- ============================================================ -->
-    <!-- メインコンテナ -->
-    <!-- ============================================================ -->
-    <div id="admin-container" class="admin-container">
-        <!-- ヘッダー -->
-        <div class="admin-header">
-            <h1><i class="fa-solid fa-shield-halved"></i> GrowRep Admin</h1>
-            <div class="header-actions">
-                <span id="user-label" style="font-size:13px;color:#666;"></span>
-                <button id="refresh-btn" class="btn-refresh"><i class="fa-solid fa-rotate"></i> 再取得</button>
-                <button id="logout-btn" class="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> ログアウト</button>
-            </div>
-        </div>
+<!-- Toast -->
+<div id="toast" class="toast"></div>
 
-        <!-- ローディング -->
-        <div id="loading" class="loading-overlay hidden">
-            <div><i class="fa-solid fa-spinner fa-spin"></i> データ取得中...</div>
-        </div>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
 
-        <!-- =========================================== -->
-        <!-- 1. フリーモード種目一覧 -->
-        <!-- =========================================== -->
-        <div class="section-card">
-            <div class="section-header green" onclick="toggleSection(this)">
-                <i class="fa-solid fa-dumbbell"></i> フリーモード種目一覧
-                <i class="fa-solid fa-chevron-down toggle-icon"></i>
-            </div>
-            <div class="section-body">
-                <div id="free-stats" class="stats-row"></div>
-                <div class="table-scroll">
-                    <table class="data-table" id="free-exercises-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>アイコン</th>
-                                <th>種目名</th>
-                                <th>キー</th>
-                                <th>ルール</th>
-                                <th>タグ</th>
-                                <th>バーバリアン</th>
-                                <th>作成者</th>
-                                <th>作成日時</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+<script>
+// ====================================================================
+// GLOBALS
+// ====================================================================
+const $ = id => document.getElementById(id);
+let _exercises = {}, _wc = null, _wcConfig = {}, _users = {};
 
-        <!-- =========================================== -->
-        <!-- 2. 週間チャレンジ設定 -->
-        <!-- =========================================== -->
-        <div class="section-card">
-            <div class="section-header orange" onclick="toggleSection(this)">
-                <i class="fa-solid fa-bolt"></i> 週間チャレンジ（現在の設定）
-                <i class="fa-solid fa-chevron-down toggle-icon"></i>
-            </div>
-            <div class="section-body">
-                <div id="weekly-challenge-info"></div>
-                <div id="weekly-current-exercises"></div>
-            </div>
-        </div>
+// ====================================================================
+// UTILS
+// ====================================================================
+function esc(s) { if (typeof s !== 'string') return String(s ?? ''); return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function fmtTs(ts) { if (!ts) return '—'; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+function fmtDate(ts) { if (!ts) return '—'; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', weekday: 'short' }); }
+function tog(el) { el.classList.toggle('shut'); el.nextElementSibling.classList.toggle('shut'); }
 
-        <!-- =========================================== -->
-        <!-- 3. 種目選出確率 重み付けパラメータ -->
-        <!-- =========================================== -->
-        <div class="section-card">
-            <div class="section-header orange" onclick="toggleSection(this)">
-                <i class="fa-solid fa-scale-balanced"></i> 週間チャレンジ 選出確率テーブル（重み付け）
-                <i class="fa-solid fa-chevron-down toggle-icon"></i>
-            </div>
-            <div class="section-body">
-                <p style="font-size:13px;color:#666;margin-bottom:12px;">
-                    <i class="fa-solid fa-circle-info"></i>
-                    重み = <code>1 / (累積選出回数 + 1)</code>　→　選出確率 = 重み / 全重みの合計。
-                    選ばれた回数が少ないほど次に選ばれやすくなります。
-                </p>
-                <div class="table-scroll">
-                    <table class="data-table" id="weight-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>種目名</th>
-                                <th>キー</th>
-                                <th>累積選出回数</th>
-                                <th>重み (1/(n+1))</th>
-                                <th>選出確率</th>
-                                <th>確率バー</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+// Toast
+function toast(msg, dur = 2000) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), dur); }
 
-        <!-- =========================================== -->
-        <!-- 4. 倍率 (multipliers) 設定 -->
-        <!-- =========================================== -->
-        <div class="section-card">
-            <div class="section-header" onclick="toggleSection(this)">
-                <i class="fa-solid fa-sliders"></i> 倍率設定（全モード）
-                <i class="fa-solid fa-chevron-down toggle-icon"></i>
-            </div>
-            <div class="section-body" id="multipliers-body">
-            </div>
-        </div>
+// Confirm dialog
+let _confirmCb = null;
+function showConfirm(title, msg, cb) { $('confirm-title').textContent = title; $('confirm-msg').textContent = msg; _confirmCb = cb; $('confirm-overlay').classList.remove('hide'); }
+function closeConfirm() { $('confirm-overlay').classList.add('hide'); _confirmCb = null; }
+$('confirm-ok').addEventListener('click', () => { if (_confirmCb) _confirmCb(); closeConfirm(); });
 
-        <!-- =========================================== -->
-        <!-- 5. 歴代チャンピオン -->
-        <!-- =========================================== -->
-        <div class="section-card">
-            <div class="section-header orange" onclick="toggleSection(this)">
-                <i class="fa-solid fa-crown"></i> 歴代チャンピオン
-                <i class="fa-solid fa-chevron-down toggle-icon"></i>
-            </div>
-            <div class="section-body">
-                <div id="champions-list"></div>
-            </div>
-        </div>
-
-        <!-- =========================================== -->
-        <!-- 6. 週間チャレンジ履歴 -->
-        <!-- =========================================== -->
-        <div class="section-card">
-            <div class="section-header orange" onclick="toggleSection(this)">
-                <i class="fa-solid fa-clock-rotate-left"></i> 週間チャレンジ履歴
-                <i class="fa-solid fa-chevron-down toggle-icon"></i>
-            </div>
-            <div class="section-body">
-                <div class="table-scroll">
-                    <table class="data-table" id="history-table">
-                        <thead>
-                            <tr>
-                                <th>週ID</th>
-                                <th>開始日</th>
-                                <th>終了日</th>
-                                <th>選出種目</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- =========================================== -->
-        <!-- 7. ユーザー一覧 -->
-        <!-- =========================================== -->
-        <div class="section-card">
-            <div class="section-header pink" onclick="toggleSection(this)">
-                <i class="fa-solid fa-users"></i> 登録ユーザー一覧
-                <i class="fa-solid fa-chevron-down toggle-icon"></i>
-            </div>
-            <div class="section-body">
-                <div id="users-stats" class="stats-row"></div>
-                <div id="users-list" class="user-list-compact"></div>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- ============================================================ -->
-    <!-- Firebase SDK -->
-    <!-- ============================================================ -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <script src="firebase-config.js"></script>
-
-    <script>
-    // ====================================================================
-    // Admin Script
-    // ====================================================================
-
-    // DOM
-    const loginContainer = document.getElementById('login-container');
-    const adminContainer = document.getElementById('admin-container');
-    const loginBtn = document.getElementById('login-btn');
-    const emailInput = document.getElementById('email');
-    const passwordInput = document.getElementById('password');
-    const authError = document.getElementById('auth-error');
-    const logoutBtn = document.getElementById('logout-btn');
-    const refreshBtn = document.getElementById('refresh-btn');
-    const userLabel = document.getElementById('user-label');
-    const loadingOverlay = document.getElementById('loading');
-
-    // HTMLエスケープ
-    function escapeHtml(str) {
-        if (typeof str !== 'string') return String(str ?? '');
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                  .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+// ====================================================================
+// AUTH
+// ====================================================================
+auth.onAuthStateChanged(async u => {
+    if (u) {
+        $('login-wrap').style.display = 'none';
+        $('app').style.display = 'block';
+        const ud = await db.collection('users').doc(u.uid).get();
+        $('user-label').textContent = ud.exists ? ud.data().userName : u.email;
+        loadAll();
+    } else {
+        $('login-wrap').style.display = 'flex';
+        $('app').style.display = 'none';
     }
+});
 
-    // タイムスタンプ→日本語日時文字列
-    function formatTimestamp(ts) {
-        if (!ts) return '—';
-        const d = ts.toDate ? ts.toDate() : new Date(ts);
-        return d.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+$('login-btn').addEventListener('click', async () => {
+    $('auth-error').textContent = '';
+    const em = $('email').value.trim(), pw = $('password').value;
+    if (!em || !pw) { $('auth-error').textContent = '入力してください'; return; }
+    try { await auth.signInWithEmailAndPassword(em, pw); }
+    catch (e) {
+        const m = { 'auth/invalid-email': 'メール形式が不正', 'auth/user-not-found': 'ユーザー不明', 'auth/wrong-password': 'パスワード不正', 'auth/invalid-credential': '認証情報が不正' };
+        $('auth-error').textContent = m[e.code] || 'ログイン失敗';
     }
+});
+$('password').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-btn').click(); });
+$('email').addEventListener('keydown', e => { if (e.key === 'Enter') $('password').focus(); });
+$('logout-btn').addEventListener('click', () => auth.signOut());
+$('refresh-btn').addEventListener('click', () => loadAll());
 
-    function formatDateShort(ts) {
-        if (!ts) return '—';
-        const d = ts.toDate ? ts.toDate() : new Date(ts);
-        return d.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', weekday: 'short' });
+// ====================================================================
+// DATA LOAD
+// ====================================================================
+async function loadAll() {
+    $('loading').classList.remove('hide');
+    try {
+        const [exDoc, wcDoc, cfgDoc, mFree, mNorm, mInt, champSnap, histSnap, usrSnap] = await Promise.all([
+            db.collection('settings_free').doc('exercises').get(),
+            db.collection('settings_free').doc('weekly_challenge').get(),
+            db.collection('settings_free').doc('weekly_config').get(),
+            db.collection('settings_free').doc('multipliers').get(),
+            db.collection('settings').doc('multipliers').get(),
+            db.collection('settings_interval').doc('multipliers').get(),
+            db.collection('weekly_champions').orderBy('weekStart', 'desc').get(),
+            db.collection('weekly_challenge_history').orderBy('weekStart', 'desc').get(),
+            db.collection('users').get()
+        ]);
+        _exercises = exDoc.exists ? (exDoc.data().exercises || {}) : {};
+        _wc = wcDoc.exists ? wcDoc.data() : null;
+        _wcConfig = cfgDoc.exists ? cfgDoc.data() : { weightExponent: 2 };
+        _users = {};
+        usrSnap.forEach(d => { _users[d.id] = d.data(); });
+
+        renderWeekly();
+        renderWeight();
+        renderFree();
+        renderMul(mFree, mNorm, mInt);
+        renderChamp(champSnap);
+        renderHist(histSnap);
+        renderUsers(usrSnap);
+    } catch (e) {
+        console.error(e);
+        alert('取得失敗: ' + e.message);
+    } finally {
+        $('loading').classList.add('hide');
     }
+}
 
-    // セクション折りたたみ
-    function toggleSection(headerEl) {
-        headerEl.classList.toggle('collapsed');
-        const body = headerEl.nextElementSibling;
-        body.classList.toggle('collapsed');
-    }
-
-    // ====================================================================
-    // 認証
-    // ====================================================================
-    auth.onAuthStateChanged(async (user) => {
-        if (user) {
-            loginContainer.style.display = 'none';
-            adminContainer.style.display = 'block';
-            // ユーザー名を取得
-            const userData = await db.collection('users').doc(user.uid).get();
-            const name = userData.exists ? userData.data().userName : user.email;
-            userLabel.textContent = `${name} でログイン中`;
-            loadAllData();
-        } else {
-            loginContainer.style.display = 'flex';
-            adminContainer.style.display = 'none';
-        }
+// ====================================================================
+// 1. WEEKLY CHALLENGE
+// ====================================================================
+function renderWeekly() {
+    const el = $('sec-weekly');
+    if (!_wc) { el.innerHTML = '<p style="color:var(--tx2);text-align:center;padding:12px">データなし</p>'; return; }
+    const keys = _wc.exercises || [];
+    let html = `<div class="info-panel">
+        <div class="ip-row"><span class="ip-label">期間</span><span class="ip-val">${fmtDate(_wc.weekStart)} 〜 ${fmtDate(_wc.weekEnd)}</span></div>
+        <div class="ip-row"><span class="ip-label">更新</span><span class="ip-val">${fmtTs(_wc.updatedAt)}</span></div>
+    </div>`;
+    if (keys.length === 0) { html += '<p style="color:var(--tx2)">選出種目なし</p>'; el.innerHTML = html; return; }
+    keys.forEach((key, i) => {
+        const ex = _exercises[key] || {};
+        const ic = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-question';
+        const barb = ex.barbarian ? ' <span class="badge badge-barb"><i class="fa-solid fa-stopwatch"></i> TA</span>' : '';
+        const selCount = (_wc.selectionHistory || {})[key] || 0;
+        html += `<div class="wk-ex">
+            <i class="${ic} wk-icon"></i>
+            <div class="wk-body">
+                <div class="wk-name">${esc(ex.name || key)}${barb}</div>
+                <div class="wk-sub">#${i + 1} / 累積${selCount}回選出</div>
+            </div>
+            <div class="wk-acts">
+                <button class="btn btn-sm btn-warn" onclick="rerollOne('${esc(key)}',${i})" title="この種目だけ再抽選"><i class="fa-solid fa-dice"></i></button>
+            </div>
+        </div>`;
     });
+    el.innerHTML = html;
+}
 
-    loginBtn.addEventListener('click', async () => {
-        authError.textContent = '';
-        const email = emailInput.value.trim();
-        const password = passwordInput.value;
-        if (!email || !password) {
-            authError.textContent = 'メールアドレスとパスワードを入力してください';
-            return;
-        }
+// Re-roll single exercise
+async function rerollOne(oldKey, idx) {
+    const name = _exercises[oldKey]?.name || oldKey;
+    showConfirm('1種目リロール', `「${name}」を別の種目に入れ替えますか？`, async () => {
+        $('loading').classList.remove('hide');
         try {
-            await auth.signInWithEmailAndPassword(email, password);
-        } catch (e) {
-            const msgs = {
-                'auth/invalid-email': 'メールアドレスの形式が正しくありません',
-                'auth/user-not-found': 'ユーザーが見つかりません',
-                'auth/wrong-password': 'パスワードが間違っています',
-                'auth/invalid-credential': 'メールアドレスまたはパスワードが間違っています'
-            };
-            authError.textContent = msgs[e.code] || 'ログインに失敗しました';
-        }
-    });
-
-    // Enterキーでログイン
-    passwordInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') loginBtn.click();
-    });
-    emailInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') passwordInput.focus();
-    });
-
-    logoutBtn.addEventListener('click', () => auth.signOut());
-    refreshBtn.addEventListener('click', () => loadAllData());
-
-    // ====================================================================
-    // データ一括取得・表示
-    // ====================================================================
-    async function loadAllData() {
-        loadingOverlay.classList.remove('hidden');
-        try {
-            // 並列で全データ取得
-            const [
-                exercisesDoc,
-                weeklyChallengeDoc,
-                multipliersFree,
-                multipliersNormal,
-                multipliersInterval,
-                championsSnap,
-                historySnap,
-                usersSnap
-            ] = await Promise.all([
-                db.collection('settings_free').doc('exercises').get(),
-                db.collection('settings_free').doc('weekly_challenge').get(),
-                db.collection('settings_free').doc('multipliers').get(),
-                db.collection('settings').doc('multipliers').get(),
-                db.collection('settings_interval').doc('multipliers').get(),
-                db.collection('weekly_champions').orderBy('weekStart', 'desc').get(),
-                db.collection('weekly_challenge_history').orderBy('weekStart', 'desc').get(),
-                db.collection('users').get()
-            ]);
-
-            // ユーザーマップ作成
-            const usersMap = {};
-            usersSnap.forEach(doc => {
-                usersMap[doc.id] = doc.data();
+            const hist = _wc.selectionHistory || {};
+            const exp = _wcConfig.weightExponent || 2;
+            const currentKeys = _wc.exercises || [];
+            // 候補: 現在選出中以外の全種目
+            const candidates = Object.keys(_exercises).filter(k => !currentKeys.includes(k));
+            if (candidates.length === 0) { toast('入替候補がありません'); return; }
+            // 重み付き抽選
+            const weights = candidates.map(k => 1 / Math.pow((hist[k] || 0) + 1, exp));
+            const total = weights.reduce((s, w) => s + w, 0);
+            let r = Math.random() * total, picked = candidates[0];
+            for (let j = 0; j < candidates.length; j++) { r -= weights[j]; if (r <= 0) { picked = candidates[j]; break; } }
+            // 更新
+            const newExercises = [...currentKeys];
+            newExercises[idx] = picked;
+            // 旧種目の選出回数を-1（リロールなので取り消し）、新種目を+1
+            const newHist = { ...hist };
+            if (newHist[oldKey] > 0) newHist[oldKey]--;
+            newHist[picked] = (newHist[picked] || 0) + 1;
+            await db.collection('settings_free').doc('weekly_challenge').update({
+                exercises: newExercises,
+                selectionHistory: newHist,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
+            toast(`${_exercises[picked]?.name || picked} に入替完了`);
+            await loadAll();
+        } catch (e) { console.error(e); toast('エラー: ' + e.message); }
+        finally { $('loading').classList.add('hide'); }
+    });
+}
 
-            // 種目データ
-            const exercises = exercisesDoc.exists ? (exercisesDoc.data().exercises || {}) : {};
+// ====================================================================
+// 2. WEIGHT CONFIG + TABLE
+// ====================================================================
+function renderWeight() {
+    const el = $('sec-weight');
+    const hist = (_wc && _wc.selectionHistory) || {};
+    const curSel = (_wc && _wc.exercises) || [];
+    const exp = _wcConfig.weightExponent || 2;
+    const allKeys = Object.keys(_exercises);
 
-            // 週間チャレンジデータ
-            const weeklyChallenge = weeklyChallengeDoc.exists ? weeklyChallengeDoc.data() : null;
+    // Config editor
+    let html = `<div class="cfg-hint"><i class="fa-solid fa-circle-info"></i> 重み = 1/(選出回数+1)<sup>指数</sup> — 指数が大きいほど再選出されにくい</div>
+    <div class="cfg-row">
+        <label>重み指数:</label>
+        <input type="number" id="cfg-exp" value="${exp}" min="0.5" max="10" step="0.5" style="width:60px">
+        <button class="btn btn-sm btn-ok" onclick="saveWeightConfig()"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+    </div>
+    <div class="cfg-hint" id="exp-preview"></div>
+    <div id="cfg-exp-result" class="cfg-result"></div>
+    <hr style="border:none;border-top:1px solid #eee;margin:10px 0">`;
 
-            // 表示
-            renderFreeExercises(exercises);
-            renderWeeklyChallenge(weeklyChallenge, exercises);
-            renderWeightTable(exercises, weeklyChallenge);
-            renderMultipliers(multipliersFree, multipliersNormal, multipliersInterval);
-            renderChampions(championsSnap, exercises);
-            renderHistory(historySnap, exercises);
-            renderUsers(usersSnap, usersMap);
+    // Weight list
+    if (allKeys.length === 0) { html += '<p style="color:var(--tx2)">種目なし</p>'; el.innerHTML = html; updateExpPreview(); return; }
+    const data = allKeys.map(k => { const c = hist[k] || 0; const w = 1 / Math.pow(c + 1, exp); return { k, name: _exercises[k]?.name || '?', count: c, weight: w, sel: curSel.includes(k) }; });
+    const totalW = data.reduce((s, d) => s + d.weight, 0);
+    const maxP = Math.max(...data.map(d => d.weight / totalW));
+    data.sort((a, b) => b.weight - a.weight);
 
-        } catch (error) {
-            console.error('データ取得エラー:', error);
-            alert('データの取得に失敗しました:\n' + error.message);
-        } finally {
-            loadingOverlay.classList.add('hidden');
-        }
+    data.forEach((d, i) => {
+        const p = totalW > 0 ? (d.weight / totalW) : 0;
+        const pPct = (p * 100).toFixed(1);
+        const barW = maxP > 0 ? Math.round(p / maxP * 100) : 0;
+        const barColor = d.sel ? '#f57f17' : 'var(--pri)';
+        const selMark = d.sel ? ' <span class="badge badge-sel"><i class="fa-solid fa-star"></i></span>' : '';
+        html += `<div class="wt-item">
+            <span class="wt-rank">${i + 1}</span>
+            <span class="wt-name">${esc(d.name)}${selMark}</span>
+            <span class="wt-count">${d.count}回</span>
+            <div class="wt-bar-wrap"><div class="wt-bar" style="width:${barW}%;background:${barColor}"></div></div>
+            <span class="wt-pct">${pPct}%</span>
+        </div>`;
+    });
+    el.innerHTML = html;
+    updateExpPreview();
+    // Live preview when input changes
+    const inp = $('cfg-exp');
+    if (inp) inp.addEventListener('input', updateExpPreview);
+}
+
+function updateExpPreview() {
+    const inp = $('cfg-exp');
+    const prev = $('exp-preview');
+    if (!inp || !prev) return;
+    const e = parseFloat(inp.value) || 2;
+    prev.innerHTML = `<b>プレビュー:</b> 0回→100%, 1回→${(100 / Math.pow(2, e)).toFixed(1)}%, 2回→${(100 / Math.pow(3, e)).toFixed(1)}%, 3回→${(100 / Math.pow(4, e)).toFixed(1)}%`;
+}
+
+async function saveWeightConfig() {
+    const v = parseFloat($('cfg-exp').value);
+    if (isNaN(v) || v < 0.5 || v > 10) { $('cfg-exp-result').textContent = '0.5〜10の値を入力'; $('cfg-exp-result').className = 'cfg-result cfg-err'; return; }
+    try {
+        await db.collection('settings_free').doc('weekly_config').set({
+            weightExponent: v,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        _wcConfig.weightExponent = v;
+        $('cfg-exp-result').textContent = `指数を ${v} に保存しました`;
+        $('cfg-exp-result').className = 'cfg-result';
+        renderWeight();
+        toast('重み指数を保存');
+    } catch (e) {
+        $('cfg-exp-result').textContent = '保存失敗: ' + e.message;
+        $('cfg-exp-result').className = 'cfg-result cfg-err';
     }
+}
 
-    // ====================================================================
-    // 1. フリーモード種目一覧
-    // ====================================================================
-    function renderFreeExercises(exercises) {
-        const tbody = document.querySelector('#free-exercises-table tbody');
-        const statsEl = document.getElementById('free-stats');
-        const entries = Object.entries(exercises);
+// ====================================================================
+// 3. FREE EXERCISES
+// ====================================================================
+function renderFree() {
+    const el = $('sec-free');
+    const entries = Object.entries(_exercises);
+    const barbC = entries.filter(([, e]) => e.barbarian).length;
+    const tags = new Set();
+    entries.forEach(([, e]) => (e.tags || []).forEach(t => tags.add(t)));
 
-        // 統計
-        const totalCount = entries.length;
-        const barbarianCount = entries.filter(([, e]) => e.barbarian).length;
-        const allTags = new Set();
-        entries.forEach(([, e]) => (e.tags || []).forEach(t => allTags.add(t)));
+    let html = `<div class="stats">
+        <div class="chip"><div class="v">${entries.length}</div><div class="l">種目</div></div>
+        <div class="chip"><div class="v">${barbC}</div><div class="l">TA</div></div>
+        <div class="chip"><div class="v">${entries.length - barbC}</div><div class="l">回数系</div></div>
+        <div class="chip"><div class="v">${tags.size}</div><div class="l">タグ</div></div>
+    </div>`;
 
-        statsEl.innerHTML = `
-            <div class="stat-chip"><span class="stat-value">${totalCount}</span><span class="stat-label">総種目数</span></div>
-            <div class="stat-chip"><span class="stat-value">${barbarianCount}</span><span class="stat-label">バーバリアン</span></div>
-            <div class="stat-chip"><span class="stat-value">${totalCount - barbarianCount}</span><span class="stat-label">通常(回数系)</span></div>
-            <div class="stat-chip"><span class="stat-value">${allTags.size}</span><span class="stat-label">ユニークタグ</span></div>
-        `;
-
-        if (entries.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" class="no-data">種目データがありません</td></tr>';
-            return;
-        }
-
-        // 作成日時でソート（新しい順）
-        entries.sort((a, b) => {
-            const ta = a[1].createdAt || '';
-            const tb = b[1].createdAt || '';
-            return tb.localeCompare(ta);
-        });
-
-        tbody.innerHTML = entries.map(([key, ex], i) => {
-            const tags = (ex.tags || []).map(t => `<span class="tag-badge">${escapeHtml(t)}</span>`).join('');
-            const iconClass = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-dumbbell';
-            const barbarianLabel = ex.barbarian
-                ? '<span class="tag-badge barbarian-badge"><i class="fa-solid fa-stopwatch"></i> タイムアタック</span>'
-                : '<span style="color:#ccc;">—</span>';
-            const createdAt = ex.createdAt ? new Date(ex.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '—';
-            return `<tr>
-                <td>${i + 1}</td>
-                <td><i class="${iconClass}" style="font-size:1.2em;color:var(--primary);"></i></td>
-                <td><strong>${escapeHtml(ex.name || '(名称なし)')}</strong></td>
-                <td class="mono">${escapeHtml(key)}</td>
-                <td>${escapeHtml(ex.rule || '—')}</td>
-                <td>${tags || '<span style="color:#ccc;">—</span>'}</td>
-                <td>${barbarianLabel}</td>
-                <td>${escapeHtml(ex.createdByName || ex.createdBy || '—')}</td>
-                <td class="mono">${createdAt}</td>
-            </tr>`;
-        }).join('');
-    }
-
-    // ====================================================================
-    // 2. 週間チャレンジ設定
-    // ====================================================================
-    function renderWeeklyChallenge(wc, exercises) {
-        const infoEl = document.getElementById('weekly-challenge-info');
-        const exEl = document.getElementById('weekly-current-exercises');
-
-        if (!wc) {
-            infoEl.innerHTML = '<p class="no-data">週間チャレンジデータがありません</p>';
-            exEl.innerHTML = '';
-            return;
-        }
-
-        const weekStart = formatTimestamp(wc.weekStart);
-        const weekEnd = formatTimestamp(wc.weekEnd);
-        const updatedAt = formatTimestamp(wc.updatedAt);
-        const selectedKeys = wc.exercises || [];
-
-        infoEl.innerHTML = `
-            <div class="challenge-info-panel">
-                <h4><i class="fa-solid fa-calendar-week"></i> 今週のチャレンジ期間</h4>
-                <div class="info-grid">
-                    <span class="info-label">開始:</span><span>${weekStart}</span>
-                    <span class="info-label">終了:</span><span>${weekEnd}</span>
-                    <span class="info-label">更新日時:</span><span>${updatedAt}</span>
-                    <span class="info-label">選出種目数:</span><span>${selectedKeys.length}</span>
-                </div>
+    if (entries.length === 0) { html += '<p style="color:var(--tx2)">種目なし</p>'; el.innerHTML = html; return; }
+    entries.sort((a, b) => (b[1].createdAt || '').localeCompare(a[1].createdAt || ''));
+    entries.forEach(([key, ex]) => {
+        const ic = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-dumbbell';
+        const tgs = (ex.tags || []).map(t => `<span class="badge badge-tag">${esc(t)}</span>`).join('');
+        const barb = ex.barbarian ? ' <span class="badge badge-barb"><i class="fa-solid fa-stopwatch"></i> TA</span>' : '';
+        html += `<div class="ex-card">
+            <i class="${ic} ex-icon"></i>
+            <div class="ex-body">
+                <div class="ex-name">${esc(ex.name || '(名称なし)')}${barb}</div>
+                <div class="ex-meta">${esc(ex.rule || '')}${ex.createdByName ? ' / ' + esc(ex.createdByName) : ''}</div>
+                <div class="ex-tags">${tgs}</div>
             </div>
-        `;
+        </div>`;
+    });
+    el.innerHTML = html;
+}
 
-        if (selectedKeys.length === 0) {
-            exEl.innerHTML = '<p class="no-data">今週の選出種目がありません</p>';
-            return;
-        }
-
-        exEl.innerHTML = `
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>アイコン</th>
-                        <th>種目名</th>
-                        <th>キー</th>
-                        <th>バーバリアン</th>
-                        <th>タグ</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${selectedKeys.map((key, i) => {
-                        const ex = exercises[key] || {};
-                        const iconClass = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-question';
-                        const tags = (ex.tags || []).map(t => `<span class="tag-badge">${escapeHtml(t)}</span>`).join('');
-                        const barb = ex.barbarian
-                            ? '<span class="tag-badge barbarian-badge"><i class="fa-solid fa-stopwatch"></i> タイムアタック</span>'
-                            : '—';
-                        return `<tr>
-                            <td><span class="tag-badge selected-badge"><i class="fa-solid fa-star"></i> ${i + 1}</span></td>
-                            <td><i class="${iconClass}" style="font-size:1.2em;color:#f57f17;"></i></td>
-                            <td><strong>${escapeHtml(ex.name || '(不明)')}</strong></td>
-                            <td class="mono">${escapeHtml(key)}</td>
-                            <td>${barb}</td>
-                            <td>${tags || '—'}</td>
-                        </tr>`;
-                    }).join('')}
-                </tbody>
-            </table>
-        `;
+// ====================================================================
+// 4. MULTIPLIERS
+// ====================================================================
+function renderMul(fDoc, nDoc, iDoc) {
+    const el = $('sec-mul');
+    const names = { pushup: 'プッシュアップ', dips: 'ディップス', squat: '片足スクワット', Lsit: 'Lシット', pullup: '懸垂' };
+    function grid(d, label) {
+        if (!d) return `<p style="color:var(--tx2);font-size:11px">${label}: 未設定</p>`;
+        const items = Object.entries(d).filter(([k]) => k !== 'updatedAt').map(([k, v]) =>
+            `<div class="mul-item"><div class="mn">${esc(names[k] || k)}</div><div class="mv">×${Number(v).toFixed(1)}</div></div>`
+        ).join('');
+        return `<div style="font-size:11px;font-weight:700;color:var(--pri);margin-bottom:4px">${label}</div><div class="mul-grid">${items}</div>`;
     }
+    el.innerHTML = [
+        grid(nDoc?.exists ? nDoc.data() : null, 'ノーマル'),
+        grid(iDoc?.exists ? iDoc.data() : null, 'インターバル'),
+        grid(fDoc?.exists ? fDoc.data() : null, 'フリー')
+    ].join('');
+}
 
-    // ====================================================================
-    // 3. 重み付け確率テーブル
-    // ====================================================================
-    function renderWeightTable(exercises, wc) {
-        const tbody = document.querySelector('#weight-table tbody');
-        const history = (wc && wc.selectionHistory) ? wc.selectionHistory : {};
-        const currentSelected = (wc && wc.exercises) ? wc.exercises : [];
-        const allKeys = Object.keys(exercises);
-
-        if (allKeys.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="no-data">種目がありません</td></tr>';
-            return;
-        }
-
-        // 重み計算
-        const weightData = allKeys.map(key => {
-            const count = history[key] || 0;
-            const weight = 1 / (count + 1);
-            return { key, name: exercises[key]?.name || '(不明)', count, weight, isSelected: currentSelected.includes(key) };
-        });
-
-        const totalWeight = weightData.reduce((s, d) => s + d.weight, 0);
-        const maxProb = Math.max(...weightData.map(d => d.weight / totalWeight));
-
-        // 確率降順でソート
-        weightData.sort((a, b) => b.weight - a.weight);
-
-        tbody.innerHTML = weightData.map((d, i) => {
-            const prob = totalWeight > 0 ? (d.weight / totalWeight) : 0;
-            const probPct = (prob * 100).toFixed(1);
-            const barWidth = maxProb > 0 ? Math.round((prob / maxProb) * 120) : 0;
-
-            let weightClass = 'weight-high';
-            if (prob < 0.05) weightClass = 'weight-low';
-            else if (prob < 0.10) weightClass = 'weight-mid';
-
-            const selectedMark = d.isSelected ? ' <span class="tag-badge selected-badge"><i class="fa-solid fa-star"></i> 今週</span>' : '';
-
-            return `<tr>
-                <td>${i + 1}</td>
-                <td><strong>${escapeHtml(d.name)}</strong>${selectedMark}</td>
-                <td class="mono">${escapeHtml(d.key)}</td>
-                <td style="text-align:center;">${d.count}</td>
-                <td style="text-align:center;"><span class="weight-badge ${weightClass}">${d.weight.toFixed(4)}</span></td>
-                <td style="text-align:center;font-weight:700;">${probPct}%</td>
-                <td>
-                    <div class="weight-bar-container">
-                        <div class="weight-bar" style="width:${barWidth}px;background:${d.isSelected ? '#f57f17' : 'var(--primary)'};"></div>
-                    </div>
-                </td>
-            </tr>`;
+// ====================================================================
+// 5. CHAMPIONS
+// ====================================================================
+function renderChamp(snap) {
+    const el = $('sec-champ');
+    if (snap.empty) { el.innerHTML = '<p style="color:var(--tx2);text-align:center">データなし</p>'; return; }
+    let html = '';
+    snap.forEach(doc => {
+        const d = doc.data();
+        const period = d.periodLabel || `${fmtDate(d.weekStart)}〜${fmtDate(d.weekEnd)}`;
+        const exKeys = d.exercises ? Object.keys(d.exercises) : [];
+        const exHtml = exKeys.map(k => {
+            const n = _exercises[k] ? _exercises[k].name : k;
+            const v = d.exercises[k]?.value;
+            return `<span class="badge badge-tag">${esc(n)}${v != null ? ': ' + v : ''}</span>`;
         }).join('');
-    }
+        html += `<div class="champ-card">
+            <div class="cc-week">${esc(doc.id)} / ${esc(period)}</div>
+            <div class="cc-name"><i class="fa-solid fa-crown" style="color:#ffd600"></i> ${esc(d.champUserName || '—')} <span style="font-size:10px;color:var(--tx2)">${d.champTotalScore != null ? Number(d.champTotalScore).toFixed(1) + 'pt' : ''}</span></div>
+            <div class="cc-ex">${exHtml || '—'}</div>
+        </div>`;
+    });
+    el.innerHTML = html;
+}
 
-    // ====================================================================
-    // 4. 倍率設定
-    // ====================================================================
-    function renderMultipliers(freeMDoc, normalMDoc, intervalMDoc) {
-        const container = document.getElementById('multipliers-body');
+// ====================================================================
+// 6. HISTORY
+// ====================================================================
+function renderHist(snap) {
+    const el = $('sec-hist');
+    if (snap.empty) { el.innerHTML = '<p style="color:var(--tx2);text-align:center">データなし</p>'; return; }
+    let html = '';
+    snap.forEach(doc => {
+        const d = doc.data();
+        const exHtml = (d.exercises || []).map(k => { const n = _exercises[k] ? _exercises[k].name : k; return `<span class="badge badge-tag">${esc(n)}</span>`; }).join('');
+        html += `<div class="hist-item">
+            <span class="hist-id">${esc(doc.id)}</span> <span class="hist-date">${fmtDate(d.weekStart)}〜${fmtDate(d.weekEnd)}</span>
+            <div class="hist-ex">${exHtml || '—'}</div>
+        </div>`;
+    });
+    el.innerHTML = html;
+}
 
-        const normalExNames = {
-            pushup: 'プッシュアップ', dips: 'ディップス', squat: '片足スクワット',
-            Lsit: 'Lシット(秒)', pullup: '懸垂(セット)'
-        };
-
-        function buildMultiplierGrid(data, label) {
-            if (!data) return `<p class="no-data">${label}：設定なし</p>`;
-            const items = Object.entries(data)
-                .filter(([k]) => k !== 'updatedAt')
-                .map(([k, v]) => `
-                    <div class="multiplier-item">
-                        <div class="m-name">${escapeHtml(normalExNames[k] || k)}</div>
-                        <div class="m-value">×${Number(v).toFixed(1)}</div>
-                    </div>
-                `).join('');
-            const updatedAt = data.updatedAt ? `<span style="font-size:11px;color:#999;">更新: ${formatTimestamp(data.updatedAt)}</span>` : '';
-            return `<h4 style="margin-bottom:8px;color:var(--primary);">${label} ${updatedAt}</h4>
-                    <div class="multiplier-grid" style="margin-bottom:16px;">${items}</div>`;
-        }
-
-        container.innerHTML = [
-            buildMultiplierGrid(normalMDoc?.exists ? normalMDoc.data() : null, '<i class="fa-solid fa-dumbbell"></i> ノーマルモード'),
-            buildMultiplierGrid(intervalMDoc?.exists ? intervalMDoc.data() : null, '<i class="fa-solid fa-stopwatch"></i> インターバルモード'),
-            buildMultiplierGrid(freeMDoc?.exists ? freeMDoc.data() : null, '<i class="fa-solid fa-fire"></i> フリーモード')
-        ].join('');
-    }
-
-    // ====================================================================
-    // 5. 歴代チャンピオン
-    // ====================================================================
-    function renderChampions(snapshot, exercises) {
-        const el = document.getElementById('champions-list');
-        if (snapshot.empty) {
-            el.innerHTML = '<p class="no-data">歴代チャンピオンデータがありません</p>';
-            return;
-        }
-
-        let html = '<div class="table-scroll"><table class="data-table"><thead><tr>';
-        html += '<th>週</th><th>期間</th><th>チャンピオン</th><th>総合得点</th><th>種目</th>';
-        html += '</tr></thead><tbody>';
-
-        snapshot.forEach(doc => {
-            const d = doc.data();
-            const weekId = doc.id;
-            const period = d.periodLabel || `${formatDateShort(d.weekStart)} 〜 ${formatDateShort(d.weekEnd)}`;
-            const champName = escapeHtml(d.champUserName || '—');
-            const totalScore = d.champTotalScore != null ? Number(d.champTotalScore).toFixed(1) : '—';
-            const exerciseKeys = d.exercises ? Object.keys(d.exercises) : [];
-            const exNames = exerciseKeys.map(k => {
-                const ex = exercises[k];
-                const name = ex ? ex.name : k;
-                const val = d.exercises[k]?.value;
-                return `<span class="counter-chip">${escapeHtml(name)}${val != null ? ': ' + val : ''}</span>`;
-            }).join(' ');
-
-            html += `<tr>
-                <td class="mono">${escapeHtml(weekId)}</td>
-                <td>${escapeHtml(period)}</td>
-                <td><strong>${champName}</strong></td>
-                <td style="text-align:center;font-weight:700;">${totalScore}</td>
-                <td><div class="counter-inline">${exNames || '—'}</div></td>
-            </tr>`;
-        });
-
-        html += '</tbody></table></div>';
-        el.innerHTML = html;
-    }
-
-    // ====================================================================
-    // 6. 週間チャレンジ履歴
-    // ====================================================================
-    function renderHistory(snapshot, exercises) {
-        const tbody = document.querySelector('#history-table tbody');
-        if (snapshot.empty) {
-            tbody.innerHTML = '<tr><td colspan="4" class="no-data">履歴データがありません</td></tr>';
-            return;
-        }
-
-        let html = '';
-        snapshot.forEach(doc => {
-            const d = doc.data();
-            const weekId = doc.id;
-            const start = formatTimestamp(d.weekStart);
-            const end = formatTimestamp(d.weekEnd);
-            const exList = (d.exercises || []).map(k => {
-                const ex = exercises[k];
-                const name = ex ? ex.name : k;
-                return `<span class="counter-chip">${escapeHtml(name)}</span>`;
-            }).join(' ');
-
-            html += `<tr>
-                <td class="mono">${escapeHtml(weekId)}</td>
-                <td>${start}</td>
-                <td>${end}</td>
-                <td><div class="counter-inline">${exList || '—'}</div></td>
-            </tr>`;
-        });
-
-        tbody.innerHTML = html;
-    }
-
-    // ====================================================================
-    // 7. ユーザー一覧
-    // ====================================================================
-    function renderUsers(snapshot, usersMap) {
-        const statsEl = document.getElementById('users-stats');
-        const listEl = document.getElementById('users-list');
-
-        const count = snapshot.size;
-        statsEl.innerHTML = `<div class="stat-chip"><span class="stat-value">${count}</span><span class="stat-label">登録ユーザー数</span></div>`;
-
-        if (snapshot.empty) {
-            listEl.innerHTML = '<p class="no-data">ユーザーがいません</p>';
-            return;
-        }
-
-        let html = '';
-        snapshot.forEach(doc => {
-            const d = doc.data();
-            const createdAt = d.createdAt ? formatTimestamp(d.createdAt) : '—';
-            html += `
-                <div class="user-card-mini">
-                    <div class="user-name"><i class="fa-solid fa-user"></i> ${escapeHtml(d.userName || '(未設定)')}</div>
-                    <div class="user-email">${escapeHtml(d.email || '—')}</div>
-                    <div class="user-meta">UID: ${escapeHtml(doc.id)} | 登録: ${createdAt}</div>
-                </div>
-            `;
-        });
-
-        listEl.innerHTML = html;
-    }
-
-    </script>
+// ====================================================================
+// 7. USERS
+// ====================================================================
+function renderUsers(snap) {
+    const el = $('sec-users');
+    let html = `<div class="stats"><div class="chip"><div class="v">${snap.size}</div><div class="l">ユーザー</div></div></div>`;
+    if (snap.empty) { html += '<p style="color:var(--tx2)">なし</p>'; el.innerHTML = html; return; }
+    html += '<div class="usr-grid">';
+    snap.forEach(doc => {
+        const d = doc.data();
+        html += `<div class="usr-card"><div class="un"><i class="fa-solid fa-user"></i> ${esc(d.userName || '(未設定)')}</div><div class="ue">${esc(d.email || '—')}</div></div>`;
+    });
+    html += '</div>';
+    el.innerHTML = html;
+}
+</script>
 </body>
 </html>
