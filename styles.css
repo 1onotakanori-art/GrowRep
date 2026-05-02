@@ -1687,6 +1687,10 @@ body.mode-interval header h1::after {
     text-align: right;
 }
 
+.breakdown-weekly {
+    grid-template-columns: 110px minmax(180px, 1fr) 80px !important;
+}
+
 .weekly-sim-input {
     width: 72px;
     border: 1px solid #cbd5e1;
@@ -1795,6 +1799,11 @@ body.mode-interval header h1::after {
     .breakdown-deviation {
         grid-template-columns: 80px 65px 65px 65px !important;
         min-width: 275px;
+    }
+
+    .breakdown-weekly {
+        grid-template-columns: 80px minmax(150px, 1fr) 70px !important;
+        min-width: 300px;
     }
     
     .breakdown-label {

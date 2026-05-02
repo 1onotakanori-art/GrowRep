@@ -192,6 +192,7 @@ let weeklySimulatorExerciseKeys = [];
 let weeklySimulatorExpandedUserId = null;
 let weeklySimulatorPreviousRanks = {};
 let weeklySimulatorPendingAnimation = false;
+let weeklySimulatorFocusUserId = null;
 
 function clampWeeklySimulatorValue(rawValue, fallback = 0) {
     const num = Number(rawValue);
@@ -207,6 +208,7 @@ function resetWeeklySimulatorState() {
     weeklySimulatorExerciseKeys = [];
     weeklySimulatorPreviousRanks = {};
     weeklySimulatorPendingAnimation = false;
+    weeklySimulatorFocusUserId = null;
     if (weeklySimulatorToggle) {
         weeklySimulatorToggle.checked = false;
     }
@@ -2512,6 +2514,7 @@ if (weeklySimulatorToggle) {
             weeklySimulatorOverrides = {};
             weeklySimulatorPreviousRanks = {};
             weeklySimulatorPendingAnimation = false;
+            weeklySimulatorFocusUserId = null;
         }
 
         if (currentMode !== 'weekly') {
@@ -2601,6 +2604,7 @@ if (totalScoresList) {
         }
         weeklySimulatorExpandedUserId = userId;
         weeklySimulatorPendingAnimation = true;
+        weeklySimulatorFocusUserId = userId;
 
         if (weeklySimulatorBaseScores && weeklySimulatorExerciseKeys.length > 0) {
             displayFreeScores(weeklySimulatorBaseScores, weeklySimulatorExerciseKeys);
@@ -5019,14 +5023,13 @@ function displayFreeScores(usersScores, exerciseKeys) {
             const baseValue = usersScores?.[userId]?.exercises?.[key] || 0;
 
             const valueCell = isWeeklySimulator
-                ? `<span class="weekly-sim-edit-wrap"><input type="number" min="0" step="1" inputmode="numeric" class="weekly-sim-input" data-user-id="${escapeHtml(userId)}" data-exercise-key="${escapeHtml(key)}" value="${clampWeeklySimulatorValue(valueDisplay, 0)}" data-base-value="${clampWeeklySimulatorValue(baseValue, 0)}"><span class="weekly-sim-unit">${unitText || '回'}</span><span class="weekly-sim-base">現状:${clampWeeklySimulatorValue(baseValue, 0)}${unitText || '回'}</span></span>`
+                ? `<span class="weekly-sim-edit-wrap"><input type="number" min="0" step="1" inputmode="numeric" class="weekly-sim-input" data-user-id="${escapeHtml(userId)}" data-exercise-key="${escapeHtml(key)}" value="${clampWeeklySimulatorValue(valueDisplay, 0)}" data-base-value="${clampWeeklySimulatorValue(baseValue, 0)}"><span class="weekly-sim-unit">${unitText || '回'}</span><span class="weekly-sim-base">${clampWeeklySimulatorValue(baseValue, 0)}${unitText || '回'}</span></span>`
                 : `${valueDisplay}${unitText}`;
 
             return `
-                <div class="breakdown-item breakdown-deviation">
+                <div class="breakdown-item breakdown-weekly">
                     <span class="breakdown-label">${escapeHtml(ex.name)}${barbarianIcon}</span>
                     <span class="breakdown-num">${valueCell}</span>
-                    <span class="breakdown-score">-</span>
                     <span class="breakdown-pct">${(userData.scores[key] || 0).toFixed(1)}%</span>
                 </div>
             `;
@@ -5038,7 +5041,7 @@ function displayFreeScores(usersScores, exerciseKeys) {
         const headerClickAttr = isWeeklySimulator ? `onclick="toggleScoreDetails('${escapeHtml(userId)}')"` : '';
 
         html += `
-            <div class="total-score-item${movedClass}" ${itemClickAttr}>
+            <div class="total-score-item${movedClass}" data-user-id="${escapeHtml(userId)}" ${itemClickAttr}>
                 <div class="score-header" ${headerClickAttr}>
                     <span class="score-rank">${medal}</span>
                     <span class="score-username">${escapeHtml(userData.userName)}</span>
@@ -5057,6 +5060,14 @@ function displayFreeScores(usersScores, exerciseKeys) {
     if (isWeeklySimulator) {
         weeklySimulatorPreviousRanks = rankSnapshot;
         weeklySimulatorPendingAnimation = false;
+
+        if (weeklySimulatorFocusUserId) {
+            const focusedItem = totalScoresList.querySelector(`.total-score-item[data-user-id="${weeklySimulatorFocusUserId}"]`);
+            if (focusedItem) {
+                focusedItem.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+            }
+            weeklySimulatorFocusUserId = null;
+        }
     }
 }
 
