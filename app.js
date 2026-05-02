@@ -5001,6 +5001,36 @@ function selectWeeklyExercises(allKeys, history, count = 3, weightExponent = 2) 
 }
 
 /**
+ * 週間チャレンジを「通常2種目 + バーバリアン1種目」で選出
+ * 既存の加重ランダムロジックをそのまま利用し、足りない枠は他プールで補完する
+ * @param {Object} allExercises - freeExercises 全体
+ * @param {Object} history - { [key]: 選出回数 }
+ * @param {number} weightExponent - 重み指数
+ * @returns {string[]}
+ */
+function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExponent = 2) {
+    const allKeys = Object.keys(allExercises || {});
+    if (allKeys.length === 0) return [];
+
+    const normalKeys = allKeys.filter(key => !(allExercises[key] && allExercises[key].barbarian));
+    const barbarianKeys = allKeys.filter(key => allExercises[key] && allExercises[key].barbarian);
+
+    const selectedNormal = selectWeeklyExercises(normalKeys, history, 2, weightExponent);
+    const selectedBarbarian = selectWeeklyExercises(barbarianKeys, history, 1, weightExponent);
+
+    const selectedSet = new Set([...selectedNormal, ...selectedBarbarian]);
+
+    // 総数3を維持するため、枠不足時は残り全種目から補完
+    if (selectedSet.size < 3) {
+        const remainingKeys = allKeys.filter(key => !selectedSet.has(key));
+        const fallback = selectWeeklyExercises(remainingKeys, history, 3 - selectedSet.size, weightExponent);
+        fallback.forEach(key => selectedSet.add(key));
+    }
+
+    return Array.from(selectedSet);
+}
+
+/**
  * 今週の週間チャレンジ設定を取得/更新する
  * - settings_free/weekly_challenge から読み込む
  * - 古ければ新しい3種目を選出してFirestoreに保存
@@ -5056,17 +5086,17 @@ async function getOrUpdateWeeklyChallenge() {
             await loadFreeExercises();
         }
 
-        const allKeys = Object.keys(freeExercises);
         const existingHistory = (doc.exists && doc.data().selectionHistory) ? doc.data().selectionHistory : {};
 
         // 週間チャレンジ設定（重み指数）を取得
         const weeklyConfig = await getWeeklyConfig();
         const weightExponent = weeklyConfig.weightExponent || 2;
 
-        let selectedExercises = [];
-        if (allKeys.length > 0) {
-            selectedExercises = selectWeeklyExercises(allKeys, existingHistory, 3, weightExponent);
-        }
+        const selectedExercises = selectWeeklyExercisesWithBarbarianSlot(
+            freeExercises,
+            existingHistory,
+            weightExponent
+        );
 
         // 選出履歴を更新
         const newHistory = { ...existingHistory };
