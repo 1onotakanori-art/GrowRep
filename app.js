@@ -4978,9 +4978,12 @@ function displayFreeScores(usersScores, exerciseKeys) {
 
         const detailDefaultDisplay = isWeeklySimulator && weeklySimulatorExpandedUserId === userId ? 'block' : 'none';
 
+        const itemClickAttr = isWeeklySimulator ? '' : `onclick="toggleScoreDetails('${escapeHtml(userId)}')"`;
+        const headerClickAttr = isWeeklySimulator ? `onclick="toggleScoreDetails('${escapeHtml(userId)}')"` : '';
+
         html += `
-            <div class="total-score-item" onclick="toggleScoreDetails('${escapeHtml(userId)}')">
-                <div class="score-header">
+            <div class="total-score-item" ${itemClickAttr}>
+                <div class="score-header" ${headerClickAttr}>
                     <span class="score-rank">${medal}</span>
                     <span class="score-username">${escapeHtml(userData.userName)}</span>
                     <span class="score-value">${totalScore.toFixed(1)}%</span>
