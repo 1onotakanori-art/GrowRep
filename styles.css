@@ -1385,46 +1385,75 @@ body.mode-interval header h1::after {
     margin-bottom: 0;
 }
 
-/* 集計方法セレクター */
-.scoring-method-selector {
+/* 週間シミュレーター */
+.weekly-simulator-controls {
     background: white;
     border-radius: 8px;
     padding: 15px;
     margin-bottom: 20px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.weekly-simulator-header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 12px;
 }
 
-.scoring-method-selector label {
-    font-weight: 600;
-    color: #333;
-    font-size: 14px;
+.weekly-simulator-label {
+    font-weight: 700;
+    color: #2d3748;
 }
 
-.scoring-method-selector select {
-    flex: 1;
-    max-width: 280px;
-    padding: 8px 12px;
-    font-size: 14px;
-    border: 2px solid #e0e0e0;
-    border-radius: 6px;
-    background: white;
+.weekly-simulator-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 28px;
+}
+
+.weekly-simulator-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.weekly-simulator-slider {
+    position: absolute;
     cursor: pointer;
-    transition: border-color 0.3s;
+    inset: 0;
+    background-color: #d1d5db;
+    transition: 0.2s;
+    border-radius: 999px;
 }
 
-@media (hover: hover) {
-    .scoring-method-selector select:hover {
-        border-color: #667eea;
-    }
+.weekly-simulator-slider:before {
+    position: absolute;
+    content: '';
+    height: 22px;
+    width: 22px;
+    left: 3px;
+    top: 3px;
+    background-color: #fff;
+    transition: 0.2s;
+    border-radius: 50%;
 }
 
-.scoring-method-selector select:focus {
-    outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+.weekly-simulator-switch input:checked + .weekly-simulator-slider {
+    background-color: #3b82f6;
+}
+
+.weekly-simulator-switch input:checked + .weekly-simulator-slider:before {
+    transform: translateX(22px);
+}
+
+.weekly-simulator-note {
+    margin-top: 10px;
+    margin-bottom: 0;
+    font-size: 12px;
+    color: #4a5568;
+    line-height: 1.5;
 }
 
 .user-selection {
@@ -1658,6 +1687,28 @@ body.mode-interval header h1::after {
     text-align: right;
 }
 
+.weekly-sim-input {
+    width: 64px;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    padding: 3px 6px;
+    font-size: 12px;
+    text-align: right;
+    background: #f8fafc;
+}
+
+.weekly-sim-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.weekly-sim-unit {
+    margin-left: 4px;
+    color: #666;
+    font-size: 11px;
+}
+
 /* レスポンシブ対応：得点タブ */
 @media (max-width: 768px) {
     .checkbox-group {
@@ -1711,14 +1762,12 @@ body.mode-interval header h1::after {
         font-size: 11px;
     }
     
-    .scoring-method-selector {
-        flex-direction: column;
+    .weekly-simulator-header {
         align-items: flex-start;
-        gap: 10px;
     }
-    
-    .scoring-method-selector select {
-        max-width: 100%;
+
+    .weekly-sim-input {
+        width: 54px;
     }
 }
 

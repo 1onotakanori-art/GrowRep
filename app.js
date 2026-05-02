@@ -81,6 +81,8 @@ const userCheckboxes = document.getElementById('user-checkboxes');
 const scoreChart = document.getElementById('score-chart');
 const totalScoresList = document.getElementById('total-scores-list');
 const scoreError = document.getElementById('score-error');
+const weeklySimulatorControls = document.getElementById('weekly-simulator-controls');
+const weeklySimulatorToggle = document.getElementById('weekly-simulator-toggle');
 
 // モード切り替え関連
 const modeSelect = document.getElementById('mode-select');
@@ -181,6 +183,98 @@ let championsHistoryCache = [];
 const championDetailRetryMap = {};
 let championDetailEventsBound = false;
 let weeklyChampionBackfillDoneInSession = false;
+
+// 週間チャレンジ総合得点シミュレーター用（非永続）
+let weeklySimulatorEnabled = false;
+let weeklySimulatorOverrides = {};
+let weeklySimulatorBaseScores = null;
+let weeklySimulatorExerciseKeys = [];
+let weeklySimulatorExpandedUserId = null;
+
+function clampWeeklySimulatorValue(rawValue, fallback = 0) {
+    const num = Number(rawValue);
+    if (!Number.isFinite(num)) return fallback;
+    return Math.max(0, Math.round(num));
+}
+
+function resetWeeklySimulatorState() {
+    weeklySimulatorEnabled = false;
+    weeklySimulatorOverrides = {};
+    weeklySimulatorExpandedUserId = null;
+    weeklySimulatorBaseScores = null;
+    weeklySimulatorExerciseKeys = [];
+    if (weeklySimulatorToggle) {
+        weeklySimulatorToggle.checked = false;
+    }
+}
+
+function setWeeklySimulatorControlsVisible(visible) {
+    if (!weeklySimulatorControls) return;
+    weeklySimulatorControls.style.display = visible ? 'block' : 'none';
+    if (!visible) {
+        resetWeeklySimulatorState();
+    }
+}
+
+function calculateWeeklySimulatedScores(baseUsersScores, exerciseKeys) {
+    const simulated = {};
+    const keys = Array.isArray(exerciseKeys) ? exerciseKeys : [];
+
+    Object.entries(baseUsersScores || {}).forEach(([userId, userData]) => {
+        const exercises = {};
+        keys.forEach((key) => {
+            const baseValue = clampWeeklySimulatorValue(userData?.exercises?.[key] || 0, 0);
+            const overrideValue = weeklySimulatorOverrides?.[userId]?.[key];
+            exercises[key] = overrideValue === undefined ? baseValue : clampWeeklySimulatorValue(overrideValue, baseValue);
+        });
+
+        simulated[userId] = {
+            userName: userData.userName,
+            exercises,
+            scores: {},
+            totalScore: 0
+        };
+    });
+
+    keys.forEach((key) => {
+        const isBarbarian = !!(freeExercises[key] && freeExercises[key].barbarian);
+
+        if (isBarbarian) {
+            let minVal = Infinity;
+            Object.values(simulated).forEach((user) => {
+                const value = user.exercises[key] || 0;
+                if (value > 0 && value < minVal) {
+                    minVal = value;
+                }
+            });
+
+            Object.values(simulated).forEach((user) => {
+                const value = user.exercises[key] || 0;
+                const pct = (value > 0 && minVal !== Infinity) ? (minVal / value) * 100 : 0;
+                user.scores[key] = pct;
+                user.totalScore += pct;
+            });
+            return;
+        }
+
+        let maxVal = 0;
+        Object.values(simulated).forEach((user) => {
+            const value = user.exercises[key] || 0;
+            if (value > maxVal) {
+                maxVal = value;
+            }
+        });
+
+        Object.values(simulated).forEach((user) => {
+            const value = user.exercises[key] || 0;
+            const pct = maxVal > 0 ? (value / maxVal) * 100 : 0;
+            user.scores[key] = pct;
+            user.totalScore += pct;
+        });
+    });
+
+    return simulated;
+}
 
 // ====================================================================
 // Firestoreユーティリティ関数
@@ -400,10 +494,9 @@ async function loadScoreChart(selectedUserIds = []) {
             selectedUserIds = Object.keys(usersScores);
         }
         
-        // 集計方法を取得
-        const scoringMethod = document.getElementById('scoring-method').value;
-        const isDeviationMode = scoringMethod === 'deviation';
-        const isPercentageMode = scoringMethod === 'percentage';
+        // 集計方法は「最高得点を100%とした%の合計」で固定
+        const isDeviationMode = false;
+        const isPercentageMode = true;
         
         // 偏差値データまたは%データを取得
         let deviationData = null;
@@ -702,8 +795,8 @@ function calculatePercentageScores(usersScores) {
  * @param {Object} usersScores - ユーザー得点データ
  */
 async function displayTotalScores(usersScores) {
-    // 集計方法を取得
-    const scoringMethod = document.getElementById('scoring-method').value;
+    // 集計方法は「最高得点を100%とした%の合計」で固定
+    const scoringMethod = 'percentage';
     
     let sortedUsers;
     let dataToDisplay;
@@ -915,6 +1008,9 @@ function toggleScoreDetails(userId) {
     const detailsElement = document.getElementById(`score-details-${userId}`);
     if (detailsElement) {
         const isVisible = detailsElement.style.display === 'block';
+        if (currentMode === 'weekly' && weeklySimulatorEnabled) {
+            weeklySimulatorExpandedUserId = isVisible ? null : userId;
+        }
         
         if (isVisible) {
             // 閉じる時：slideUpアニメーションを適用してから非表示
@@ -935,6 +1031,7 @@ function toggleScoreDetails(userId) {
  */
 async function loadUserCheckboxes(forceRefresh = false) {
     try {
+        setWeeklySimulatorControlsVisible(false);
         const usersScores = await getAllUsersScores(forceRefresh);
         
         let html = '';
@@ -1433,6 +1530,7 @@ async function changeMode(newMode) {
     }
     
     currentMode = newMode;
+    resetWeeklySimulatorState();
     
     // モードセレクターの値を同期
     modeSelect.value = newMode;
@@ -2401,26 +2499,66 @@ async function loadProgressChart() {
 // グラフの種目変更時
 graphExerciseType.addEventListener('change', loadProgressChart);
 
-// 集計方法の変更時
-document.getElementById('scoring-method').addEventListener('change', async () => {
-    if (currentMode === 'free') {
-        // フリーモードは常に%表示
-        const checkboxes = document.querySelectorAll('.user-checkbox input[type="checkbox"]');
-        const selectedIds = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
-        await loadFreeScoreChart(selectedIds);
-        return;
-    }
-    // ランキングを再表示
-    const usersScores = await getAllUsersScores();
-    await displayTotalScores(usersScores);
+if (weeklySimulatorToggle) {
+    weeklySimulatorToggle.addEventListener('change', async (e) => {
+        weeklySimulatorEnabled = !!e.target.checked;
+        weeklySimulatorExpandedUserId = null;
 
-    // チャートも再描画（現在選択されているユーザーで）
-    const checkboxes = document.querySelectorAll('.user-checkbox input[type="checkbox"]');
-    const selectedIds = Array.from(checkboxes)
-        .filter(cb => cb.checked)
-        .map(cb => cb.value);
-    await loadScoreChart(selectedIds);
-});
+        if (!weeklySimulatorEnabled) {
+            weeklySimulatorOverrides = {};
+        }
+
+        if (currentMode !== 'weekly') {
+            return;
+        }
+
+        if (!weeklySimulatorBaseScores) {
+            weeklySimulatorBaseScores = await getAllUsersScoresWeekly(false);
+        }
+        if (!weeklySimulatorExerciseKeys || weeklySimulatorExerciseKeys.length === 0) {
+            weeklySimulatorExerciseKeys = weeklyChallenge ? weeklyChallenge.exercises.filter(k => freeExercises[k]) : [];
+        }
+
+        displayFreeScores(weeklySimulatorBaseScores, weeklySimulatorExerciseKeys);
+    });
+}
+
+if (totalScoresList) {
+    totalScoresList.addEventListener('click', (e) => {
+        if (e.target.classList.contains('weekly-sim-input')) {
+            e.stopPropagation();
+        }
+    });
+
+    totalScoresList.addEventListener('input', (e) => {
+        const target = e.target;
+        if (!target.classList.contains('weekly-sim-input')) {
+            return;
+        }
+
+        e.stopPropagation();
+
+        const userId = target.dataset.userId;
+        const exerciseKey = target.dataset.exerciseKey;
+        if (!userId || !exerciseKey || !weeklySimulatorEnabled || currentMode !== 'weekly') {
+            return;
+        }
+
+        const fallback = weeklySimulatorBaseScores?.[userId]?.exercises?.[exerciseKey] || 0;
+        const normalized = clampWeeklySimulatorValue(target.value, fallback);
+        target.value = normalized;
+
+        if (!weeklySimulatorOverrides[userId]) {
+            weeklySimulatorOverrides[userId] = {};
+        }
+        weeklySimulatorOverrides[userId][exerciseKey] = normalized;
+        weeklySimulatorExpandedUserId = userId;
+
+        if (weeklySimulatorBaseScores && weeklySimulatorExerciseKeys.length > 0) {
+            displayFreeScores(weeklySimulatorBaseScores, weeklySimulatorExerciseKeys);
+        }
+    });
+}
 
 // モード切り替え
 modeSelect.addEventListener('change', (e) => {
@@ -4795,7 +4933,12 @@ async function loadFreeScoreChart(selectedUserIds = []) {
  * フリーモード用の総合得点ランキング表示
  */
 function displayFreeScores(usersScores, exerciseKeys) {
-    const sortedUsers = Object.entries(usersScores)
+    const isWeeklySimulator = currentMode === 'weekly' && weeklySimulatorEnabled;
+    const sourceScores = isWeeklySimulator
+        ? calculateWeeklySimulatedScores(usersScores, exerciseKeys)
+        : usersScores;
+
+    const sortedUsers = Object.entries(sourceScores)
         .sort((a, b) => b[1].totalScore - a[1].totalScore);
 
     let html = '';
@@ -4818,15 +4961,22 @@ function displayFreeScores(usersScores, exerciseKeys) {
             const valueDisplay = userData.exercises[key] || 0;
             const unitText = isBarbarian ? '秒' : '';
             const barbarianIcon = isBarbarian ? '<i class="fa-solid fa-stopwatch" style="color:#e74c3c;margin-left:2px;font-size:10px;"></i>' : '';
+
+            const valueCell = isWeeklySimulator
+                ? `<input type="number" min="0" step="1" class="weekly-sim-input" data-user-id="${escapeHtml(userId)}" data-exercise-key="${escapeHtml(key)}" value="${clampWeeklySimulatorValue(valueDisplay, 0)}">${unitText ? `<span class="weekly-sim-unit">${unitText}</span>` : ''}`
+                : `${valueDisplay}${unitText}`;
+
             return `
                 <div class="breakdown-item breakdown-deviation">
                     <span class="breakdown-label">${escapeHtml(ex.name)}${barbarianIcon}</span>
-                    <span class="breakdown-num">${valueDisplay}${unitText}</span>
+                    <span class="breakdown-num">${valueCell}</span>
                     <span class="breakdown-score">-</span>
                     <span class="breakdown-pct">${(userData.scores[key] || 0).toFixed(1)}%</span>
                 </div>
             `;
         }).join('');
+
+        const detailDefaultDisplay = isWeeklySimulator && weeklySimulatorExpandedUserId === userId ? 'block' : 'none';
 
         html += `
             <div class="total-score-item" onclick="toggleScoreDetails('${escapeHtml(userId)}')">
@@ -4835,7 +4985,7 @@ function displayFreeScores(usersScores, exerciseKeys) {
                     <span class="score-username">${escapeHtml(userData.userName)}</span>
                     <span class="score-value">${totalScore.toFixed(1)}%</span>
                 </div>
-                <div class="score-details" id="score-details-${escapeHtml(userId)}" style="display: none;">
+                <div class="score-details" id="score-details-${escapeHtml(userId)}" style="display: ${detailDefaultDisplay};">
                     <div class="score-breakdown">
                         ${breakdownHtml}
                     </div>
@@ -4852,6 +5002,7 @@ function displayFreeScores(usersScores, exerciseKeys) {
  */
 async function loadFreeUserCheckboxes(forceRefresh = false) {
     try {
+        setWeeklySimulatorControlsVisible(false);
         const usersScores = await getAllUsersScoresFree(forceRefresh);
 
         let html = '';
@@ -5415,8 +5566,11 @@ async function getAllUsersScoresWeekly(forceRefresh = false) {
  */
 async function loadWeeklyUserCheckboxes(forceRefresh = false) {
     try {
+        setWeeklySimulatorControlsVisible(true);
         const usersScores = await getAllUsersScoresWeekly(forceRefresh);
         const exerciseKeys = weeklyChallenge ? weeklyChallenge.exercises.filter(k => freeExercises[k]) : [];
+        weeklySimulatorBaseScores = usersScores;
+        weeklySimulatorExerciseKeys = exerciseKeys;
 
         let html = '';
         Object.keys(usersScores).forEach(userId => {
@@ -5460,6 +5614,8 @@ async function loadWeeklyScoreChart(selectedUserIds, exerciseKeys, usersScores) 
     if (!exerciseKeys) {
         exerciseKeys = weeklyChallenge ? weeklyChallenge.exercises.filter(k => freeExercises[k]) : [];
     }
+    weeklySimulatorBaseScores = usersScores;
+    weeklySimulatorExerciseKeys = exerciseKeys;
 
     try {
         scoreError.textContent = '';

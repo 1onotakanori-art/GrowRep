@@ -175,13 +175,15 @@
                 <p><strong>得点 = 回数/秒数/セット数 × 倍率</strong></p>
             </div>
             
-            <div class="scoring-method-selector">
-                <label for="scoring-method">集計方法：</label>
-                <select id="scoring-method">
-                    <option value="percentage" selected>最高得点を100%とした%の合計</option>
-                    <option value="sum" style="display:none;">各種目の得点を合計</option>
-                    <option value="deviation" style="display:none;">偏差値の合計</option>
-                </select>
+            <div id="weekly-simulator-controls" class="weekly-simulator-controls" style="display:none;">
+                <div class="weekly-simulator-header">
+                    <span class="weekly-simulator-label">シミュレーター</span>
+                    <label class="weekly-simulator-switch" for="weekly-simulator-toggle">
+                        <input type="checkbox" id="weekly-simulator-toggle">
+                        <span class="weekly-simulator-slider"></span>
+                    </label>
+                </div>
+                <p class="weekly-simulator-note">ONにすると、各プレイヤーの内訳で回数を一時変更して総合得点の変動を確認できます（保存されません）。</p>
             </div>
             
             <div class="total-scores">
