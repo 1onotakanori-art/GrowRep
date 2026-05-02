@@ -190,6 +190,8 @@ let weeklySimulatorOverrides = {};
 let weeklySimulatorBaseScores = null;
 let weeklySimulatorExerciseKeys = [];
 let weeklySimulatorExpandedUserId = null;
+let weeklySimulatorPreviousRanks = {};
+let weeklySimulatorPendingAnimation = false;
 
 function clampWeeklySimulatorValue(rawValue, fallback = 0) {
     const num = Number(rawValue);
@@ -203,6 +205,8 @@ function resetWeeklySimulatorState() {
     weeklySimulatorExpandedUserId = null;
     weeklySimulatorBaseScores = null;
     weeklySimulatorExerciseKeys = [];
+    weeklySimulatorPreviousRanks = {};
+    weeklySimulatorPendingAnimation = false;
     if (weeklySimulatorToggle) {
         weeklySimulatorToggle.checked = false;
     }
@@ -2506,6 +2510,8 @@ if (weeklySimulatorToggle) {
 
         if (!weeklySimulatorEnabled) {
             weeklySimulatorOverrides = {};
+            weeklySimulatorPreviousRanks = {};
+            weeklySimulatorPendingAnimation = false;
         }
 
         if (currentMode !== 'weekly') {
@@ -2530,7 +2536,41 @@ if (totalScoresList) {
         }
     });
 
-    totalScoresList.addEventListener('input', (e) => {
+    totalScoresList.addEventListener('focusin', (e) => {
+        const target = e.target;
+        if (!target.classList.contains('weekly-sim-input')) {
+            return;
+        }
+        const wrapper = target.closest('.weekly-sim-edit-wrap');
+        if (wrapper) {
+            wrapper.classList.add('is-editing');
+        }
+    });
+
+    totalScoresList.addEventListener('focusout', (e) => {
+        const target = e.target;
+        if (!target.classList.contains('weekly-sim-input')) {
+            return;
+        }
+        const wrapper = target.closest('.weekly-sim-edit-wrap');
+        if (wrapper) {
+            wrapper.classList.remove('is-editing');
+        }
+    });
+
+    totalScoresList.addEventListener('keydown', (e) => {
+        const target = e.target;
+        if (!target.classList.contains('weekly-sim-input')) {
+            return;
+        }
+
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            target.blur();
+        }
+    });
+
+    totalScoresList.addEventListener('change', (e) => {
         const target = e.target;
         if (!target.classList.contains('weekly-sim-input')) {
             return;
@@ -2551,8 +2591,16 @@ if (totalScoresList) {
         if (!weeklySimulatorOverrides[userId]) {
             weeklySimulatorOverrides[userId] = {};
         }
-        weeklySimulatorOverrides[userId][exerciseKey] = normalized;
+        if (normalized === clampWeeklySimulatorValue(fallback, 0)) {
+            delete weeklySimulatorOverrides[userId][exerciseKey];
+            if (Object.keys(weeklySimulatorOverrides[userId]).length === 0) {
+                delete weeklySimulatorOverrides[userId];
+            }
+        } else {
+            weeklySimulatorOverrides[userId][exerciseKey] = normalized;
+        }
         weeklySimulatorExpandedUserId = userId;
+        weeklySimulatorPendingAnimation = true;
 
         if (weeklySimulatorBaseScores && weeklySimulatorExerciseKeys.length > 0) {
             displayFreeScores(weeklySimulatorBaseScores, weeklySimulatorExerciseKeys);
@@ -4944,6 +4992,7 @@ function displayFreeScores(usersScores, exerciseKeys) {
     let html = '';
     let currentRank = 1;
     let previousScore = null;
+    const rankSnapshot = {};
 
     sortedUsers.forEach(([userId, userData], index) => {
         const totalScore = userData.totalScore;
@@ -4951,6 +5000,12 @@ function displayFreeScores(usersScores, exerciseKeys) {
             currentRank = index + 1;
         }
         previousScore = totalScore;
+        rankSnapshot[userId] = currentRank;
+
+        const prevRank = weeklySimulatorPreviousRanks[userId];
+        const movedClass = isWeeklySimulator && weeklySimulatorPendingAnimation && prevRank !== undefined && prevRank !== currentRank
+            ? ' rank-shift'
+            : '';
 
         const medal = currentRank === 1 ? '🥇' : currentRank === 2 ? '🥈' : currentRank === 3 ? '🥉' : `${currentRank}.`;
 
@@ -4961,9 +5016,10 @@ function displayFreeScores(usersScores, exerciseKeys) {
             const valueDisplay = userData.exercises[key] || 0;
             const unitText = isBarbarian ? '秒' : '';
             const barbarianIcon = isBarbarian ? '<i class="fa-solid fa-stopwatch" style="color:#e74c3c;margin-left:2px;font-size:10px;"></i>' : '';
+            const baseValue = usersScores?.[userId]?.exercises?.[key] || 0;
 
             const valueCell = isWeeklySimulator
-                ? `<input type="number" min="0" step="1" class="weekly-sim-input" data-user-id="${escapeHtml(userId)}" data-exercise-key="${escapeHtml(key)}" value="${clampWeeklySimulatorValue(valueDisplay, 0)}">${unitText ? `<span class="weekly-sim-unit">${unitText}</span>` : ''}`
+                ? `<span class="weekly-sim-edit-wrap"><input type="number" min="0" step="1" inputmode="numeric" class="weekly-sim-input" data-user-id="${escapeHtml(userId)}" data-exercise-key="${escapeHtml(key)}" value="${clampWeeklySimulatorValue(valueDisplay, 0)}" data-base-value="${clampWeeklySimulatorValue(baseValue, 0)}"><span class="weekly-sim-unit">${unitText || '回'}</span><span class="weekly-sim-base">現状:${clampWeeklySimulatorValue(baseValue, 0)}${unitText || '回'}</span></span>`
                 : `${valueDisplay}${unitText}`;
 
             return `
@@ -4982,7 +5038,7 @@ function displayFreeScores(usersScores, exerciseKeys) {
         const headerClickAttr = isWeeklySimulator ? `onclick="toggleScoreDetails('${escapeHtml(userId)}')"` : '';
 
         html += `
-            <div class="total-score-item" ${itemClickAttr}>
+            <div class="total-score-item${movedClass}" ${itemClickAttr}>
                 <div class="score-header" ${headerClickAttr}>
                     <span class="score-rank">${medal}</span>
                     <span class="score-username">${escapeHtml(userData.userName)}</span>
@@ -4998,6 +5054,10 @@ function displayFreeScores(usersScores, exerciseKeys) {
     });
 
     totalScoresList.innerHTML = html;
+    if (isWeeklySimulator) {
+        weeklySimulatorPreviousRanks = rankSnapshot;
+        weeklySimulatorPendingAnimation = false;
+    }
 }
 
 /**

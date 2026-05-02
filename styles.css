@@ -1688,11 +1688,11 @@ body.mode-interval header h1::after {
 }
 
 .weekly-sim-input {
-    width: 64px;
+    width: 72px;
     border: 1px solid #cbd5e1;
     border-radius: 5px;
-    padding: 3px 6px;
-    font-size: 12px;
+    padding: 4px 6px;
+    font-size: 16px;
     text-align: right;
     background: #f8fafc;
 }
@@ -1700,13 +1700,52 @@ body.mode-interval header h1::after {
 .weekly-sim-input:focus {
     outline: none;
     border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    box-shadow: none;
 }
 
 .weekly-sim-unit {
     margin-left: 4px;
     color: #666;
     font-size: 11px;
+}
+
+.weekly-sim-edit-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+}
+
+.weekly-sim-edit-wrap.is-editing {
+    background: #fff7d6;
+}
+
+.weekly-sim-base {
+    margin-left: 2px;
+    color: #6b7280;
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+.total-score-item.rank-shift {
+    animation: rankShiftFlash 0.6s ease;
+}
+
+@keyframes rankShiftFlash {
+    0% {
+        transform: translateY(0);
+        background-color: #fff;
+    }
+    30% {
+        transform: translateY(-3px);
+        background-color: #fff5cc;
+    }
+    100% {
+        transform: translateY(0);
+        background-color: #f9f9f9;
+    }
 }
 
 /* レスポンシブ対応：得点タブ */
@@ -1767,7 +1806,11 @@ body.mode-interval header h1::after {
     }
 
     .weekly-sim-input {
-        width: 54px;
+        width: 62px;
+    }
+
+    .weekly-sim-base {
+        font-size: 9px;
     }
 }
 
