@@ -3358,3 +3358,32 @@ body.dark-mode .review-item { background: #2a2a2a; }
     line-height: 1.5;
 }
 body.dark-mode .review-comment { color: #ccc; }
+
+.review-item-own {
+    border: 1px solid #d4edda;
+}
+body.dark-mode .review-item-own { border-color: #2d5a3d; }
+
+.btn-delete-review {
+    margin-left: auto;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: #e74c3c;
+    background: transparent;
+    border: 1px solid #e74c3c;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+.btn-delete-review:hover:not(:disabled) {
+    background: #fdecea;
+}
+.btn-delete-review:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+body.dark-mode .btn-delete-review { color: #e57373; border-color: #e57373; }
+body.dark-mode .btn-delete-review:hover:not(:disabled) { background: #3a1f1f; }

@@ -5426,6 +5426,53 @@ async function recalculateCreatorStats(creatorUserId) {
 }
 
 /**
+ * 自分の評価を削除し、集計を更新する
+ * @param {string} exerciseKey
+ */
+async function deleteExerciseRating(exerciseKey) {
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error('ログインが必要です');
+
+    const summaryRef = db.collection('exercise_ratings').doc(exerciseKey);
+    const userRatingRef = summaryRef.collection('user_ratings').doc(user.uid);
+
+    const existingDoc = await userRatingRef.get();
+    if (!existingDoc.exists) throw new Error('評価が存在しません');
+    const prevRating = existingDoc.data().rating || 0;
+
+    const batch = db.batch();
+    batch.delete(userRatingRef);
+    batch.update(summaryRef, {
+        ratingCount: firebase.firestore.FieldValue.increment(-1),
+        ratingSum: firebase.firestore.FieldValue.increment(-prevRating),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await batch.commit();
+
+    // avgRating をトランザクションで再計算
+    await db.runTransaction(async tx => {
+        const summarySnap = await tx.get(summaryRef);
+        if (summarySnap.exists) {
+            const d = summarySnap.data();
+            const count = d.ratingCount || 0;
+            if (count <= 0) {
+                tx.update(summaryRef, { avgRating: 0, ratingCount: 0, ratingSum: 0 });
+            } else {
+                tx.update(summaryRef, { avgRating: (d.ratingSum || 0) / count });
+            }
+        }
+    });
+
+    // 作成者の統計を非同期で更新
+    const ex = freeExercises[exerciseKey];
+    if (ex && ex.createdBy) {
+        recalculateCreatorStats(ex.createdBy).catch(e => console.warn('[評価] 作成者統計更新失敗:', e));
+    }
+
+    console.log(`[評価] ${exerciseKey} の評価を削除`);
+}
+
+/**
  * 指定種目の全ユーザー評価リストを取得
  * @param {string} exerciseKey
  * @returns {Promise<Array>}
@@ -7208,23 +7255,52 @@ async function openReviewsModal(exerciseKey, exerciseName) {
         } catch (e) { /* 取得失敗時は既存の userName をそのまま使用 */ }
     }
 
+    const currentUid = firebase.auth().currentUser ? firebase.auth().currentUser.uid : null;
+    // モーダルに exerciseKey/Name を保存（削除後の再描画用）
+    modal.dataset.exerciseKey = exerciseKey;
+    modal.dataset.exerciseName = exerciseName;
+
     listEl.innerHTML = reviews.map(r => {
         const stars = '★'.repeat(r.rating || 0) + '☆'.repeat(5 - (r.rating || 0));
         const label = RATING_LABELS[r.rating] || '';
         const comment = r.comment ? `<p class="review-comment">${escapeHtml(r.comment)}</p>` : '';
         const date = r.updatedAt ? new Date(r.updatedAt.seconds * 1000).toLocaleDateString('ja-JP') : '';
+        const isOwn = currentUid && r.userId === currentUid;
+        const deleteBtn = isOwn
+            ? `<button class="btn-delete-review" data-key="${escapeHtml(exerciseKey)}"><i class="fa-solid fa-trash"></i> 削除</button>`
+            : '';
         return `
-            <div class="review-item">
+            <div class="review-item${isOwn ? ' review-item-own' : ''}">
                 <div class="review-header">
                     <span class="review-stars">${escapeHtml(stars)}</span>
                     <span class="review-label">${escapeHtml(label)}</span>
                     <span class="review-date">${escapeHtml(date)}</span>
+                    ${deleteBtn}
                 </div>
                 <span class="review-username">${escapeHtml(r.userName || '匿名')}</span>
                 ${comment}
             </div>
         `;
     }).join('');
+
+    // 削除ボタンのイベント
+    listEl.querySelectorAll('.btn-delete-review').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm('この評価を削除しますか？')) return;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 削除中...';
+            try {
+                await deleteExerciseRating(btn.dataset.key);
+                await openReviewsModal(modal.dataset.exerciseKey, modal.dataset.exerciseName);
+                if (currentMode === 'free') renderFreeRulesContent();
+                if (currentMode === 'weekly') updateWeeklyRulesTab();
+            } catch (e) {
+                alert('削除に失敗しました: ' + (e.message || ''));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-trash"></i> 削除';
+            }
+        });
+    });
 }
 
 // ====================================================================
