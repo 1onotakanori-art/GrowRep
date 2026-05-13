@@ -341,6 +341,63 @@
         </div>
     </div>
 
+    <!-- 種目評価モーダル -->
+    <div id="exercise-rating-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="rating-modal-title"><i class="fa-solid fa-star"></i> 種目を評価する</h2>
+                <span class="close-rating-modal">&times;</span>
+            </div>
+            <p id="rating-modal-exercise-name" class="rating-exercise-name"></p>
+            <div class="rating-star-selector">
+                <p class="rating-instruction">評価を選んでください：</p>
+                <div class="star-selector-row">
+                    <button class="star-btn" data-value="1" title="2度とやりたくない">
+                        <i class="fa-solid fa-star"></i>
+                    </button>
+                    <button class="star-btn" data-value="2" title="不良種目">
+                        <i class="fa-solid fa-star"></i>
+                    </button>
+                    <button class="star-btn" data-value="3" title="悪くない">
+                        <i class="fa-solid fa-star"></i>
+                    </button>
+                    <button class="star-btn" data-value="4" title="良種目">
+                        <i class="fa-solid fa-star"></i>
+                    </button>
+                    <button class="star-btn" data-value="5" title="ぜひまたやりたい">
+                        <i class="fa-solid fa-star"></i>
+                    </button>
+                </div>
+                <p id="rating-label-text" class="rating-label-text">（未選択）</p>
+            </div>
+            <div class="rating-comment-area">
+                <label for="rating-comment-input">コメント（任意）</label>
+                <textarea id="rating-comment-input" placeholder="種目についてのコメントを入力..." maxlength="200" rows="3"></textarea>
+                <p class="comment-char-count"><span id="rating-comment-count">0</span>/200</p>
+            </div>
+            <p id="rating-existing-info" class="rating-existing-info"></p>
+            <div class="rating-modal-actions">
+                <button id="submit-rating-btn" class="btn-primary" disabled>
+                    <i class="fa-solid fa-paper-plane"></i> 評価を送信
+                </button>
+            </div>
+            <p id="rating-submit-error" class="error-message"></p>
+        </div>
+    </div>
+
+    <!-- レビュー閲覧モーダル -->
+    <div id="exercise-reviews-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="reviews-modal-title"><i class="fa-solid fa-comments"></i> みんなの評価</h2>
+                <span class="close-reviews-modal">&times;</span>
+            </div>
+            <p id="reviews-modal-exercise-name" class="rating-exercise-name"></p>
+            <div id="reviews-summary" class="reviews-summary"></div>
+            <div id="reviews-list" class="reviews-list"></div>
+        </div>
+    </div>
+
     <!-- パスワードリセットモーダル -->
     <div id="reset-password-modal" class="modal" style="display: none;">
         <div class="modal-content">

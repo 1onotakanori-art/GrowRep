@@ -105,5 +105,23 @@ service cloud.firestore {
       allow create, update: if request.auth != null;
       allow delete: if false;
     }
+
+    // exercise_ratings コレクション（種目評価）
+    // 親ドキュメント: 集計データ（avgRating, ratingCount, ratingSum）
+    // サブコレクション user_ratings: 個人の評価（本人のみ書き込み可）
+    match /exercise_ratings/{exerciseKey} {
+      allow read: if request.auth != null;
+      // 集計ドキュメントは認証済みユーザーが書き込み可（クライアント側でバッチ更新）
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+
+      match /user_ratings/{userId} {
+        allow read: if request.auth != null;
+        // 本人のみ作成・更新可能
+        allow create, update: if request.auth != null
+                              && request.auth.uid == userId;
+        allow delete: if false;
+      }
+    }
   }
 }

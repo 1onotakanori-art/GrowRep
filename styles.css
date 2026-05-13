@@ -3068,3 +3068,293 @@ body.dark-mode .post-inline-value:focus {
 .barbarian-exercise {
     border-left: 3px solid #e74c3c !important;
 }
+/* ====================================================================
+   種目評価システム スタイル
+   ==================================================================== */
+
+/* 種目カード内の評価行 */
+.rule-rating-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+/* 星評価表示 */
+.star-rating {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    color: #f39c12;
+    font-size: 13px;
+}
+.star-rating .rating-value {
+    color: #333;
+    font-size: 12px;
+    font-weight: 700;
+    margin-left: 3px;
+}
+.star-rating .rating-count {
+    color: #888;
+    font-size: 11px;
+    margin-left: 1px;
+}
+.star-rating.no-rating {
+    color: #bbb;
+    font-size: 11px;
+    font-style: italic;
+}
+body.dark-mode .star-rating .rating-value { color: #eee; }
+body.dark-mode .star-rating .rating-count { color: #aaa; }
+
+/* 作成者スコアバッジ */
+.creator-score {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: rgba(52,152,219,0.12);
+    color: #2980b9;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+body.dark-mode .creator-score {
+    background: rgba(52,152,219,0.25);
+    color: #5dade2;
+}
+
+/* 「レビューを見る」ボタン */
+.btn-view-reviews {
+    background: none;
+    border: 1px solid #3498db;
+    color: #3498db;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.15s, color 0.15s;
+}
+.btn-view-reviews:hover {
+    background: #3498db;
+    color: #fff;
+}
+body.dark-mode .btn-view-reviews { border-color: #5dade2; color: #5dade2; }
+body.dark-mode .btn-view-reviews:hover { background: #5dade2; color: #111; }
+
+/* 「評価する」ボタン */
+.btn-rate-exercise {
+    margin-top: 6px;
+    background: linear-gradient(135deg, #f39c12, #e67e22);
+    color: #fff;
+    border: none;
+    padding: 5px 14px;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: opacity 0.15s;
+}
+.btn-rate-exercise:hover { opacity: 0.85; }
+
+/* 週末評価バナー */
+.weekly-rating-banner {
+    background: linear-gradient(135deg, #f39c12, #e67e22);
+    color: #fff;
+    text-align: center;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+/* ============================
+   評価モーダル
+   ============================ */
+.rating-exercise-name {
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+    margin: 0 0 16px;
+    color: #333;
+}
+body.dark-mode .rating-exercise-name { color: #eee; }
+
+.rating-star-selector {
+    text-align: center;
+    margin-bottom: 14px;
+}
+.rating-instruction {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 8px;
+}
+body.dark-mode .rating-instruction { color: #aaa; }
+
+.star-selector-row {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+.star-btn {
+    background: none;
+    border: none;
+    font-size: 32px;
+    color: #ddd;
+    cursor: pointer;
+    padding: 2px;
+    transition: color 0.1s, transform 0.1s;
+    line-height: 1;
+}
+.star-btn.selected, .star-btn:hover {
+    color: #f39c12;
+    transform: scale(1.15);
+}
+
+.rating-label-text {
+    font-size: 14px;
+    color: #e67e22;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+.rating-comment-area {
+    margin-bottom: 10px;
+}
+.rating-comment-area label {
+    font-size: 13px;
+    color: #555;
+    display: block;
+    margin-bottom: 4px;
+}
+body.dark-mode .rating-comment-area label { color: #bbb; }
+#rating-comment-input {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 13px;
+    resize: vertical;
+    box-sizing: border-box;
+    background: #fff;
+    color: #333;
+}
+body.dark-mode #rating-comment-input {
+    background: #2a2a2a;
+    border-color: #444;
+    color: #eee;
+}
+.comment-char-count {
+    text-align: right;
+    font-size: 11px;
+    color: #aaa;
+    margin: 2px 0 0;
+}
+
+.rating-existing-info {
+    font-size: 12px;
+    color: #3498db;
+    text-align: center;
+    margin-bottom: 8px;
+    min-height: 16px;
+}
+
+.rating-modal-actions {
+    text-align: center;
+}
+
+/* ============================
+   レビュー閲覧モーダル
+   ============================ */
+.reviews-summary {
+    padding: 10px 0;
+    text-align: center;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 12px;
+}
+body.dark-mode .reviews-summary { border-bottom-color: #333; }
+
+.reviews-summary-big {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+.reviews-avg-num {
+    font-size: 36px;
+    font-weight: 800;
+    color: #f39c12;
+    line-height: 1;
+}
+.reviews-count-label {
+    font-size: 13px;
+    color: #888;
+}
+.reviews-summary-big .star-rating {
+    font-size: 20px;
+}
+
+.reviews-list {
+    max-height: 320px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.review-item {
+    background: #f8f8f8;
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+body.dark-mode .review-item { background: #2a2a2a; }
+
+.review-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+.review-stars {
+    color: #f39c12;
+    font-size: 14px;
+    letter-spacing: 1px;
+}
+.review-label {
+    font-size: 12px;
+    color: #e67e22;
+    font-weight: 600;
+}
+.review-date {
+    font-size: 11px;
+    color: #aaa;
+    margin-left: auto;
+}
+.review-username {
+    font-size: 12px;
+    color: #888;
+    display: block;
+    margin-bottom: 4px;
+}
+.review-comment {
+    font-size: 13px;
+    color: #444;
+    margin: 0;
+    line-height: 1.5;
+}
+body.dark-mode .review-comment { color: #ccc; }

@@ -3937,33 +3937,14 @@ function updateFreeRulesTab() {
 
 /**
  * ルールタブの種目一覧をレンダリング（フィルタリング済み）
+ * 評価データを非同期取得してカードに表示する
  */
-function renderFreeRulesContent() {
+async function renderFreeRulesContent() {
     const rulesTab = document.getElementById('rules-tab');
     const rulesList = rulesTab.querySelector('.rules-list');
     const entries = getFilteredAndSortedExercises(exerciseFilterState);
-    
-    rulesList.innerHTML = '';
-    
-    if (exerciseFilterState.sortBy === 'tags-group') {
-        const groups = groupExercisesByTag(entries);
-        Object.entries(groups).forEach(([tag, groupEntries]) => {
-            const groupHeader = document.createElement('div');
-            groupHeader.className = 'exercise-tag-section';
-            groupHeader.innerHTML = `<h4><i class="fa-solid fa-tag"></i> ${escapeHtml(tag)}</h4>`;
-            rulesList.appendChild(groupHeader);
-            groupEntries.forEach(([key, ex]) => appendRuleItem(rulesList, key, ex));
-        });
-    } else {
-        entries.forEach(([key, ex]) => appendRuleItem(rulesList, key, ex));
-    }
 
-    // カードタップで編集画面を開く
-    rulesList.querySelectorAll('.rule-item').forEach(item => {
-        item.addEventListener('click', () => {
-            openEditExerciseModal(item.dataset.key);
-        });
-    });
+    rulesList.innerHTML = '';
 
     if (entries.length === 0) {
         if (Object.keys(freeExercises).length === 0) {
@@ -3971,29 +3952,115 @@ function renderFreeRulesContent() {
         } else {
             rulesList.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;"><i class="fa-solid fa-filter"></i> 該当する種目が見つかりません</p>';
         }
+        return;
     }
+
+    // 評価データと投稿実績を並行取得
+    const allEntryKeys = entries.map(([k]) => k);
+    const [ratingSummaries, userPostedKeys] = await Promise.all([
+        getExerciseRatingSummaries(allEntryKeys),
+        getUserPostedExerciseKeys('free')
+    ]);
+
+    function renderEntries(entryList) {
+        entryList.forEach(([key, ex]) => {
+            const ratingData = ratingSummaries[key] || null;
+            const canRate = userPostedKeys.has(key);
+            appendRuleItem(rulesList, key, ex, ratingData, canRate, false);
+        });
+    }
+
+    if (exerciseFilterState.sortBy === 'tags-group') {
+        const groups = groupExercisesByTag(entries);
+        Object.entries(groups).forEach(([tag, groupEntries]) => {
+            const groupHeader = document.createElement('div');
+            groupHeader.className = 'exercise-tag-section';
+            groupHeader.innerHTML = `<h4><i class="fa-solid fa-tag"></i> ${escapeHtml(tag)}</h4>`;
+            rulesList.appendChild(groupHeader);
+            renderEntries(groupEntries);
+        });
+    } else {
+        renderEntries(entries);
+    }
+
+    // カードタップで編集画面を開く（評価ボタン以外）
+    rulesList.querySelectorAll('.rule-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            if (e.target.closest('.btn-rate-exercise') || e.target.closest('.btn-view-reviews')) return;
+            openEditExerciseModal(item.dataset.key);
+        });
+    });
+
+    // 「評価する」ボタン
+    rulesList.querySelectorAll('.btn-rate-exercise').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openRatingModal(btn.dataset.key, btn.dataset.name);
+        });
+    });
+
+    // 「レビューを見る」ボタン
+    rulesList.querySelectorAll('.btn-view-reviews').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const ex = freeExercises[btn.dataset.key];
+            openReviewsModal(btn.dataset.key, ex ? ex.name : btn.dataset.key);
+        });
+    });
 }
 
 /**
  * ルールタブに1つの種目カードを追加
+ * @param {HTMLElement} container
+ * @param {string} key
+ * @param {Object} ex
+ * @param {Object} [ratingData] - {avgRating, ratingCount} 集計評価（省略時は非表示）
+ * @param {boolean} [canRate=false] - 評価ボタンを表示するか
+ * @param {boolean} [isWeeklyMode=false] - 週間チャレンジモードか
  */
-function appendRuleItem(container, key, ex) {
+function appendRuleItem(container, key, ex, ratingData = null, canRate = false, isWeeklyMode = false) {
     const iconClass = ex.icon || 'fa-dumbbell';
     const isBarbarian = ex.barbarian || false;
     const barbarianBadge = isBarbarian ? '<span class="barbarian-badge"><i class="fa-solid fa-stopwatch"></i> バーバリアン</span>' : '';
-    const createdByInfo = ex.createdByName ? `<span class="created-by-info">追加: ${escapeHtml(ex.createdByName)}</span>` : '';
+
+    // 作成者表示（作成者評価スコアを含む）
+    let createdByHtml = '';
+    if (ex.createdByName) {
+        // クリエイタースコアは creatorScoreCache から取得（非同期ロード済みの場合のみ表示）
+        let creatorScore = '';
+        const cachedCreator = creatorScoreCache[ex.createdBy];
+        if (cachedCreator && cachedCreator.creatorAvgRating != null && (cachedCreator.creatorRatedExerciseCount || 0) >= 3) {
+            const cScore = cachedCreator.creatorAvgRating.toFixed(1);
+            creatorScore = ` <span class="creator-score" title="作成者スコア"><i class="fa-solid fa-user-star"></i>${cScore}</span>`;
+        }
+        createdByHtml = `<span class="created-by-info">追加: ${escapeHtml(ex.createdByName)}${creatorScore}</span>`;
+    }
+
     const tagsHtml = (ex.tags && ex.tags.length > 0) 
         ? `<div class="rule-tags">${ex.tags.map(t => `<span class="tag-chip display-only">${escapeHtml(t)}</span>`).join('')}</div>` 
         : '';
+
+    // 星評価表示
+    const starHtml = ratingData
+        ? `<div class="rule-rating-row">${renderStarRatingHtml(ratingData.avgRating, ratingData.ratingCount)}<button class="btn-view-reviews" data-key="${escapeHtml(key)}" title="レビューを見る"><i class="fa-solid fa-comments"></i></button></div>`
+        : '<div class="rule-rating-row"><span class="star-rating no-rating">評価なし</span></div>';
+
+    // 評価ボタン
+    const rateBtn = canRate
+        ? `<button class="btn-rate-exercise" data-key="${escapeHtml(key)}" data-name="${escapeHtml(ex.name)}">${isWeeklyMode ? '<i class="fa-solid fa-star"></i> 今週を評価' : '<i class="fa-solid fa-star"></i> 評価する'}</button>`
+        : '';
+
     const item = document.createElement('div');
     item.className = 'rule-item' + (isBarbarian ? ' barbarian-exercise' : '');
     item.dataset.key = key;
-    item.style.cursor = 'pointer';
+    item.style.cursor = isWeeklyMode ? 'default' : 'pointer';
     item.innerHTML = `
         <div class="rule-info">
-            <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)} ${barbarianBadge} ${createdByInfo}</h3>
+            <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)} ${barbarianBadge} ${createdByHtml}</h3>
             <p class="rule-detail">${escapeHtml(ex.rule)}</p>
             ${tagsHtml}
+            ${starHtml}
+            ${rateBtn}
         </div>
     `;
     container.appendChild(item);
@@ -4051,6 +4118,56 @@ function updateFreeGraphDropdownContent() {
     // 元の選択値を復元
     if (currentVal && select.querySelector(`option[value="${currentVal}"]`)) {
         select.value = currentVal;
+    }
+}
+
+/**
+ * 現在のログインユーザーが投稿したことがある種目キーの Set を返す
+ * @param {'free'|'weekly'} mode
+ * @returns {Promise<Set<string>>}
+ */
+async function getUserPostedExerciseKeys(mode) {
+    const user = firebase.auth().currentUser;
+    if (!user) return new Set();
+    try {
+        const collName = (mode === 'weekly' || mode === 'free') ? 'posts_free' : 'posts';
+        const snap = await db.collection(collName)
+            .where('userId', '==', user.uid)
+            .get();
+        const keys = new Set();
+        snap.docs.forEach(d => {
+            const k = d.data().exerciseType;
+            if (k) keys.add(k);
+        });
+        return keys;
+    } catch (e) {
+        console.warn('[評価] 投稿実績取得失敗:', e);
+        return new Set();
+    }
+}
+
+/**
+ * 週間チャレンジで当週に投稿した種目キーの Set を返す
+ * @returns {Promise<Set<string>>}
+ */
+async function getUserWeeklyPostedKeys() {
+    const user = firebase.auth().currentUser;
+    if (!user || !weeklyChallenge) return new Set();
+    try {
+        const snap = await db.collection('posts_free')
+            .where('userId', '==', user.uid)
+            .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(weeklyChallenge.weekStart))
+            .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(weeklyChallenge.weekEnd))
+            .get();
+        const keys = new Set();
+        snap.docs.forEach(d => {
+            const k = d.data().exerciseType;
+            if (k) keys.add(k);
+        });
+        return keys;
+    } catch (e) {
+        console.warn('[評価] 週間投稿実績取得失敗:', e);
+        return new Set();
     }
 }
 
@@ -5112,6 +5229,273 @@ async function loadFreeUserCheckboxes(forceRefresh = false) {
 }
 
 // ====================================================================
+// 種目評価システム
+// ====================================================================
+
+/** 評価ラベル（1〜5）*/
+const RATING_LABELS = {
+    1: '2度とやりたくない',
+    2: '不良種目',
+    3: '悪くない',
+    4: '良種目',
+    5: 'ぜひまたやりたい'
+};
+
+/** 作成者スコアのキャッシュ { [userId]: { creatorAvgRating, creatorRatedExerciseCount } } */
+const creatorScoreCache = {};
+
+/**
+ * 現在時刻が週末（土日 JST）かどうかを返す
+ * @param {Date} [now=new Date()]
+ * @returns {boolean}
+ */
+function isWeekendJST(now = new Date()) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const jstMs = now.getTime() + JST_OFFSET_MS;
+    const jstDate = new Date(jstMs);
+    const day = jstDate.getUTCDay(); // 0=日, 6=土
+    return day === 0 || day === 6;
+}
+
+/**
+ * 指定種目の集計評価を取得
+ * @param {string} exerciseKey
+ * @returns {Promise<{avgRating: number, ratingCount: number, ratingSum: number}|null>}
+ */
+async function getExerciseRatingSummary(exerciseKey) {
+    try {
+        const doc = await db.collection('exercise_ratings').doc(exerciseKey).get();
+        if (doc.exists) return doc.data();
+        return null;
+    } catch (e) {
+        console.warn('[評価] 集計取得失敗:', e);
+        return null;
+    }
+}
+
+/**
+ * 複数種目の集計評価をまとめて取得
+ * @param {string[]} keys
+ * @returns {Promise<Object>} { [key]: {avgRating, ratingCount, ratingSum} }
+ */
+async function getExerciseRatingSummaries(keys) {
+    if (!keys || keys.length === 0) return {};
+    const results = {};
+    await Promise.all(keys.map(async key => {
+        const data = await getExerciseRatingSummary(key);
+        if (data) results[key] = data;
+    }));
+    return results;
+}
+
+/**
+ * ログインユーザーの指定種目評価を取得
+ * @param {string} exerciseKey
+ * @returns {Promise<{rating: number, comment: string, timestamp, updatedAt}|null>}
+ */
+async function getUserExerciseRating(exerciseKey) {
+    const user = firebase.auth().currentUser;
+    if (!user) return null;
+    try {
+        const doc = await db.collection('exercise_ratings').doc(exerciseKey)
+            .collection('user_ratings').doc(user.uid).get();
+        if (doc.exists) return doc.data();
+        return null;
+    } catch (e) {
+        console.warn('[評価] ユーザー評価取得失敗:', e);
+        return null;
+    }
+}
+
+/**
+ * 種目評価を送信（新規 or 更新）
+ * バッチ書き込みで個別評価と集計を原子更新する
+ * @param {string} exerciseKey
+ * @param {number} rating - 1〜5
+ * @param {string} comment - 任意（空文字列可）
+ */
+async function submitExerciseRating(exerciseKey, rating, comment) {
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error('ログインが必要です');
+    if (rating < 1 || rating > 5) throw new Error('評価は1〜5で入力してください');
+
+    const summaryRef = db.collection('exercise_ratings').doc(exerciseKey);
+    const userRatingRef = summaryRef.collection('user_ratings').doc(user.uid);
+
+    // 既存評価を確認（差分更新のため）
+    const existingDoc = await userRatingRef.get();
+    const prevRating = existingDoc.exists ? (existingDoc.data().rating || 0) : 0;
+    const isUpdate = existingDoc.exists;
+
+    const batch = db.batch();
+
+    // 個別評価ドキュメントの書き込み
+    const userRatingData = {
+        rating,
+        comment: comment || '',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (!isUpdate) {
+        userRatingData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+        userRatingData.userId = user.uid;
+        userRatingData.userName = user.displayName || user.email || '匿名';
+    }
+
+    if (isUpdate) {
+        batch.update(userRatingRef, userRatingData);
+    } else {
+        batch.set(userRatingRef, userRatingData);
+    }
+
+    // 集計ドキュメントの更新
+    if (isUpdate) {
+        // 既存評価を差し引いて新しい評価を加算
+        batch.update(summaryRef, {
+            ratingSum: firebase.firestore.FieldValue.increment(rating - prevRating),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        // avgRating はバッチ後に再計算
+    } else {
+        // 初回評価: increment
+        batch.set(summaryRef, {
+            ratingCount: firebase.firestore.FieldValue.increment(1),
+            ratingSum: firebase.firestore.FieldValue.increment(rating),
+            avgRating: 0, // 後で再計算
+            exerciseKey,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+    }
+
+    await batch.commit();
+
+    // avgRating をトランザクションで正確に更新
+    await db.runTransaction(async tx => {
+        const summarySnap = await tx.get(summaryRef);
+        if (summarySnap.exists) {
+            const d = summarySnap.data();
+            const count = d.ratingCount || 1;
+            const sum = d.ratingSum || rating;
+            tx.update(summaryRef, { avgRating: sum / count });
+        }
+    });
+
+    // 作成者の統計を非同期で更新
+    const ex = freeExercises[exerciseKey];
+    if (ex && ex.createdBy) {
+        recalculateCreatorStats(ex.createdBy).catch(e => console.warn('[評価] 作成者統計更新失敗:', e));
+    }
+
+    console.log(`[評価] ${exerciseKey} に ${rating}★ を送信`);
+}
+
+/**
+ * 指定ユーザーの作成者評価統計を再計算して users/{uid} に保存
+ * @param {string} creatorUserId
+ */
+async function recalculateCreatorStats(creatorUserId) {
+    // 作成者の種目を全件取得
+    const createdKeys = Object.entries(freeExercises)
+        .filter(([, ex]) => ex.createdBy === creatorUserId)
+        .map(([key]) => key);
+
+    if (createdKeys.length === 0) return;
+
+    // 各種目の集計評価を取得
+    const summaries = await getExerciseRatingSummaries(createdKeys);
+
+    // 評価がついた種目のみを対象に平均計算
+    const ratedEntries = Object.entries(summaries).filter(([, s]) => (s.ratingCount || 0) > 0);
+    if (ratedEntries.length === 0) {
+        await db.collection('users').doc(creatorUserId).update({
+            creatorAvgRating: firebase.firestore.FieldValue.delete(),
+            creatorRatedExerciseCount: 0
+        }).catch(() => {});
+        return;
+    }
+
+    const avgOfAvgs = ratedEntries.reduce((sum, [, s]) => sum + s.avgRating, 0) / ratedEntries.length;
+
+    await db.collection('users').doc(creatorUserId).set({
+        creatorAvgRating: Math.round(avgOfAvgs * 100) / 100,
+        creatorRatedExerciseCount: ratedEntries.length
+    }, { merge: true });
+
+    console.log(`[評価] 作成者 ${creatorUserId} のスコア更新: ${avgOfAvgs.toFixed(2)}`);
+}
+
+/**
+ * 指定種目の全ユーザー評価リストを取得
+ * @param {string} exerciseKey
+ * @returns {Promise<Array>}
+ */
+async function getExerciseReviews(exerciseKey) {
+    try {
+        const snap = await db.collection('exercise_ratings').doc(exerciseKey)
+            .collection('user_ratings')
+            .orderBy('updatedAt', 'desc')
+            .get();
+        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+        console.warn('[評価] レビューリスト取得失敗:', e);
+        return [];
+    }
+}
+
+/**
+ * 種目評価から選出確率の修正係数を算出する
+ * @param {{avgRating: number, ratingCount: number}|null} summary
+ * @returns {number} 係数（1.0 = 変化なし）
+ */
+function calcExerciseRatingModifier(summary) {
+    if (!summary || (summary.ratingCount || 0) < 3) return 1.0;
+    const avg = summary.avgRating;
+    if (avg <= 2) return 0.3;
+    if (avg >= 4) return 2.0;
+    // 2 < avg < 4: 線形補間 (0.3→1.0 @ avg=2〜3, 1.0→2.0 @ avg=3〜4)
+    if (avg < 3) return 0.3 + (avg - 2) * 0.7;
+    return 1.0 + (avg - 3) * 1.0;
+}
+
+/**
+ * 作成者評価から選出確率の修正係数を算出する
+ * @param {{creatorAvgRating?: number, creatorRatedExerciseCount?: number}|null} creatorData
+ * @returns {number} 係数（1.0 = 変化なし）
+ */
+function calcCreatorRatingModifier(creatorData) {
+    if (!creatorData) return 1.0;
+    const count = creatorData.creatorRatedExerciseCount || 0;
+    if (count < 3) return 1.0;
+    const avg = creatorData.creatorAvgRating;
+    if (avg == null) return 1.0;
+    if (avg <= 2) return 0.6;
+    if (avg >= 4) return 1.4;
+    return 1.0;
+}
+
+/**
+ * 星評価のHTML文字列を生成（表示用）
+ * @param {number|null} avgRating
+ * @param {number} ratingCount
+ * @returns {string}
+ */
+function renderStarRatingHtml(avgRating, ratingCount) {
+    if (avgRating == null || ratingCount === 0) {
+        return '<span class="star-rating no-rating">評価なし</span>';
+    }
+    const rounded = Math.round(avgRating * 2) / 2; // 0.5刻みで丸める
+    const fullStars = Math.floor(rounded);
+    const halfStar = rounded % 1 >= 0.5;
+    const emptyStars = 5 - fullStars - (halfStar ? 1 : 0);
+
+    let starsHtml = '';
+    for (let i = 0; i < fullStars; i++) starsHtml += '<i class="fa-solid fa-star"></i>';
+    if (halfStar) starsHtml += '<i class="fa-solid fa-star-half-stroke"></i>';
+    for (let i = 0; i < emptyStars; i++) starsHtml += '<i class="fa-regular fa-star"></i>';
+
+    return `<span class="star-rating" title="${avgRating.toFixed(1)}点 (${ratingCount}件)">${starsHtml}<span class="rating-value">${avgRating.toFixed(1)}</span><span class="rating-count">(${ratingCount})</span></span>`;
+}
+
+// ====================================================================
 // 週間チャレンジモード機能
 // ====================================================================
 
@@ -5198,17 +5582,26 @@ async function getWeeklyConfig() {
  * @param {Object} history - { [key]: 選出回数 }
  * @param {number} count
  * @param {number} weightExponent - 重み指数（大きいほど再選出されにくい）
+ * @param {Object} [exerciseRatings={}] - { [key]: {avgRating, ratingCount} } 種目評価集計
+ * @param {Object} [creatorData={}] - { [userId]: {creatorAvgRating, creatorRatedExerciseCount} } 作成者データ
  * @returns {string[]}
  */
-function selectWeeklyExercises(allKeys, history, count = 3, weightExponent = 2) {
+function selectWeeklyExercises(allKeys, history, count = 3, weightExponent = 2, exerciseRatings = {}, creatorData = {}) {
     if (allKeys.length <= count) return [...allKeys];
 
     const remaining = [...allKeys];
     const selected = [];
 
     for (let i = 0; i < count; i++) {
-        // 重み = 1 / (過去選出回数 + 1) ^ weightExponent
-        const weights = remaining.map(key => 1 / Math.pow((history[key] || 0) + 1, weightExponent));
+        // 重み = (1 / (過去選出回数 + 1)^e) × 種目評価係数 × 作成者評価係数
+        const weights = remaining.map(key => {
+            const base = 1 / Math.pow((history[key] || 0) + 1, weightExponent);
+            const exRating = calcExerciseRatingModifier(exerciseRatings[key] || null);
+            const ex = freeExercises[key];
+            const creatorId = ex ? ex.createdBy : null;
+            const crRating = calcCreatorRatingModifier(creatorId ? (creatorData[creatorId] || null) : null);
+            return Math.max(base * exRating * crRating, 1e-9); // 完全ゼロ回避
+        });
         const total = weights.reduce((s, w) => s + w, 0);
 
         let rand = Math.random() * total;
@@ -5231,24 +5624,26 @@ function selectWeeklyExercises(allKeys, history, count = 3, weightExponent = 2) 
  * @param {Object} allExercises - freeExercises 全体
  * @param {Object} history - { [key]: 選出回数 }
  * @param {number} weightExponent - 重み指数
+ * @param {Object} [exerciseRatings={}] - 種目評価集計
+ * @param {Object} [creatorData={}] - 作成者データ
  * @returns {string[]}
  */
-function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExponent = 2) {
+function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExponent = 2, exerciseRatings = {}, creatorData = {}) {
     const allKeys = Object.keys(allExercises || {});
     if (allKeys.length === 0) return [];
 
     const normalKeys = allKeys.filter(key => !(allExercises[key] && allExercises[key].barbarian));
     const barbarianKeys = allKeys.filter(key => allExercises[key] && allExercises[key].barbarian);
 
-    const selectedNormal = selectWeeklyExercises(normalKeys, history, 2, weightExponent);
-    const selectedBarbarian = selectWeeklyExercises(barbarianKeys, history, 1, weightExponent);
+    const selectedNormal = selectWeeklyExercises(normalKeys, history, 2, weightExponent, exerciseRatings, creatorData);
+    const selectedBarbarian = selectWeeklyExercises(barbarianKeys, history, 1, weightExponent, exerciseRatings, creatorData);
 
     const selectedSet = new Set([...selectedNormal, ...selectedBarbarian]);
 
     // 総数3を維持するため、枠不足時は残り全種目から補完
     if (selectedSet.size < 3) {
         const remainingKeys = allKeys.filter(key => !selectedSet.has(key));
-        const fallback = selectWeeklyExercises(remainingKeys, history, 3 - selectedSet.size, weightExponent);
+        const fallback = selectWeeklyExercises(remainingKeys, history, 3 - selectedSet.size, weightExponent, exerciseRatings, creatorData);
         fallback.forEach(key => selectedSet.add(key));
     }
 
@@ -5317,10 +5712,25 @@ async function getOrUpdateWeeklyChallenge() {
         const weeklyConfig = await getWeeklyConfig();
         const weightExponent = weeklyConfig.weightExponent || 2;
 
+        // 評価データを取得（種目評価 + 作成者評価）
+        const exerciseRatings = await getExerciseRatingSummaries(allKeys);
+        const creatorUserIds = [...new Set(allKeys.map(k => freeExercises[k]?.createdBy).filter(Boolean))];
+        const creatorDataMap = {};
+        if (creatorUserIds.length > 0) {
+            await Promise.all(creatorUserIds.map(async uid => {
+                try {
+                    const uDoc = await db.collection('users').doc(uid).get();
+                    if (uDoc.exists) creatorDataMap[uid] = uDoc.data();
+                } catch (e) { /* 取得失敗は無視 */ }
+            }));
+        }
+
         const selectedExercises = selectWeeklyExercisesWithBarbarianSlot(
             freeExercises,
             existingHistory,
-            weightExponent
+            weightExponent,
+            exerciseRatings,
+            creatorDataMap
         );
 
         // 選出履歴を更新
@@ -5854,8 +6264,9 @@ function updateWeeklyPostDropdown() {
 
 /**
  * 週間チャレンジ: ルールタブを今週の3種目（読み取り専用）で更新
+ * 週末（土日JST）には評価ボタンも表示する
  */
-function updateWeeklyRulesTab() {
+async function updateWeeklyRulesTab() {
     if (currentMode !== 'weekly') return;
 
     const rulesTab = document.getElementById('rules-tab');
@@ -5888,23 +6299,52 @@ function updateWeeklyRulesTab() {
         return;
     }
 
-    weeklyChallenge.exercises.forEach(key => {
+    const weekend = isWeekendJST();
+
+    // 週末バナー表示制御
+    let weekendBanner = rulesTab.querySelector('.weekly-rating-banner');
+    if (weekend) {
+        if (!weekendBanner) {
+            weekendBanner = document.createElement('div');
+            weekendBanner.className = 'weekly-rating-banner';
+            weekendBanner.innerHTML = '<i class="fa-solid fa-star"></i> 今週のチャレンジが終了しました！種目を評価できます。';
+            rulesList.parentNode.insertBefore(weekendBanner, rulesList);
+        }
+    } else {
+        if (weekendBanner) weekendBanner.remove();
+    }
+
+    // 評価データと当週投稿実績を取得
+    const exerciseKeys = weeklyChallenge.exercises;
+    const [ratingSummaries, userPostedKeys] = await Promise.all([
+        getExerciseRatingSummaries(exerciseKeys),
+        getUserWeeklyPostedKeys()
+    ]);
+
+    exerciseKeys.forEach(key => {
         const ex = freeExercises[key];
         if (!ex) return;
-        const iconClass = ex.icon || 'fa-dumbbell';
-        const tagsHtml = (ex.tags && ex.tags.length > 0) 
-            ? `<div class="rule-tags">${ex.tags.map(t => `<span class="tag-chip display-only">${escapeHtml(t)}</span>`).join('')}</div>` 
-            : '';
-        const item = document.createElement('div');
-        item.className = 'rule-item';
-        item.innerHTML = `
-            <div class="rule-info">
-                <h3><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)}</h3>
-                <p class="rule-detail">${escapeHtml(ex.rule || 'ルール未設定')}</p>
-                ${tagsHtml}
-            </div>
-        `;
-        rulesList.appendChild(item);
+        const ratingData = ratingSummaries[key] || null;
+        // 評価ボタン表示条件: 週末 && 当週に投稿済み
+        const canRate = weekend && userPostedKeys.has(key);
+        appendRuleItem(rulesList, key, ex, ratingData, canRate, true);
+    });
+
+    // 「評価する」ボタン
+    rulesList.querySelectorAll('.btn-rate-exercise').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openRatingModal(btn.dataset.key, btn.dataset.name);
+        });
+    });
+
+    // 「レビューを見る」ボタン
+    rulesList.querySelectorAll('.btn-view-reviews').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const ex = freeExercises[btn.dataset.key];
+            openReviewsModal(btn.dataset.key, ex ? ex.name : btn.dataset.key);
+        });
     });
 }
 
@@ -6657,6 +7097,183 @@ async function loadChampionsHistory() {
         championsList.innerHTML = `<p style="text-align:center; color:#e74c3c; padding:20px;">データの読み込みに失敗しました<br><span style="font-size:0.85em; color:#999;">エラー: ${escapeHtml(errorMessage)}${escapeHtml(errorCode)}</span></p>`;
     }
 }
+
+// ====================================================================
+// 評価モーダル・レビューモーダル UI 制御
+// ====================================================================
+
+/** 評価モーダルで選択中の値 */
+let ratingModalSelectedValue = 0;
+let ratingModalExerciseKey = '';
+
+/**
+ * 評価モーダルを開く
+ * @param {string} exerciseKey
+ * @param {string} exerciseName
+ */
+async function openRatingModal(exerciseKey, exerciseName) {
+    ratingModalExerciseKey = exerciseKey;
+    ratingModalSelectedValue = 0;
+
+    const modal = document.getElementById('exercise-rating-modal');
+    document.getElementById('rating-modal-exercise-name').textContent = exerciseName;
+    document.getElementById('rating-comment-input').value = '';
+    document.getElementById('rating-comment-count').textContent = '0';
+    document.getElementById('rating-submit-error').textContent = '';
+    document.getElementById('rating-existing-info').textContent = '';
+    document.getElementById('submit-rating-btn').disabled = true;
+
+    // 星ボタン初期化
+    updateStarDisplay(0);
+    document.getElementById('rating-label-text').textContent = '（未選択）';
+
+    modal.style.display = 'block';
+
+    // 既存評価があれば表示
+    const existing = await getUserExerciseRating(exerciseKey);
+    if (existing) {
+        ratingModalSelectedValue = existing.rating;
+        updateStarDisplay(existing.rating);
+        document.getElementById('rating-label-text').textContent = RATING_LABELS[existing.rating] || '';
+        document.getElementById('rating-comment-input').value = existing.comment || '';
+        document.getElementById('rating-comment-count').textContent = (existing.comment || '').length;
+        document.getElementById('rating-existing-info').textContent = `現在の評価: ★${existing.rating} （更新できます）`;
+        document.getElementById('submit-rating-btn').disabled = false;
+    }
+}
+
+/**
+ * 星ボタンの表示を更新
+ * @param {number} value - 0〜5
+ */
+function updateStarDisplay(value) {
+    document.querySelectorAll('#exercise-rating-modal .star-btn').forEach(btn => {
+        const v = parseInt(btn.dataset.value);
+        btn.classList.toggle('selected', v <= value);
+    });
+}
+
+/**
+ * レビュー閲覧モーダルを開く
+ * @param {string} exerciseKey
+ * @param {string} exerciseName
+ */
+async function openReviewsModal(exerciseKey, exerciseName) {
+    const modal = document.getElementById('exercise-reviews-modal');
+    document.getElementById('reviews-modal-exercise-name').textContent = exerciseName;
+    document.getElementById('reviews-summary').innerHTML = '<p style="text-align:center;color:#999;">読み込み中...</p>';
+    document.getElementById('reviews-list').innerHTML = '';
+    modal.style.display = 'block';
+
+    const [summary, reviews] = await Promise.all([
+        getExerciseRatingSummary(exerciseKey),
+        getExerciseReviews(exerciseKey)
+    ]);
+
+    // 集計サマリー
+    const summaryEl = document.getElementById('reviews-summary');
+    if (summary && summary.ratingCount > 0) {
+        summaryEl.innerHTML = `
+            <div class="reviews-summary-big">
+                ${renderStarRatingHtml(summary.avgRating, summary.ratingCount)}
+                <span class="reviews-avg-num">${summary.avgRating.toFixed(1)}</span>
+                <span class="reviews-count-label">${summary.ratingCount}件の評価</span>
+            </div>
+        `;
+    } else {
+        summaryEl.innerHTML = '<p style="text-align:center;color:#999;">まだ評価がありません</p>';
+    }
+
+    // レビュー一覧
+    const listEl = document.getElementById('reviews-list');
+    if (reviews.length === 0) {
+        listEl.innerHTML = '<p style="text-align:center;color:#999;padding:12px;">コメントはありません</p>';
+        return;
+    }
+    listEl.innerHTML = reviews.map(r => {
+        const stars = '★'.repeat(r.rating || 0) + '☆'.repeat(5 - (r.rating || 0));
+        const label = RATING_LABELS[r.rating] || '';
+        const comment = r.comment ? `<p class="review-comment">${escapeHtml(r.comment)}</p>` : '';
+        const date = r.updatedAt ? new Date(r.updatedAt.seconds * 1000).toLocaleDateString('ja-JP') : '';
+        return `
+            <div class="review-item">
+                <div class="review-header">
+                    <span class="review-stars">${escapeHtml(stars)}</span>
+                    <span class="review-label">${escapeHtml(label)}</span>
+                    <span class="review-date">${escapeHtml(date)}</span>
+                </div>
+                <span class="review-username">${escapeHtml(r.userName || '匿名')}</span>
+                ${comment}
+            </div>
+        `;
+    }).join('');
+}
+
+// ====================================================================
+// 評価モーダル・レビューモーダル イベントリスナー
+// ====================================================================
+
+// 評価モーダルを閉じる
+document.querySelector('.close-rating-modal')?.addEventListener('click', () => {
+    document.getElementById('exercise-rating-modal').style.display = 'none';
+});
+document.getElementById('exercise-rating-modal')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('exercise-rating-modal')) {
+        document.getElementById('exercise-rating-modal').style.display = 'none';
+    }
+});
+
+// レビューモーダルを閉じる
+document.querySelector('.close-reviews-modal')?.addEventListener('click', () => {
+    document.getElementById('exercise-reviews-modal').style.display = 'none';
+});
+document.getElementById('exercise-reviews-modal')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('exercise-reviews-modal')) {
+        document.getElementById('exercise-reviews-modal').style.display = 'none';
+    }
+});
+
+// 星ボタンのクリック
+document.querySelectorAll('#exercise-rating-modal .star-btn').forEach(btn => {
+    btn.addEventListener('mouseenter', () => updateStarDisplay(parseInt(btn.dataset.value)));
+    btn.addEventListener('mouseleave', () => updateStarDisplay(ratingModalSelectedValue));
+    btn.addEventListener('click', () => {
+        ratingModalSelectedValue = parseInt(btn.dataset.value);
+        updateStarDisplay(ratingModalSelectedValue);
+        document.getElementById('rating-label-text').textContent = RATING_LABELS[ratingModalSelectedValue] || '';
+        document.getElementById('submit-rating-btn').disabled = false;
+    });
+});
+
+// コメント文字数カウント
+document.getElementById('rating-comment-input')?.addEventListener('input', (e) => {
+    document.getElementById('rating-comment-count').textContent = e.target.value.length;
+});
+
+// 評価送信
+document.getElementById('submit-rating-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('submit-rating-btn');
+    const errEl = document.getElementById('rating-submit-error');
+    errEl.textContent = '';
+    if (!ratingModalSelectedValue) {
+        errEl.textContent = '評価を選択してください';
+        return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 送信中...';
+    try {
+        const comment = document.getElementById('rating-comment-input').value.trim();
+        await submitExerciseRating(ratingModalExerciseKey, ratingModalSelectedValue, comment);
+        document.getElementById('exercise-rating-modal').style.display = 'none';
+        // ルールタブを再レンダリングして評価を反映
+        if (currentMode === 'free') renderFreeRulesContent();
+        if (currentMode === 'weekly') updateWeeklyRulesTab();
+    } catch (e) {
+        errEl.textContent = e.message || '送信に失敗しました';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 評価を送信';
+    }
+});
 
 // ====================================================================
 // 初期化フォールバック: JSが正常に読み込まれたことを確認
