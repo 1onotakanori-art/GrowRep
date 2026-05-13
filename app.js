@@ -5338,7 +5338,9 @@ async function submitExerciseRating(exerciseKey, rating, comment) {
     if (!isUpdate) {
         userRatingData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
         userRatingData.userId = user.uid;
-        userRatingData.userName = user.displayName || user.email || '匿名';
+        userRatingData.userName = (typeof currentUserData !== 'undefined' && currentUserData && currentUserData.userName)
+            ? currentUserData.userName
+            : (user.email || '匿名');
     }
 
     if (isUpdate) {
@@ -7121,7 +7123,9 @@ async function openRatingModal(exerciseKey, exerciseName) {
     document.getElementById('rating-comment-count').textContent = '0';
     document.getElementById('rating-submit-error').textContent = '';
     document.getElementById('rating-existing-info').textContent = '';
-    document.getElementById('submit-rating-btn').disabled = true;
+    const submitBtn = document.getElementById('submit-rating-btn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 評価を送信';
 
     // 星ボタン初期化
     updateStarDisplay(0);
@@ -7264,6 +7268,8 @@ document.getElementById('submit-rating-btn')?.addEventListener('click', async ()
     try {
         const comment = document.getElementById('rating-comment-input').value.trim();
         await submitExerciseRating(ratingModalExerciseKey, ratingModalSelectedValue, comment);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 評価を送信';
         document.getElementById('exercise-rating-modal').style.display = 'none';
         // ルールタブを再レンダリングして評価を反映
         if (currentMode === 'free') renderFreeRulesContent();
