@@ -7194,6 +7194,20 @@ async function openReviewsModal(exerciseKey, exerciseName) {
         listEl.innerHTML = '<p style="text-align:center;color:#999;padding:12px;">コメントはありません</p>';
         return;
     }
+
+    // users コレクションからユーザー名を一括取得して上書き
+    const userIds = [...new Set(reviews.map(r => r.userId).filter(Boolean))];
+    if (userIds.length > 0) {
+        try {
+            const userDocs = await Promise.all(userIds.map(uid => db.collection('users').doc(uid).get()));
+            const userNameMap = {};
+            userDocs.forEach(doc => { if (doc.exists) userNameMap[doc.id] = doc.data().userName; });
+            reviews.forEach(r => {
+                if (r.userId && userNameMap[r.userId]) r.userName = userNameMap[r.userId];
+            });
+        } catch (e) { /* 取得失敗時は既存の userName をそのまま使用 */ }
+    }
+
     listEl.innerHTML = reviews.map(r => {
         const stars = '★'.repeat(r.rating || 0) + '☆'.repeat(5 - (r.rating || 0));
         const label = RATING_LABELS[r.rating] || '';
