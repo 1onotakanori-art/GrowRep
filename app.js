@@ -3957,16 +3957,18 @@ async function renderFreeRulesContent() {
 
     // 評価データと投稿実績を並行取得
     const allEntryKeys = entries.map(([k]) => k);
-    const [ratingSummaries, userPostedKeys] = await Promise.all([
+    const [ratingSummaries, userPostedKeys, userRatingMap] = await Promise.all([
         getExerciseRatingSummaries(allEntryKeys),
-        getUserPostedExerciseKeys('free')
+        getUserPostedExerciseKeys('free'),
+        getUserExerciseRatings(allEntryKeys)
     ]);
 
     function renderEntries(entryList) {
         entryList.forEach(([key, ex]) => {
             const ratingData = ratingSummaries[key] || null;
             const canRate = userPostedKeys.has(key);
-            appendRuleItem(rulesList, key, ex, ratingData, canRate, false);
+            const userRating = canRate ? (userRatingMap[key] || null) : null;
+            appendRuleItem(rulesList, key, ex, ratingData, canRate, false, userRating);
         });
     }
 
@@ -4017,8 +4019,9 @@ async function renderFreeRulesContent() {
  * @param {Object} [ratingData] - {avgRating, ratingCount} 集計評価（省略時は非表示）
  * @param {boolean} [canRate=false] - 評価ボタンを表示するか
  * @param {boolean} [isWeeklyMode=false] - 週間チャレンジモードか
+ * @param {Object|null} [userRating=null] - 自分の既存評価データ（あれば評価済みボタン表示）
  */
-function appendRuleItem(container, key, ex, ratingData = null, canRate = false, isWeeklyMode = false) {
+function appendRuleItem(container, key, ex, ratingData = null, canRate = false, isWeeklyMode = false, userRating = null) {
     const iconClass = ex.icon || 'fa-dumbbell';
     const isBarbarian = ex.barbarian || false;
     const barbarianBadge = isBarbarian ? '<span class="barbarian-badge"><i class="fa-solid fa-stopwatch"></i> バーバリアン</span>' : '';
@@ -4040,15 +4043,22 @@ function appendRuleItem(container, key, ex, ratingData = null, canRate = false, 
         ? `<div class="rule-tags">${ex.tags.map(t => `<span class="tag-chip display-only">${escapeHtml(t)}</span>`).join('')}</div>` 
         : '';
 
-    // 星評価表示
+    // 星評価表示（コメントボタンは常に表示）
+    const reviewBtn = `<button class="btn-view-reviews" data-key="${escapeHtml(key)}" title="レビューを見る"><i class="fa-solid fa-comments"></i></button>`;
     const starHtml = ratingData
-        ? `<div class="rule-rating-row">${renderStarRatingHtml(ratingData.avgRating, ratingData.ratingCount)}<button class="btn-view-reviews" data-key="${escapeHtml(key)}" title="レビューを見る"><i class="fa-solid fa-comments"></i></button></div>`
-        : '<div class="rule-rating-row"><span class="star-rating no-rating">評価なし</span></div>';
+        ? `<div class="rule-rating-row">${renderStarRatingHtml(ratingData.avgRating, ratingData.ratingCount)}${reviewBtn}</div>`
+        : `<div class="rule-rating-row"><span class="star-rating no-rating">評価なし</span>${reviewBtn}</div>`;
 
-    // 評価ボタン
-    const rateBtn = canRate
-        ? `<button class="btn-rate-exercise" data-key="${escapeHtml(key)}" data-name="${escapeHtml(ex.name)}">${isWeeklyMode ? '<i class="fa-solid fa-star"></i> 今週を評価' : '<i class="fa-solid fa-star"></i> 評価する'}</button>`
-        : '';
+    // 評価ボタン（評価済みの場合は別スタイル）
+    let rateBtn = '';
+    if (canRate) {
+        if (userRating) {
+            rateBtn = `<button class="btn-rate-exercise btn-rate-exercise--rated" data-key="${escapeHtml(key)}" data-name="${escapeHtml(ex.name)}"><i class="fa-solid fa-star-half-stroke"></i> 評価済み (${userRating.rating}★)</button>`;
+        } else {
+            const btnLabel = isWeeklyMode ? '今週を評価' : '評価する';
+            rateBtn = `<button class="btn-rate-exercise" data-key="${escapeHtml(key)}" data-name="${escapeHtml(ex.name)}"><i class="fa-solid fa-star"></i> ${btnLabel}</button>`;
+        }
+    }
 
     const item = document.createElement('div');
     item.className = 'rule-item' + (isBarbarian ? ' barbarian-exercise' : '');
@@ -5308,6 +5318,25 @@ async function getUserExerciseRating(exerciseKey) {
 }
 
 /**
+ * 複数種目の自分の評価を一括取得
+ * @param {string[]} exerciseKeys
+ * @returns {Promise<Object>} key -> userRatingData のマップ
+ */
+async function getUserExerciseRatings(exerciseKeys) {
+    const user = firebase.auth().currentUser;
+    if (!user || !exerciseKeys.length) return {};
+    const results = {};
+    await Promise.all(exerciseKeys.map(async key => {
+        try {
+            const doc = await db.collection('exercise_ratings').doc(key)
+                .collection('user_ratings').doc(user.uid).get();
+            if (doc.exists) results[key] = doc.data();
+        } catch (e) {}
+    }));
+    return results;
+}
+
+/**
  * 種目評価を送信（新規 or 更新）
  * バッチ書き込みで個別評価と集計を原子更新する
  * @param {string} exerciseKey
@@ -6363,20 +6392,22 @@ async function updateWeeklyRulesTab() {
         if (weekendBanner) weekendBanner.remove();
     }
 
-    // 評価データと当週投稿実績を取得
+    // 評価データ・当週投稿実績・自分の評価を取得
     const exerciseKeys = weeklyChallenge.exercises;
-    const [ratingSummaries, userPostedKeys] = await Promise.all([
+    const [ratingSummaries, userPostedKeys, userRatingMap] = await Promise.all([
         getExerciseRatingSummaries(exerciseKeys),
-        getUserWeeklyPostedKeys()
+        getUserWeeklyPostedKeys(),
+        getUserExerciseRatings(exerciseKeys)
     ]);
 
     exerciseKeys.forEach(key => {
         const ex = freeExercises[key];
         if (!ex) return;
         const ratingData = ratingSummaries[key] || null;
-        // 評価ボタン表示条件: 週末 && 当週に投稿済み
-        const canRate = weekend && userPostedKeys.has(key);
-        appendRuleItem(rulesList, key, ex, ratingData, canRate, true);
+        // 評価ボタン表示条件: 当週に投稿済み（週末制限なし）
+        const canRate = userPostedKeys.has(key);
+        const userRating = canRate ? (userRatingMap[key] || null) : null;
+        appendRuleItem(rulesList, key, ex, ratingData, canRate, true, userRating);
     });
 
     // 「評価する」ボタン

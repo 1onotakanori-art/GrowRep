@@ -3166,6 +3166,11 @@ body.dark-mode .btn-view-reviews:hover { background: #5dade2; color: #111; }
 }
 .btn-rate-exercise:hover { opacity: 0.85; }
 
+.btn-rate-exercise--rated {
+    background: linear-gradient(135deg, #27ae60, #2ecc71);
+}
+.btn-rate-exercise--rated:hover { opacity: 0.85; }
+
 /* 週末評価バナー */
 .weekly-rating-banner {
     background: linear-gradient(135deg, #f39c12, #e67e22);
