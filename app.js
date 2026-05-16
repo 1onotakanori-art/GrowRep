@@ -6392,11 +6392,11 @@ async function updateWeeklyRulesTab() {
         if (weekendBanner) weekendBanner.remove();
     }
 
-    // 評価データ・当週投稿実績・自分の評価を取得
+    // 評価データ・投稿実績・自分の評価を取得
     const exerciseKeys = weeklyChallenge.exercises;
     const [ratingSummaries, userPostedKeys, userRatingMap] = await Promise.all([
         getExerciseRatingSummaries(exerciseKeys),
-        getUserWeeklyPostedKeys(),
+        getUserPostedExerciseKeys('free'),
         getUserExerciseRatings(exerciseKeys)
     ]);
 
@@ -6404,7 +6404,7 @@ async function updateWeeklyRulesTab() {
         const ex = freeExercises[key];
         if (!ex) return;
         const ratingData = ratingSummaries[key] || null;
-        // 評価ボタン表示条件: 当週に投稿済み（週末制限なし）
+        // 評価ボタン表示条件: 過去に投稿済み（フリーモードと同様）
         const canRate = userPostedKeys.has(key);
         const userRating = canRate ? (userRatingMap[key] || null) : null;
         appendRuleItem(rulesList, key, ex, ratingData, canRate, true, userRating);
