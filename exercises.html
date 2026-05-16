@@ -77,8 +77,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
 .filter-row select,.filter-row input[type=search]{padding:5px 8px;border:1.5px solid var(--bdr);border-radius:6px;font-size:11px;color:var(--tx);background:#fff;flex:1;min-width:0}
 .filter-row select:focus,.filter-row input:focus{outline:none;border-color:var(--pri)}
 .tag-pills{display:flex;gap:4px;flex-wrap:wrap}
-.tag-pill{padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;cursor:pointer;border:1.5px solid var(--bdr);background:#f8f8f8;color:var(--tx2);transition:.15s;-webkit-tap-highlight-color:transparent}
-.tag-pill.active{background:var(--pri);border-color:var(--pri);color:#fff}
+.tag-pill{padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;cursor:pointer;border:1.5px solid #e0f5f0;background:#f0fdf8;color:#43c97b;transition:.15s;-webkit-tap-highlight-color:transparent}
+.tag-pill.active{background:#43e97b;border-color:#43e97b;color:#fff}
 
 /* ---- Exercise rows ---- */
 .ex-list{display:flex;flex-direction:column;gap:0}
@@ -438,14 +438,15 @@ function calcProbabilities() {
 function renderDashboard(probs) {
     const exKeys = Object.keys(_exercises);
 
-    // Trending: sort by recent7 (last 7 days) desc, fallback to total if no recent posts
+    // Trending: sort by slope (derivative of posts) - (recent7 - prev7) / 7
     const exWithPosts = exKeys.filter(k => (_postStats[k] || {}).total > 0);
     const trendingData = exWithPosts
         .map(k => {
             const s = _postStats[k] || {};
-            return { k, recent: s.recent7, prev: s.prev7 || 0, total: s.total };
+            const slope = (s.recent7 - (s.prev7 || 0)) / 7; // posts per day change
+            return { k, slope, recent: s.recent7, total: s.total };
         })
-        .sort((a, b) => b.recent - a.recent || b.total - a.total)
+        .sort((a, b) => b.slope - a.slope || b.recent - a.recent)
         .slice(0, 5);
 
     const trendEl = $('dash-trending');
@@ -454,22 +455,12 @@ function renderDashboard(probs) {
     } else {
         trendEl.innerHTML = trendingData.map((d, i) => {
             const ex = _exercises[d.k] || {};
-            let label, labelColor;
-            if (d.recent > 0 && d.prev > 0 && d.recent > d.prev) {
-                // 先週より増加中
-                label = `今週${d.recent}件 ↑`;
-                labelColor = 'color:var(--ok);font-weight:700';
-            } else if (d.recent > 0) {
-                label = `今週${d.recent}件`;
-                labelColor = 'color:var(--info)';
-            } else {
-                label = `計${d.total}件`;
-                labelColor = '';
-            }
+            const slopeStr = d.slope.toFixed(2);
+            const labelColor = d.slope > 0 ? 'color:var(--ok);font-weight:700' : '';
             return `<div class="dash-item">
                 <span class="di-rank">${i + 1}</span>
                 <span class="di-name">${esc(ex.name || d.k)}</span>
-                <span class="di-val" style="${labelColor}">${label}</span>
+                <span class="di-val" style="${labelColor}">${slopeStr}件/日</span>
             </div>`;
         }).join('');
     }
@@ -535,11 +526,10 @@ function renderDashboard(probs) {
         probEl.innerHTML = ratingBoostedData.map((d, i) => {
             const ex = _exercises[d.k] || {};
             const multStr = `×${d.rMult.toFixed(1)}`;
-            const pctStr  = `${(d.adjP * 100).toFixed(1)}%`;
             return `<div class="dash-item">
                 <span class="di-rank">${i + 1}</span>
                 <span class="di-name">${esc(ex.name || d.k)}</span>
-                <span class="di-val" style="color:var(--ok);font-weight:700">${multStr} (${pctStr})</span>
+                <span class="di-val" style="color:var(--ok);font-weight:700">${multStr}</span>
             </div>`;
         }).join('');
     }
