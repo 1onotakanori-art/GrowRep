@@ -188,7 +188,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
             <div class="dash-rank" id="dash-rated"><div class="dash-empty">—</div></div>
         </div>
         <div class="dash-card">
-            <div class="dc-title">🎲 次回選出確率 上位</div>
+            <div class="dc-title">🎲 評価で確率UP</div>
             <div class="dash-rank" id="dash-prob"><div class="dash-empty">—</div></div>
         </div>
     </div>
@@ -374,28 +374,60 @@ async function loadAll() {
 // ====================================================================
 // SELECTION PROBABILITY
 // ====================================================================
+
+// 評価スコアから重み倍率を算出（評価2件以上が必要）
+function ratingMultiplier(avgRating, ratingCount) {
+    if (!avgRating || ratingCount < 2) return 1.0;
+    if (avgRating >= 4.5) return 2.0;
+    if (avgRating >= 4.0) return 1.5;
+    if (avgRating >= 3.5) return 1.2;
+    if (avgRating < 2.0)  return 0.5;
+    if (avgRating < 2.5)  return 0.7;
+    return 1.0;
+}
+
 function calcProbabilities() {
     const hist = (_wc && _wc.selectionHistory) || {};
     const exp = _wcConfig.weightExponent || 2;
     const keys = Object.keys(_exercises);
     if (keys.length === 0) return {};
-    const weights = {};
-    let totalW = 0;
+
+    // ---- 基本重み（選出履歴のみ）----
+    const baseWeights = {};
+    let totalBaseW = 0;
     keys.forEach(k => {
         const c = hist[k] || 0;
         const w = 1 / Math.pow(c + 1, exp);
-        weights[k] = w;
-        totalW += w;
+        baseWeights[k] = w;
+        totalBaseW += w;
     });
-    const probs = {};
-    const uniform = totalW / keys.length; // average weight
+
+    // ---- 評価反映後の重み ----
+    const adjWeights = {};
+    let totalAdjW = 0;
     keys.forEach(k => {
-        const p = totalW > 0 ? weights[k] / totalW : 1 / keys.length;
-        const ratio = uniform > 0 ? weights[k] / uniform : 1;
+        const r = _ratings[k];
+        const mult = ratingMultiplier(r ? r.avgRating : null, r ? (r.ratingCount || 0) : 0);
+        adjWeights[k] = baseWeights[k] * mult;
+        totalAdjW += adjWeights[k];
+    });
+
+    const avgBaseW = totalBaseW / keys.length;
+    const probs = {};
+    keys.forEach(k => {
+        const baseP = totalBaseW > 0 ? baseWeights[k] / totalBaseW : 1 / keys.length;
+        const adjP  = totalAdjW  > 0 ? adjWeights[k]  / totalAdjW  : 1 / keys.length;
+        const ratio = avgBaseW > 0 ? baseWeights[k] / avgBaseW : 1;
+        const rMult = adjWeights[k] / baseWeights[k]; // 評価倍率（1.0 = 変化なし）
+        const ratingBoost = adjP - baseP; // 正 = 評価により確率UP
+
+        // トレンドバッジは「評価込みの確率」で判定
+        const adjRatio = avgBaseW > 0 ? adjWeights[k] / (totalAdjW / keys.length) : 1;
         let trend = '➡️';
-        if (ratio >= 1.3) trend = '↗️';
-        else if (ratio <= 0.7) trend = '↘️';
-        probs[k] = { prob: p, ratio, trend };
+        if (adjRatio >= 1.3) trend = '↗️';
+        else if (adjRatio <= 0.7) trend = '↘️';
+
+        probs[k] = { baseProb: baseP, adjProb: adjP, prob: adjP, ratio, adjRatio, trend, rMult, ratingBoost };
     });
     return probs;
 }
@@ -475,22 +507,30 @@ function renderDashboard(probs) {
         }).join('');
     }
 
-    // Prob top: highest selection probability
-    const probData = exKeys
-        .map(k => ({ k, prob: probs[k] ? probs[k].prob : 0 }))
-        .sort((a, b) => b.prob - a.prob)
+    // Rating-boosted: exercises where rating raised selection probability
+    const ratingBoostedData = exKeys
+        .map(k => ({
+            k,
+            boost: probs[k] ? probs[k].ratingBoost : 0,
+            adjP:  probs[k] ? probs[k].adjProb    : 0,
+            rMult: probs[k] ? probs[k].rMult       : 1
+        }))
+        .filter(d => d.boost > 0.0005) // 評価で確率が上がったもの
+        .sort((a, b) => b.boost - a.boost)
         .slice(0, 5);
 
     const probEl = $('dash-prob');
-    if (probData.length === 0) {
-        probEl.innerHTML = '<div class="dash-empty">データなし</div>';
+    if (ratingBoostedData.length === 0) {
+        probEl.innerHTML = '<div class="dash-empty">評価2件以上で★3.5以上の種目なし</div>';
     } else {
-        probEl.innerHTML = probData.map((d, i) => {
+        probEl.innerHTML = ratingBoostedData.map((d, i) => {
             const ex = _exercises[d.k] || {};
+            const multStr = `×${d.rMult.toFixed(1)}`;
+            const pctStr  = `${(d.adjP * 100).toFixed(1)}%`;
             return `<div class="dash-item">
                 <span class="di-rank">${i + 1}</span>
                 <span class="di-name">${esc(ex.name || d.k)}</span>
-                <span class="di-val">${(d.prob * 100).toFixed(1)}%</span>
+                <span class="di-val" style="color:var(--ok);font-weight:700">${multStr} (${pctStr})</span>
             </div>`;
         }).join('');
     }
