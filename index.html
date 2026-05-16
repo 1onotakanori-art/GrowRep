@@ -7,6 +7,12 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="icon-style.css">
+    <style>
+        /* user-info内の3ボタン一行レイアウト: styles.cssのモバイル用min-width:50%を上書き */
+        @media (max-width: 768px) {
+            .user-info .header-btn { min-width: 0; flex: 1 1 0; }
+        }
+    </style>
 </head>
 <body>
     <!-- ログイン画面 -->
