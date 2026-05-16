@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GrowRep - 種目 & 評価</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+:root {
+    --pri: #667eea; --pri-d: #5568d3; --bg: linear-gradient(135deg,#667eea,#764ba2);
+    --card: #fff; --sh: 0 1px 8px rgba(0,0,0,.07); --tx: #333; --tx2: #888; --bdr: #e8e8e8;
+    --ok: #27ae60; --ng: #e74c3c; --warn: #f39c12; --info: #3498db;
+    --r: 10px; --fs: 12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:var(--bg);min-height:100vh}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;color:var(--tx);font-size:var(--fs);padding:6px;min-height:100vh}
+
+/* ---- Login ---- */
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh}
+.login-box{background:#fff;border-radius:var(--r);padding:24px;max-width:340px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.18);text-align:center}
+.login-box h1{font-size:1.5em;color:var(--pri);margin-bottom:2px}
+.login-box .sub{color:var(--tx2);font-size:12px;margin-bottom:16px}
+.login-box input{width:100%;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--bdr);border-radius:7px;font-size:13px}
+.login-box input:focus{outline:none;border-color:var(--pri)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:8px 14px;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:.2s}
+.btn-pri{background:var(--pri);color:#fff;width:100%}.btn-pri:active{background:var(--pri-d)}
+.btn-sm{padding:5px 10px;font-size:11px;border-radius:6px}
+.btn-info{background:var(--info);color:#fff}.btn-info:active{background:#2980b9}
+.btn-ng{background:var(--ng);color:#fff}.btn-ng:active{background:#c0392b}
+.btn-ghost{background:transparent;color:var(--pri);border:1.5px solid var(--pri)}.btn-ghost:active{background:#eef2ff}
+.err{color:var(--ng);font-size:11px;margin-top:6px}.err:empty{display:none}
+
+/* ---- Header ---- */
+.hdr{background:#fff;border-radius:var(--r);padding:10px 14px;margin-bottom:8px;box-shadow:var(--sh);display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.hdr-title{display:flex;align-items:center;gap:6px}
+.hdr-title h1{font-size:1.1em;color:var(--pri);white-space:nowrap}
+.hdr-title .back-link{font-size:11px;color:var(--tx2);text-decoration:none;display:flex;align-items:center;gap:3px}
+.hdr-title .back-link:hover{color:var(--pri)}
+.hdr-acts{display:flex;gap:5px;align-items:center}
+.hdr-user{font-size:10px;color:var(--tx2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- Loading ---- */
+.loading{position:fixed;inset:0;background:rgba(255,255,255,.85);display:flex;align-items:center;justify-content:center;z-index:999;font-size:13px;color:var(--pri)}
+.loading.hide{display:none}
+
+/* ---- Toast ---- */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;z-index:2000;opacity:0;transition:.3s;pointer-events:none}
+.toast.show{opacity:1}
+
+/* ---- Section card ---- */
+.section{background:var(--card);border-radius:var(--r);margin-bottom:8px;box-shadow:var(--sh);overflow:hidden}
+.section-hdr{padding:10px 14px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px}
+.section-body{padding:0 12px 12px}
+
+/* Color themes */
+.th-orange{background:linear-gradient(135deg,#f7971e,#ffd200);color:#6b3a00}
+.th-green{background:linear-gradient(135deg,#43e97b,#38f9d7);color:#1a5c2e}
+.th-purple{background:linear-gradient(135deg,var(--pri),#764ba2);color:#fff}
+.th-pink{background:linear-gradient(135deg,#f093fb,#f5576c);color:#5c0a2e}
+
+/* ---- Dashboard ---- */
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px 12px}
+.dash-card{background:#f8f9ff;border:1px solid #e0e4ff;border-radius:8px;padding:8px 10px;min-width:0}
+.dash-card .dc-title{font-size:10px;font-weight:700;color:var(--tx2);margin-bottom:5px;display:flex;align-items:center;gap:4px}
+.dash-rank{display:flex;flex-direction:column;gap:3px}
+.dash-item{display:flex;align-items:center;gap:5px;font-size:11px;min-width:0}
+.dash-item .di-rank{font-size:10px;color:var(--tx2);min-width:14px;text-align:right;font-weight:600}
+.dash-item .di-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--tx)}
+.dash-item .di-val{font-size:10px;color:var(--tx2);white-space:nowrap;flex-shrink:0}
+.dash-empty{font-size:10px;color:var(--tx2);text-align:center;padding:6px 0}
+
+/* ---- Filter/Sort bar ---- */
+.filter-bar{background:var(--card);border-radius:var(--r);margin-bottom:8px;box-shadow:var(--sh);padding:8px 12px;display:flex;flex-direction:column;gap:6px}
+.filter-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.filter-row label{font-size:10px;color:var(--tx2);font-weight:600;white-space:nowrap}
+.filter-row select,.filter-row input[type=search]{padding:5px 8px;border:1.5px solid var(--bdr);border-radius:6px;font-size:11px;color:var(--tx);background:#fff;flex:1;min-width:0}
+.filter-row select:focus,.filter-row input:focus{outline:none;border-color:var(--pri)}
+.tag-pills{display:flex;gap:4px;flex-wrap:wrap}
+.tag-pill{padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;cursor:pointer;border:1.5px solid var(--bdr);background:#f8f8f8;color:var(--tx2);transition:.15s;-webkit-tap-highlight-color:transparent}
+.tag-pill.active{background:var(--pri);border-color:var(--pri);color:#fff}
+
+/* ---- Exercise rows ---- */
+.ex-list{display:flex;flex-direction:column;gap:0}
+.ex-row{border-bottom:1px solid #f0f0f8;transition:background .15s}
+.ex-row:last-child{border-bottom:none}
+.ex-row-main{padding:8px 12px;display:grid;grid-template-columns:1fr auto;gap:4px;align-items:start;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ex-row-main:active{background:#f5f7ff}
+.ex-left{min-width:0}
+.ex-name-row{display:flex;align-items:center;gap:5px;margin-bottom:3px}
+.ex-icon{font-size:13px;color:var(--pri);flex-shrink:0}
+.ex-name{font-weight:700;font-size:12px;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
+.trend-badge{font-size:13px;flex-shrink:0;line-height:1}
+.ex-tags{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px}
+.tag{display:inline-block;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:600;background:#eef2ff;color:var(--pri)}
+.tag-barb{background:#fff3e0;color:#e65100}
+.ex-stats{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.stat-chip{display:flex;align-items:center;gap:2px;font-size:10px;color:var(--tx2)}
+.stat-chip .si{font-size:9px}
+.stat-sep{font-size:9px;color:#ddd}
+.ex-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-top:1px;flex-shrink:0}
+.expand-btn{font-size:10px;color:var(--tx2);display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:10px;border:1px solid var(--bdr);background:#f8f8f8;cursor:pointer;white-space:nowrap;transition:.15s}
+.expand-btn.has-comments{border-color:#c8d0ff;background:#f0f3ff;color:var(--pri)}
+
+/* ---- Comments panel ---- */
+.ex-comments{background:#fafbff;border-top:1px solid #f0f0f8;padding:8px 14px;display:none}
+.ex-comments.open{display:block}
+.comment-list{display:flex;flex-direction:column;gap:4px}
+.comment-item{font-size:11px;color:var(--tx);line-height:1.4}
+.comment-item::before{content:'・';color:var(--pri);font-weight:700}
+.comment-text{color:var(--tx)}
+.comment-user{color:var(--tx2);font-size:10px}
+.comment-loading{font-size:10px;color:var(--tx2);padding:4px 0;display:flex;align-items:center;gap:4px}
+.no-comment{font-size:10px;color:var(--tx2);padding:2px 0}
+
+/* ---- Ratings stars ---- */
+.star-row{display:flex;align-items:center;gap:2px;font-size:10px}
+.star{color:#ffc107}
+.star-val{font-weight:700;color:var(--tx);font-size:10px}
+.star-cnt{color:var(--tx2);font-size:9px}
+
+/* ---- Highlight cards (in dashboard) ---- */
+.highlight-item{display:flex;align-items:center;gap:5px;padding:3px 0}
+.hi-icon{font-size:11px;color:var(--pri)}
+.hi-name{font-size:11px;font-weight:700;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.hi-num{font-size:10px;color:var(--tx2);white-space:nowrap}
+
+/* ---- Result count ---- */
+.result-info{font-size:10px;color:var(--tx2);padding:6px 14px 2px;text-align:right}
+
+/* ---- Responsive ---- */
+@media(min-width:600px){
+    body{padding:10px;max-width:600px;margin:0 auto}
+}
+@media(min-width:900px){
+    body{max-width:800px;font-size:13px}
+}
+    </style>
+</head>
+<body>
+
+<!-- ========== Login ========== -->
+<div id="login-wrap" class="login-wrap" style="display:none">
+    <div class="login-box">
+        <h1><i class="fa-solid fa-dumbbell"></i> GrowRep</h1>
+        <p class="sub">種目 &amp; 評価ページ</p>
+        <input type="email" id="email" placeholder="メールアドレス">
+        <input type="password" id="password" placeholder="パスワード">
+        <button id="login-btn" class="btn btn-pri"><i class="fa-solid fa-right-to-bracket"></i> ログイン</button>
+        <p id="auth-error" class="err"></p>
+    </div>
+</div>
+
+<!-- ========== Main ========== -->
+<div id="app" style="display:none">
+
+<!-- Header -->
+<div class="hdr">
+    <div class="hdr-title">
+        <h1><i class="fa-solid fa-dumbbell"></i> 種目 &amp; 評価</h1>
+        <a href="index.html" class="back-link"><i class="fa-solid fa-arrow-left"></i> ホーム</a>
+    </div>
+    <div class="hdr-acts">
+        <span id="user-label" class="hdr-user"></span>
+        <button id="refresh-btn" class="btn btn-sm btn-info" title="更新"><i class="fa-solid fa-rotate"></i></button>
+        <button id="logout-btn" class="btn btn-sm btn-ng" title="ログアウト"><i class="fa-solid fa-right-from-bracket"></i></button>
+    </div>
+</div>
+
+<div id="loading" class="loading hide"><i class="fa-solid fa-spinner fa-spin"></i> 読込中...</div>
+
+<!-- ===== Dashboard ===== -->
+<div class="section">
+    <div class="section-hdr th-orange">
+        <i class="fa-solid fa-chart-line"></i> ダッシュボード
+    </div>
+    <div class="dash-grid" id="dash-grid">
+        <div class="dash-card">
+            <div class="dc-title">🔥 急増中の種目</div>
+            <div class="dash-rank" id="dash-trending"><div class="dash-empty">—</div></div>
+        </div>
+        <div class="dash-card">
+            <div class="dc-title">⭐ 人気の種目（累計）</div>
+            <div class="dash-rank" id="dash-popular"><div class="dash-empty">—</div></div>
+        </div>
+        <div class="dash-card">
+            <div class="dc-title">🏅 高評価の種目</div>
+            <div class="dash-rank" id="dash-rated"><div class="dash-empty">—</div></div>
+        </div>
+        <div class="dash-card">
+            <div class="dc-title">🎲 次回選出確率 上位</div>
+            <div class="dash-rank" id="dash-prob"><div class="dash-empty">—</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== Filter / Sort ===== -->
+<div class="filter-bar">
+    <div class="filter-row">
+        <label><i class="fa-solid fa-magnifying-glass"></i></label>
+        <input type="search" id="search-input" placeholder="種目名を検索...">
+        <label>並替</label>
+        <select id="sort-select">
+            <option value="name-asc">名前 ↑</option>
+            <option value="posts-desc">投稿数 ↓</option>
+            <option value="rating-desc">評価 ↓</option>
+            <option value="wc-desc">週チャレ ↓</option>
+            <option value="prob-desc">選出確率 ↓</option>
+        </select>
+    </div>
+    <div class="tag-pills" id="tag-pills"></div>
+</div>
+
+<!-- ===== Exercise list ===== -->
+<div class="section">
+    <div class="section-hdr th-purple">
+        <i class="fa-solid fa-list"></i> 種目一覧
+        <span id="ex-count" style="margin-left:auto;font-size:10px;opacity:.8"></span>
+    </div>
+    <div class="ex-list" id="ex-list">
+        <div style="padding:20px;text-align:center;color:var(--tx2);font-size:12px">読込中...</div>
+    </div>
+</div>
+
+</div><!-- /app -->
+
+<div id="toast" class="toast"></div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+
+<script>
+// ====================================================================
+// GLOBALS
+// ====================================================================
+const $ = id => document.getElementById(id);
+let _exercises = {};
+let _wc = null;
+let _wcConfig = { weightExponent: 2 };
+let _ratings = {};   // { [key]: { avgRating, ratingCount, ratingSum } }
+let _postStats = {}; // { [key]: { total, recent7, prev7 } }
+let _commentsCache = {}; // { [key]: loaded comments array or null }
+let _commentsLoading = {}; // { [key]: true if loading }
+
+// Filter state
+let _filterState = { query: '', tags: [], sort: 'name-asc' };
+
+// ====================================================================
+// UTILS
+// ====================================================================
+function esc(s) {
+    if (typeof s !== 'string') return String(s ?? '');
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg, dur = 2000) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), dur);
+}
+
+function stars(avg) {
+    if (!avg) return '';
+    const full = Math.floor(avg);
+    const half = avg - full >= 0.5;
+    let s = '';
+    for (let i = 0; i < 5; i++) {
+        if (i < full) s += '<i class="fa-solid fa-star star"></i>';
+        else if (i === full && half) s += '<i class="fa-solid fa-star-half-stroke star"></i>';
+        else s += '<i class="fa-regular fa-star star" style="opacity:.25"></i>';
+    }
+    return s;
+}
+
+// ====================================================================
+// AUTH
+// ====================================================================
+auth.onAuthStateChanged(async u => {
+    if (u) {
+        $('login-wrap').style.display = 'none';
+        $('app').style.display = 'block';
+        const ud = await db.collection('users').doc(u.uid).get();
+        $('user-label').textContent = ud.exists ? ud.data().userName : (u.email || '');
+        loadAll();
+    } else {
+        $('login-wrap').style.display = 'flex';
+        $('app').style.display = 'none';
+    }
+});
+
+$('login-btn').addEventListener('click', async () => {
+    $('auth-error').textContent = '';
+    const em = $('email').value.trim(), pw = $('password').value;
+    if (!em || !pw) { $('auth-error').textContent = '入力してください'; return; }
+    try { await auth.signInWithEmailAndPassword(em, pw); }
+    catch (e) {
+        const m = {
+            'auth/invalid-email': 'メール形式が不正',
+            'auth/user-not-found': 'ユーザー不明',
+            'auth/wrong-password': 'パスワード不正',
+            'auth/invalid-credential': '認証情報が不正'
+        };
+        $('auth-error').textContent = m[e.code] || 'ログイン失敗';
+    }
+});
+$('password').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-btn').click(); });
+$('email').addEventListener('keydown', e => { if (e.key === 'Enter') $('password').focus(); });
+$('logout-btn').addEventListener('click', () => auth.signOut());
+$('refresh-btn').addEventListener('click', () => loadAll());
+
+// ====================================================================
+// DATA LOAD
+// ====================================================================
+async function loadAll() {
+    $('loading').classList.remove('hide');
+    try {
+        const [exDoc, wcDoc, cfgDoc, ratingsSnap, postsSnap] = await Promise.all([
+            db.collection('settings_free').doc('exercises').get(),
+            db.collection('settings_free').doc('weekly_challenge').get(),
+            db.collection('settings_free').doc('weekly_config').get(),
+            db.collection('exercise_ratings').get(),
+            db.collection('posts_free').get()
+        ]);
+
+        // Exercises
+        _exercises = exDoc.exists ? (exDoc.data().exercises || {}) : {};
+        Object.keys(_exercises).forEach(k => {
+            if (!_exercises[k].icon) _exercises[k].icon = 'fa-dumbbell';
+            if (!Array.isArray(_exercises[k].tags)) _exercises[k].tags = [];
+        });
+
+        // Weekly challenge
+        _wc = wcDoc.exists ? wcDoc.data() : null;
+        _wcConfig = cfgDoc.exists ? cfgDoc.data() : { weightExponent: 2 };
+
+        // Ratings
+        _ratings = {};
+        ratingsSnap.forEach(d => { _ratings[d.id] = d.data(); });
+
+        // Post stats
+        _postStats = {};
+        const now = Date.now();
+        const MS7 = 7 * 24 * 60 * 60 * 1000;
+        const MS14 = 14 * 24 * 60 * 60 * 1000;
+        postsSnap.forEach(d => {
+            const post = d.data();
+            const key = post.exerciseType;
+            if (!key) return;
+            if (!_postStats[key]) _postStats[key] = { total: 0, recent7: 0, prev7: 0 };
+            _postStats[key].total++;
+            const ts = post.createdAt ? (post.createdAt.toDate ? post.createdAt.toDate().getTime() : new Date(post.createdAt).getTime()) : 0;
+            const age = now - ts;
+            if (age < MS7) _postStats[key].recent7++;
+            else if (age < MS14) _postStats[key].prev7++;
+        });
+
+        // Clear comment cache on refresh
+        _commentsCache = {};
+        _commentsLoading = {};
+
+        renderAll();
+    } catch (e) {
+        console.error(e);
+        toast('データの取得に失敗しました: ' + e.message, 3000);
+    } finally {
+        $('loading').classList.add('hide');
+    }
+}
+
+// ====================================================================
+// SELECTION PROBABILITY
+// ====================================================================
+function calcProbabilities() {
+    const hist = (_wc && _wc.selectionHistory) || {};
+    const exp = _wcConfig.weightExponent || 2;
+    const keys = Object.keys(_exercises);
+    if (keys.length === 0) return {};
+    const weights = {};
+    let totalW = 0;
+    keys.forEach(k => {
+        const c = hist[k] || 0;
+        const w = 1 / Math.pow(c + 1, exp);
+        weights[k] = w;
+        totalW += w;
+    });
+    const probs = {};
+    const uniform = totalW / keys.length; // average weight
+    keys.forEach(k => {
+        const p = totalW > 0 ? weights[k] / totalW : 1 / keys.length;
+        const ratio = uniform > 0 ? weights[k] / uniform : 1;
+        let trend = '➡️';
+        if (ratio >= 1.3) trend = '↗️';
+        else if (ratio <= 0.7) trend = '↘️';
+        probs[k] = { prob: p, ratio, trend };
+    });
+    return probs;
+}
+
+// ====================================================================
+// DASHBOARD
+// ====================================================================
+function renderDashboard(probs) {
+    const exKeys = Object.keys(_exercises);
+
+    // Trending: highest recent7 count (min 1 recent), show surge ratio
+    const trendingData = exKeys
+        .filter(k => (_postStats[k] || {}).recent7 > 0)
+        .map(k => {
+            const s = _postStats[k] || {};
+            const prev = s.prev7 || 0;
+            const ratio = prev > 0 ? s.recent7 / prev : s.recent7 * 2;
+            return { k, ratio, recent: s.recent7 };
+        })
+        .sort((a, b) => b.ratio - a.ratio || b.recent - a.recent)
+        .slice(0, 5);
+
+    const trendEl = $('dash-trending');
+    if (trendingData.length === 0) {
+        trendEl.innerHTML = '<div class="dash-empty">データなし</div>';
+    } else {
+        trendEl.innerHTML = trendingData.map((d, i) => {
+            const ex = _exercises[d.k] || {};
+            const ratioStr = d.ratio >= 2 ? `×${d.ratio.toFixed(1)}` : `${d.recent}件`;
+            return `<div class="dash-item">
+                <span class="di-rank">${i + 1}</span>
+                <span class="di-name">${esc(ex.name || d.k)}</span>
+                <span class="di-val">${esc(ratioStr)}</span>
+            </div>`;
+        }).join('');
+    }
+
+    // Popular: highest total posts
+    const popularData = exKeys
+        .filter(k => (_postStats[k] || {}).total > 0)
+        .map(k => ({ k, total: _postStats[k].total }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5);
+
+    const popEl = $('dash-popular');
+    if (popularData.length === 0) {
+        popEl.innerHTML = '<div class="dash-empty">データなし</div>';
+    } else {
+        popEl.innerHTML = popularData.map((d, i) => {
+            const ex = _exercises[d.k] || {};
+            return `<div class="dash-item">
+                <span class="di-rank">${i + 1}</span>
+                <span class="di-name">${esc(ex.name || d.k)}</span>
+                <span class="di-val">${d.total}件</span>
+            </div>`;
+        }).join('');
+    }
+
+    // Rated: highest avgRating (min 3 ratings)
+    const ratedData = exKeys
+        .filter(k => _ratings[k] && _ratings[k].ratingCount >= 3)
+        .map(k => ({ k, avg: _ratings[k].avgRating || 0, cnt: _ratings[k].ratingCount || 0 }))
+        .sort((a, b) => b.avg - a.avg)
+        .slice(0, 5);
+
+    const ratedEl = $('dash-rated');
+    if (ratedData.length === 0) {
+        ratedEl.innerHTML = '<div class="dash-empty">評価3件以上の種目なし</div>';
+    } else {
+        ratedEl.innerHTML = ratedData.map((d, i) => {
+            const ex = _exercises[d.k] || {};
+            return `<div class="dash-item">
+                <span class="di-rank">${i + 1}</span>
+                <span class="di-name">${esc(ex.name || d.k)}</span>
+                <span class="di-val">★${d.avg.toFixed(1)}</span>
+            </div>`;
+        }).join('');
+    }
+
+    // Prob top: highest selection probability
+    const probData = exKeys
+        .map(k => ({ k, prob: probs[k] ? probs[k].prob : 0 }))
+        .sort((a, b) => b.prob - a.prob)
+        .slice(0, 5);
+
+    const probEl = $('dash-prob');
+    if (probData.length === 0) {
+        probEl.innerHTML = '<div class="dash-empty">データなし</div>';
+    } else {
+        probEl.innerHTML = probData.map((d, i) => {
+            const ex = _exercises[d.k] || {};
+            return `<div class="dash-item">
+                <span class="di-rank">${i + 1}</span>
+                <span class="di-name">${esc(ex.name || d.k)}</span>
+                <span class="di-val">${(d.prob * 100).toFixed(1)}%</span>
+            </div>`;
+        }).join('');
+    }
+}
+
+// ====================================================================
+// TAG PILLS
+// ====================================================================
+function getAllTags() {
+    const tagSet = new Set();
+    Object.values(_exercises).forEach(ex => {
+        (ex.tags || []).forEach(t => tagSet.add(t));
+        if (ex.barbarian) tagSet.add('TA');
+    });
+    return [...tagSet].sort();
+}
+
+function renderTagPills(tags) {
+    const el = $('tag-pills');
+    if (tags.length === 0) { el.innerHTML = ''; return; }
+    el.innerHTML = tags.map(t =>
+        `<span class="tag-pill${_filterState.tags.includes(t) ? ' active' : ''}" data-tag="${esc(t)}">${esc(t)}</span>`
+    ).join('');
+    el.querySelectorAll('.tag-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            const tag = pill.dataset.tag;
+            const idx = _filterState.tags.indexOf(tag);
+            if (idx >= 0) _filterState.tags.splice(idx, 1);
+            else _filterState.tags.push(tag);
+            renderTagPills(tags);
+            renderExerciseList();
+        });
+    });
+}
+
+// ====================================================================
+// EXERCISE LIST
+// ====================================================================
+function getFilteredSorted(probs) {
+    const hist = (_wc && _wc.selectionHistory) || {};
+    let entries = Object.entries(_exercises).map(([key, ex]) => {
+        const stat = _postStats[key] || { total: 0, recent7: 0, prev7: 0 };
+        const rating = _ratings[key] || null;
+        const prob = probs[key] || { prob: 0, ratio: 1, trend: '➡️' };
+        const wcCount = hist[key] || 0;
+        return { key, ex, stat, rating, prob, wcCount };
+    });
+
+    // Search filter
+    if (_filterState.query) {
+        const q = _filterState.query.toLowerCase();
+        entries = entries.filter(({ key, ex }) =>
+            (ex.name || key).toLowerCase().includes(q) ||
+            (ex.tags || []).some(t => t.toLowerCase().includes(q))
+        );
+    }
+
+    // Tag filter
+    if (_filterState.tags.length > 0) {
+        entries = entries.filter(({ ex }) => {
+            const exTags = ex.tags || [];
+            const hasBarb = ex.barbarian;
+            return _filterState.tags.every(ft => {
+                if (ft === 'TA') return hasBarb;
+                return exTags.includes(ft);
+            });
+        });
+    }
+
+    // Sort
+    const s = _filterState.sort;
+    entries.sort((a, b) => {
+        if (s === 'name-asc') return (a.ex.name || a.key).localeCompare(b.ex.name || b.key, 'ja');
+        if (s === 'posts-desc') return b.stat.total - a.stat.total;
+        if (s === 'rating-desc') return (b.rating?.avgRating || 0) - (a.rating?.avgRating || 0);
+        if (s === 'wc-desc') return b.wcCount - a.wcCount;
+        if (s === 'prob-desc') return b.prob.prob - a.prob.prob;
+        return 0;
+    });
+
+    return entries;
+}
+
+function renderExerciseList(probs) {
+    if (!probs) probs = calcProbabilities();
+    const entries = getFilteredSorted(probs);
+    const el = $('ex-list');
+    $('ex-count').textContent = `${entries.length}/${Object.keys(_exercises).length}件`;
+
+    if (entries.length === 0) {
+        el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tx2);font-size:11px">該当する種目がありません</div>';
+        return;
+    }
+
+    const curWcKeys = (_wc && _wc.exercises) || [];
+
+    el.innerHTML = entries.map(({ key, ex, stat, rating, prob, wcCount }) => {
+        const iconClass = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-dumbbell';
+        const isInWc = curWcKeys.includes(key);
+
+        // Tags
+        const tagHtml = (ex.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('') +
+            (ex.barbarian ? '<span class="tag tag-barb">TA</span>' : '') +
+            (isInWc ? '<span class="tag" style="background:#fff3e0;color:#e65100">今週</span>' : '');
+
+        // Stars
+        const avgR = rating ? rating.avgRating : null;
+        const rCnt = rating ? (rating.ratingCount || 0) : 0;
+        const avgStr = avgR != null ? `★${avgR.toFixed(1)}` : '★—';
+        const starsHtml = avgR != null
+            ? `<span class="stat-chip"><i class="fa-solid fa-star si" style="color:#ffc107"></i><b style="color:var(--tx)">${avgR.toFixed(1)}</b><span>(${rCnt})</span></span>`
+            : `<span class="stat-chip" style="opacity:.4"><i class="fa-regular fa-star si"></i>—</span>`;
+
+        // Has comments (any user_ratings with non-empty comment) — we show indicator
+        // We don't know upfront without loading, so show generic expand button
+        const hasRatings = rCnt > 0;
+
+        return `<div class="ex-row" id="row-${esc(key)}">
+            <div class="ex-row-main" onclick="toggleComments('${esc(key)}')">
+                <div class="ex-left">
+                    <div class="ex-name-row">
+                        <i class="${iconClass} ex-icon"></i>
+                        <span class="ex-name" title="${esc(ex.name || key)}">${esc(ex.name || key)}</span>
+                        <span class="trend-badge" title="選出確率">${prob.trend}</span>
+                    </div>
+                    ${tagHtml ? `<div class="ex-tags">${tagHtml}</div>` : ''}
+                    <div class="ex-stats">
+                        ${starsHtml}
+                        <span class="stat-sep">|</span>
+                        <span class="stat-chip"><i class="fa-solid fa-pen si"></i>${stat.total}</span>
+                        <span class="stat-sep">|</span>
+                        <span class="stat-chip"><i class="fa-solid fa-bolt si"></i>${wcCount}</span>
+                        <span class="stat-sep">|</span>
+                        <span class="stat-chip"><i class="fa-solid fa-comment si"></i>${rCnt}</span>
+                    </div>
+                </div>
+                <div class="ex-right">
+                    <span class="expand-btn ${hasRatings ? 'has-comments' : ''}" id="expand-btn-${esc(key)}">
+                        <i class="fa-solid fa-chevron-down" id="expand-ico-${esc(key)}" style="font-size:8px"></i>
+                        コメント
+                    </span>
+                </div>
+            </div>
+            <div class="ex-comments" id="comments-${esc(key)}"></div>
+        </div>`;
+    }).join('');
+}
+
+// ====================================================================
+// COMMENTS
+// ====================================================================
+async function toggleComments(key) {
+    const panel = $(`comments-${key}`);
+    const ico = $(`expand-ico-${key}`);
+    if (!panel) return;
+
+    const isOpen = panel.classList.contains('open');
+    if (isOpen) {
+        panel.classList.remove('open');
+        if (ico) ico.style.transform = '';
+        return;
+    }
+
+    panel.classList.add('open');
+    if (ico) ico.style.transform = 'rotate(180deg)';
+
+    // Already loaded
+    if (_commentsCache[key] !== undefined) {
+        renderCommentPanel(key, _commentsCache[key]);
+        return;
+    }
+
+    // Loading in progress
+    if (_commentsLoading[key]) return;
+
+    // Load from Firestore
+    _commentsLoading[key] = true;
+    panel.innerHTML = '<div class="comment-loading"><i class="fa-solid fa-spinner fa-spin"></i> 読込中...</div>';
+
+    try {
+        const snap = await db.collection('exercise_ratings').doc(key)
+            .collection('user_ratings').get();
+        const comments = [];
+        snap.forEach(d => {
+            const data = d.data();
+            if (data.comment && data.comment.trim()) {
+                comments.push({
+                    comment: data.comment.trim(),
+                    userName: data.userName || '匿名',
+                    rating: data.rating || 0
+                });
+            }
+        });
+        _commentsCache[key] = comments;
+        renderCommentPanel(key, comments);
+    } catch (e) {
+        panel.innerHTML = '<div class="no-comment" style="color:var(--ng)">取得失敗</div>';
+    } finally {
+        _commentsLoading[key] = false;
+    }
+}
+
+function renderCommentPanel(key, comments) {
+    const panel = $(`comments-${key}`);
+    if (!panel) return;
+    if (comments.length === 0) {
+        panel.innerHTML = '<div class="no-comment">コメントなし</div>';
+        return;
+    }
+    panel.innerHTML = `<div class="comment-list">${
+        comments.map(c =>
+            `<div class="comment-item">
+                <span class="comment-text">${esc(c.comment)}</span>
+                <span class="comment-user">（${esc(c.userName)}）</span>
+            </div>`
+        ).join('')
+    }</div>`;
+}
+
+// ====================================================================
+// RENDER ALL
+// ====================================================================
+function renderAll() {
+    const probs = calcProbabilities();
+    const tags = getAllTags();
+    renderDashboard(probs);
+    renderTagPills(tags);
+    renderExerciseList(probs);
+}
+
+// ====================================================================
+// FILTER / SORT EVENTS
+// ====================================================================
+$('search-input').addEventListener('input', e => {
+    _filterState.query = e.target.value.trim();
+    renderExerciseList();
+});
+
+$('sort-select').addEventListener('change', e => {
+    _filterState.sort = e.target.value;
+    renderExerciseList();
+});
+</script>
+</body>
+</html>
