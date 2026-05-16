@@ -77,8 +77,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
 .filter-row select,.filter-row input[type=search]{padding:5px 8px;border:1.5px solid var(--bdr);border-radius:6px;font-size:11px;color:var(--tx);background:#fff;flex:1;min-width:0}
 .filter-row select:focus,.filter-row input:focus{outline:none;border-color:var(--pri)}
 .tag-pills{display:flex;gap:4px;flex-wrap:wrap}
-.tag-pill{padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;cursor:pointer;border:1.5px solid #e0f5f0;background:#f0fdf8;color:#43c97b;transition:.15s;-webkit-tap-highlight-color:transparent}
-.tag-pill.active{background:#43e97b;border-color:#43e97b;color:#fff}
+.tag-pill{padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;cursor:pointer;border:1.5px dashed #bbb;background:#f5f5f5;color:#999;transition:.15s;-webkit-tap-highlight-color:transparent}
+.tag-pill.active{background:#43e97b;border-style:solid;border-color:#43e97b;color:#fff}
 
 /* ---- Exercise rows ---- */
 .ex-list{display:flex;flex-direction:column;gap:0}
@@ -92,7 +92,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
 .ex-name{font-weight:700;font-size:12px;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
 .trend-badge{font-size:13px;flex-shrink:0;line-height:1}
 .ex-tags{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px}
-.tag{display:inline-block;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:600;background:#f0fdf8;color:#43c97b;border:1px solid #d0f5e8}
+.tag{display:inline-block;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:600;background:#f5f5f5;color:#aaa;border:1px solid #e8e8e8}
+.tag.matched{background:#f0fdf8;color:#43c97b;border-color:#d0f5e8}
 .tag-barb{background:#fff3e0;color:#e65100;border-color:#ffd0a0}
 .ex-stats{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .stat-chip{display:flex;align-items:center;gap:2px;font-size:10px;color:var(--tx2)}
@@ -352,7 +353,7 @@ async function loadAll() {
             if (!key) return;
             if (!_postStats[key]) _postStats[key] = { total: 0, recent7: 0, prev7: 0 };
             _postStats[key].total++;
-            const ts = post.createdAt ? (post.createdAt.toDate ? post.createdAt.toDate().getTime() : new Date(post.createdAt).getTime()) : 0;
+            const ts = post.timestamp ? (post.timestamp.toDate ? post.timestamp.toDate().getTime() : new Date(post.timestamp).getTime()) : 0;
             const age = now - ts;
             if (age < MS7) _postStats[key].recent7++;
             else if (age < MS14) _postStats[key].prev7++;
@@ -630,10 +631,11 @@ function renderExerciseList(probs) {
         const iconClass = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-dumbbell';
         const isInWc = curWcKeys.includes(key);
 
-        // Tags – TA first, then regular tags, then 今週
+        // Tags – TA first, then regular tags (active filter tags get .matched class), then 今週
+        const activeTags = _filterState.tags;
         const taTag = ex.barbarian ? '<span class="tag tag-barb">TA</span>' : '';
         const tagHtml = taTag +
-            (ex.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('') +
+            (ex.tags || []).map(t => `<span class="tag${activeTags.includes(t) ? ' matched' : ''}">${esc(t)}</span>`).join('') +
             (isInWc ? '<span class="tag" style="background:#fff3e0;color:#e65100;border-color:#ffd0a0">今週</span>' : '');
 
         // Stars
