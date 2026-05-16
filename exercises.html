@@ -92,8 +92,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
 .ex-name{font-weight:700;font-size:12px;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
 .trend-badge{font-size:13px;flex-shrink:0;line-height:1}
 .ex-tags{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px}
-.tag{display:inline-block;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:600;background:#eef2ff;color:var(--pri)}
-.tag-barb{background:#fff3e0;color:#e65100}
+.tag{display:inline-block;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:600;background:#f0fdf8;color:#43c97b;border:1px solid #d0f5e8}
+.tag-barb{background:#fff3e0;color:#e65100;border-color:#ffd0a0}
 .ex-stats{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .stat-chip{display:flex;align-items:center;gap:2px;font-size:10px;color:var(--tx2)}
 .stat-chip .si{font-size:9px}
@@ -438,15 +438,15 @@ function calcProbabilities() {
 function renderDashboard(probs) {
     const exKeys = Object.keys(_exercises);
 
-    // Trending: sort by slope (derivative of posts) - (recent7 - prev7) / 7
+    // Trending: weekly moving average slope = recent7 - prev7 (posts/week change)
     const exWithPosts = exKeys.filter(k => (_postStats[k] || {}).total > 0);
     const trendingData = exWithPosts
         .map(k => {
             const s = _postStats[k] || {};
-            const slope = (s.recent7 - (s.prev7 || 0)) / 7; // posts per day change
-            return { k, slope, recent: s.recent7, total: s.total };
+            const weekSlope = s.recent7 - (s.prev7 || 0); // weekly change (moving avg diff)
+            return { k, weekSlope, recent: s.recent7, total: s.total };
         })
-        .sort((a, b) => b.slope - a.slope || b.recent - a.recent)
+        .sort((a, b) => b.weekSlope - a.weekSlope || b.recent - a.recent)
         .slice(0, 5);
 
     const trendEl = $('dash-trending');
@@ -455,12 +455,12 @@ function renderDashboard(probs) {
     } else {
         trendEl.innerHTML = trendingData.map((d, i) => {
             const ex = _exercises[d.k] || {};
-            const slopeStr = d.slope.toFixed(2);
-            const labelColor = d.slope > 0 ? 'color:var(--ok);font-weight:700' : '';
+            const sign = d.weekSlope > 0 ? '+' : '';
+            const labelColor = d.weekSlope > 0 ? 'color:var(--ok);font-weight:700' : d.weekSlope < 0 ? 'color:var(--ng)' : '';
             return `<div class="dash-item">
                 <span class="di-rank">${i + 1}</span>
                 <span class="di-name">${esc(ex.name || d.k)}</span>
-                <span class="di-val" style="${labelColor}">${slopeStr}件/日</span>
+                <span class="di-val" style="${labelColor}">${sign}${d.weekSlope}件/週</span>
             </div>`;
         }).join('');
     }
@@ -630,10 +630,11 @@ function renderExerciseList(probs) {
         const iconClass = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-dumbbell';
         const isInWc = curWcKeys.includes(key);
 
-        // Tags
-        const tagHtml = (ex.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('') +
-            (ex.barbarian ? '<span class="tag tag-barb">TA</span>' : '') +
-            (isInWc ? '<span class="tag" style="background:#fff3e0;color:#e65100">今週</span>' : '');
+        // Tags – TA first, then regular tags, then 今週
+        const taTag = ex.barbarian ? '<span class="tag tag-barb">TA</span>' : '';
+        const tagHtml = taTag +
+            (ex.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('') +
+            (isInWc ? '<span class="tag" style="background:#fff3e0;color:#e65100;border-color:#ffd0a0">今週</span>' : '');
 
         // Stars
         const avgR = rating ? rating.avgRating : null;
