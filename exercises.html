@@ -129,6 +129,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
 /* ---- Result count ---- */
 .result-info{font-size:10px;color:var(--tx2);padding:6px 14px 2px;text-align:right}
 
+/* ---- Creator Ranking ---- */
+.cr-tier{margin-bottom:0}
+.cr-tier-hdr{padding:5px 12px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:5px}
+.cr-tier-excellent{background:#fff8e8;border-left:3px solid #f7971e;color:#7a4a00}
+.cr-tier-good{background:#eafaf2;border-left:3px solid #27ae60;color:#1a5c2e}
+.cr-tier-bad{background:#f5f5f5;border-left:3px solid #bbb;color:#666}
+.cr-row{border-bottom:1px solid #f0f0f8}
+.cr-row:last-child{border-bottom:none}
+.cr-row-main{padding:8px 12px;display:flex;align-items:center;gap:6px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.cr-row-main:active{background:#f5f7ff}
+.cr-icon{font-size:11px;color:var(--tx2);flex-shrink:0}
+.cr-name{flex:1;font-weight:700;font-size:12px;color:var(--tx);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cr-rating{font-size:11px;font-weight:700;color:var(--tx);white-space:nowrap;display:flex;align-items:center;gap:2px}
+.cr-exercises{display:none;border-top:1px solid #f0f0f8}
+.cr-exercises.open{display:block}
+
 /* ---- Responsive ---- */
 @media(min-width:600px){
     body{padding:10px;max-width:600px;margin:0 auto}
@@ -192,6 +208,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
             <div class="dc-title">🎲 評価で確率UP</div>
             <div class="dash-rank" id="dash-prob"><div class="dash-empty">—</div></div>
         </div>
+    </div>
+</div>
+
+<!-- ===== Creator Ranking ===== -->
+<div class="section">
+    <div class="section-hdr th-pink">
+        <i class="fa-solid fa-trophy"></i> 種目クリエイターランキング
+    </div>
+    <div id="creator-ranking-body">
+        <div style="padding:12px;text-align:center;color:var(--tx2);font-size:11px">読込中...</div>
     </div>
 </div>
 
@@ -614,6 +640,54 @@ function getFilteredSorted(probs) {
     return entries;
 }
 
+// ====================================================================
+// EXERCISE ROW HTML BUILDER
+// ====================================================================
+function buildExRowHtml(key, ex, stat, rating, prob, wcCount, idPfx, curWcKeys) {
+    if (idPfx === undefined) idPfx = '';
+    if (!curWcKeys) curWcKeys = [];
+    const iconClass = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-dumbbell';
+    const isInWc = curWcKeys.includes(key);
+    const activeTags = _filterState.tags;
+    const taTag = ex.barbarian ? '<span class="tag tag-barb">TA</span>' : '';
+    const tagHtml = taTag +
+        (ex.tags || []).map(t => `<span class="tag${activeTags.includes(t) ? ' matched' : ''}">${esc(t)}</span>`).join('') +
+        (isInWc ? '<span class="tag" style="background:#fff3e0;color:#e65100;border-color:#ffd0a0">今週</span>' : '');
+    const avgR = rating ? rating.avgRating : null;
+    const rCnt = rating ? (rating.ratingCount || 0) : 0;
+    const starsHtml = avgR != null
+        ? `<span class="stat-chip"><i class="fa-solid fa-star si" style="color:#ffc107"></i><b style="color:var(--tx)">${avgR.toFixed(1)}</b><span>(${rCnt})</span></span>`
+        : `<span class="stat-chip" style="opacity:.4"><i class="fa-regular fa-star si"></i>—</span>`;
+    const hasRatings = rCnt > 0;
+    return `<div class="ex-row" id="${idPfx}row-${esc(key)}">
+        <div class="ex-row-main" onclick="toggleComments('${esc(key)}','${idPfx}')">
+            <div class="ex-left">
+                <div class="ex-name-row">
+                    <i class="${iconClass} ex-icon"></i>
+                    <span class="ex-name" title="${esc(ex.name || key)}">${esc(ex.name || key)}</span>
+                </div>
+                ${tagHtml ? `<div class="ex-tags">${tagHtml}</div>` : ''}
+                <div class="ex-stats">
+                    ${starsHtml}
+                    <span class="stat-sep">|</span>
+                    <span class="stat-chip"><i class="fa-solid fa-pen si"></i>${stat.total}</span>
+                    <span class="stat-sep">|</span>
+                    <span class="stat-chip"><i class="fa-solid fa-bolt si"></i>${wcCount}</span>
+                    <span class="stat-sep">|</span>
+                    <span class="stat-chip"><i class="fa-solid fa-comment si"></i>${rCnt}</span>
+                </div>
+            </div>
+            <div class="ex-right">
+                <span class="expand-btn ${hasRatings ? 'has-comments' : ''}" id="${idPfx}expand-btn-${esc(key)}">
+                    <i class="fa-solid fa-chevron-down" id="${idPfx}expand-ico-${esc(key)}" style="font-size:8px"></i>
+                    コメント
+                </span>
+            </div>
+        </div>
+        <div class="ex-comments" id="${idPfx}comments-${esc(key)}"></div>
+    </div>`;
+}
+
 function renderExerciseList(probs) {
     if (!probs) probs = calcProbabilities();
     const entries = getFilteredSorted(probs);
@@ -627,65 +701,17 @@ function renderExerciseList(probs) {
 
     const curWcKeys = (_wc && _wc.exercises) || [];
 
-    el.innerHTML = entries.map(({ key, ex, stat, rating, prob, wcCount }) => {
-        const iconClass = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-dumbbell';
-        const isInWc = curWcKeys.includes(key);
-
-        // Tags – TA first, then regular tags (active filter tags get .matched class), then 今週
-        const activeTags = _filterState.tags;
-        const taTag = ex.barbarian ? '<span class="tag tag-barb">TA</span>' : '';
-        const tagHtml = taTag +
-            (ex.tags || []).map(t => `<span class="tag${activeTags.includes(t) ? ' matched' : ''}">${esc(t)}</span>`).join('') +
-            (isInWc ? '<span class="tag" style="background:#fff3e0;color:#e65100;border-color:#ffd0a0">今週</span>' : '');
-
-        // Stars
-        const avgR = rating ? rating.avgRating : null;
-        const rCnt = rating ? (rating.ratingCount || 0) : 0;
-        const avgStr = avgR != null ? `★${avgR.toFixed(1)}` : '★—';
-        const starsHtml = avgR != null
-            ? `<span class="stat-chip"><i class="fa-solid fa-star si" style="color:#ffc107"></i><b style="color:var(--tx)">${avgR.toFixed(1)}</b><span>(${rCnt})</span></span>`
-            : `<span class="stat-chip" style="opacity:.4"><i class="fa-regular fa-star si"></i>—</span>`;
-
-        // Has comments (any user_ratings with non-empty comment) — we show indicator
-        // We don't know upfront without loading, so show generic expand button
-        const hasRatings = rCnt > 0;
-
-        return `<div class="ex-row" id="row-${esc(key)}">
-            <div class="ex-row-main" onclick="toggleComments('${esc(key)}')">
-                <div class="ex-left">
-                    <div class="ex-name-row">
-                        <i class="${iconClass} ex-icon"></i>
-                        <span class="ex-name" title="${esc(ex.name || key)}">${esc(ex.name || key)}</span>
-                    </div>
-                    ${tagHtml ? `<div class="ex-tags">${tagHtml}</div>` : ''}
-                    <div class="ex-stats">
-                        ${starsHtml}
-                        <span class="stat-sep">|</span>
-                        <span class="stat-chip"><i class="fa-solid fa-pen si"></i>${stat.total}</span>
-                        <span class="stat-sep">|</span>
-                        <span class="stat-chip"><i class="fa-solid fa-bolt si"></i>${wcCount}</span>
-                        <span class="stat-sep">|</span>
-                        <span class="stat-chip"><i class="fa-solid fa-comment si"></i>${rCnt}</span>
-                    </div>
-                </div>
-                <div class="ex-right">
-                    <span class="expand-btn ${hasRatings ? 'has-comments' : ''}" id="expand-btn-${esc(key)}">
-                        <i class="fa-solid fa-chevron-down" id="expand-ico-${esc(key)}" style="font-size:8px"></i>
-                        コメント
-                    </span>
-                </div>
-            </div>
-            <div class="ex-comments" id="comments-${esc(key)}"></div>
-        </div>`;
-    }).join('');
+    el.innerHTML = entries.map(({ key, ex, stat, rating, prob, wcCount }) =>
+        buildExRowHtml(key, ex, stat, rating, prob, wcCount, '', curWcKeys)
+    ).join('');
 }
 
 // ====================================================================
 // COMMENTS
 // ====================================================================
-async function toggleComments(key) {
-    const panel = $(`comments-${key}`);
-    const ico = $(`expand-ico-${key}`);
+async function toggleComments(key, idPfx = '') {
+    const panel = $(`${idPfx}comments-${key}`);
+    const ico = $(`${idPfx}expand-ico-${key}`);
     if (!panel) return;
 
     const isOpen = panel.classList.contains('open');
@@ -700,7 +726,7 @@ async function toggleComments(key) {
 
     // Already loaded
     if (_commentsCache[key] !== undefined) {
-        renderCommentPanel(key, _commentsCache[key]);
+        renderCommentPanel(key, _commentsCache[key], idPfx);
         return;
     }
 
@@ -726,7 +752,7 @@ async function toggleComments(key) {
             }
         });
         _commentsCache[key] = comments;
-        renderCommentPanel(key, comments);
+        renderCommentPanel(key, comments, idPfx);
     } catch (e) {
         panel.innerHTML = '<div class="no-comment" style="color:var(--ng)">取得失敗</div>';
     } finally {
@@ -734,8 +760,8 @@ async function toggleComments(key) {
     }
 }
 
-function renderCommentPanel(key, comments) {
-    const panel = $(`comments-${key}`);
+function renderCommentPanel(key, comments, idPfx = '') {
+    const panel = $(`${idPfx}comments-${key}`);
     if (!panel) return;
     if (comments.length === 0) {
         panel.innerHTML = '<div class="no-comment">コメントなし</div>';
@@ -752,12 +778,116 @@ function renderCommentPanel(key, comments) {
 }
 
 // ====================================================================
+// CREATOR RANKING
+// ====================================================================
+const _creatorKeys = {};
+
+function buildCreatorData() {
+    const map = {};
+    Object.entries(_exercises).forEach(([key, ex]) => {
+        const name = ex.createdByName;
+        if (!name) return;
+        if (!map[name]) map[name] = { name, keys: [] };
+        map[name].keys.push(key);
+    });
+    const result = [];
+    Object.values(map).forEach(c => {
+        const ratedKeys = c.keys.filter(k => _ratings[k] && _ratings[k].avgRating != null);
+        const avgRating = ratedKeys.length > 0
+            ? ratedKeys.reduce((sum, k) => sum + _ratings[k].avgRating, 0) / ratedKeys.length
+            : null;
+        result.push({ name: c.name, keys: c.keys, avgRating, ratedCount: ratedKeys.length });
+    });
+    result.sort((a, b) => {
+        if (a.avgRating == null && b.avgRating == null) return 0;
+        if (a.avgRating == null) return 1;
+        if (b.avgRating == null) return -1;
+        return b.avgRating - a.avgRating;
+    });
+    return result;
+}
+
+function renderCreatorRanking(probs) {
+    if (!probs) probs = calcProbabilities();
+    const creators = buildCreatorData();
+    const el = $('creator-ranking-body');
+    if (!el) return;
+    if (creators.length === 0) {
+        el.innerHTML = '<div style="padding:12px;text-align:center;color:var(--tx2);font-size:11px">クリエイターデータなし</div>';
+        return;
+    }
+    const tiers = [
+        { id: 'excellent', label: '⭐ 優良種目クリエイター', cls: 'cr-tier-excellent', test: r => r != null && r >= 4 },
+        { id: 'good',      label: '👍 良種目クリエイター',   cls: 'cr-tier-good',      test: r => r != null && r >= 3 && r < 4 },
+        { id: 'bad',       label: '💩 クソ種目クリエイター', cls: 'cr-tier-bad',        test: r => r != null && r < 3 },
+    ];
+    let html = '';
+    tiers.forEach(tier => {
+        const tierCreators = creators.filter(c => tier.test(c.avgRating));
+        if (tierCreators.length === 0) return;
+        html += `<div class="cr-tier"><div class="cr-tier-hdr ${tier.cls}">${tier.label}</div>`;
+        tierCreators.forEach((c, i) => {
+            const uid = `${tier.id}-${i}`;
+            _creatorKeys[uid] = c.keys;
+            const avgStr = c.avgRating != null ? c.avgRating.toFixed(2) : '—';
+            html += `<div class="cr-row">
+                <div class="cr-row-main" onclick="toggleCreatorExercises('${uid}')">
+                    <i class="fa-solid fa-user cr-icon"></i>
+                    <span class="cr-name">${esc(c.name)}</span>
+                    <div class="cr-rating">
+                        <i class="fa-solid fa-star" style="color:#ffc107;font-size:9px"></i>
+                        <b>${avgStr}</b>
+                        <span style="font-size:9px;margin-left:2px">(${c.keys.length}種目)</span>
+                    </div>
+                    <i class="fa-solid fa-chevron-down" id="cr-ico-${uid}" style="font-size:8px;color:var(--tx2);transition:.2s;flex-shrink:0;margin-left:4px"></i>
+                </div>
+                <div class="cr-exercises" id="cr-ex-${uid}"></div>
+            </div>`;
+        });
+        html += '</div>';
+    });
+    el.innerHTML = html || '<div style="padding:12px;text-align:center;color:var(--tx2);font-size:11px">評価データなし</div>';
+}
+
+function toggleCreatorExercises(uid) {
+    const panel = $(`cr-ex-${uid}`);
+    const ico = $(`cr-ico-${uid}`);
+    if (!panel) return;
+    const isOpen = panel.classList.contains('open');
+    if (isOpen) {
+        panel.classList.remove('open');
+        if (ico) ico.style.transform = '';
+        return;
+    }
+    panel.classList.add('open');
+    if (ico) ico.style.transform = 'rotate(180deg)';
+    if (panel.dataset.rendered) return;
+    panel.dataset.rendered = '1';
+    const exKeys = _creatorKeys[uid] || [];
+    const probs = calcProbabilities();
+    const hist = (_wc && _wc.selectionHistory) || {};
+    const curWcKeys = (_wc && _wc.exercises) || [];
+    const idPfx = `cr-${uid}-`;
+    const html = exKeys.map(key => {
+        const ex = _exercises[key];
+        if (!ex) return '';
+        const stat = _postStats[key] || { total: 0, recent7: 0, prev7: 0 };
+        const rating = _ratings[key] || null;
+        const prob = probs[key] || { prob: 0, trend: '➡️' };
+        const wcCount = hist[key] || 0;
+        return buildExRowHtml(key, ex, stat, rating, prob, wcCount, idPfx, curWcKeys);
+    }).join('');
+    panel.innerHTML = `<div class="ex-list">${html}</div>`;
+}
+
+// ====================================================================
 // RENDER ALL
 // ====================================================================
 function renderAll() {
     const probs = calcProbabilities();
     const tags = getAllTags();
     renderDashboard(probs);
+    renderCreatorRanking(probs);
     renderTagPills(tags);
     renderExerciseList(probs);
 }
