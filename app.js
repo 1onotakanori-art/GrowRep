@@ -5791,6 +5791,7 @@ async function getOrUpdateWeeklyChallenge() {
         const weightExponent = weeklyConfig.weightExponent || 2;
 
         // 評価データを取得（種目評価 + 作成者評価）
+        const allKeys = Object.keys(freeExercises || {});
         const exerciseRatings = await getExerciseRatingSummaries(allKeys);
         const creatorUserIds = [...new Set(allKeys.map(k => freeExercises[k]?.createdBy).filter(Boolean))];
         const creatorDataMap = {};
