@@ -5391,7 +5391,7 @@ async function submitExerciseRating(exerciseKey, rating, comment) {
         batch.set(summaryRef, {
             ratingCount: firebase.firestore.FieldValue.increment(1),
             ratingSum: firebase.firestore.FieldValue.increment(rating),
-            avgRating: 0, // 後で再計算
+            // avgRating はバッチ後のトランザクションで再計算するため、ここでは書かない
             exerciseKey,
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });

@@ -389,6 +389,20 @@ async function loadAll() {
         _commentsCache = {};
         _commentsLoading = {};
 
+        // avgRating=0 だが ratingCount>0 の不整合レコードを自動修復（バックグラウンド）
+        const brokenEntries = Object.entries(_ratings)
+            .filter(([, r]) => r.avgRating === 0 && (r.ratingCount || 0) > 0 && (r.ratingSum || 0) > 0);
+        brokenEntries.forEach(([k, r]) => {
+            const correct = r.ratingSum / r.ratingCount;
+            db.collection('exercise_ratings').doc(k)
+                .update({ avgRating: correct })
+                .then(() => { _ratings[k].avgRating = correct; })
+                .catch(() => {});
+        });
+        if (brokenEntries.length > 0) {
+            console.warn(`[修復] avgRating不整合を${brokenEntries.length}件修正しました:`, brokenEntries.map(([k]) => k));
+        }
+
         renderAll();
     } catch (e) {
         console.error(e);
@@ -786,7 +800,7 @@ function buildCreatorData() {
     const map = {};
     Object.entries(_exercises).forEach(([key, ex]) => {
         const name = ex.createdByName;
-        if (!name) return;
+        if (!name || name === '（復元）') return;
         if (!map[name]) map[name] = { name, keys: [] };
         map[name].keys.push(key);
     });
