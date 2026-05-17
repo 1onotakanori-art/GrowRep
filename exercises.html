@@ -193,19 +193,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
     </div>
     <div class="dash-grid" id="dash-grid">
         <div class="dash-card">
-            <div class="dc-title">🔥 急増中の種目</div>
+            <div class="dc-title"><i class="fa-solid fa-fire"></i> 急増中の種目</div>
             <div class="dash-rank" id="dash-trending"><div class="dash-empty">—</div></div>
         </div>
         <div class="dash-card">
-            <div class="dc-title">⭐ 人気の種目（累計）</div>
+            <div class="dc-title"><i class="fa-solid fa-star"></i> 人気の種目（累計）</div>
             <div class="dash-rank" id="dash-popular"><div class="dash-empty">—</div></div>
         </div>
         <div class="dash-card">
-            <div class="dc-title">🏅 高評価の種目</div>
+            <div class="dc-title"><i class="fa-solid fa-medal"></i> 高評価の種目</div>
             <div class="dash-rank" id="dash-rated"><div class="dash-empty">—</div></div>
         </div>
         <div class="dash-card">
-            <div class="dc-title">🎲 評価で確率UP</div>
+            <div class="dc-title"><i class="fa-solid fa-dice"></i> 評価で確率UP</div>
             <div class="dash-rank" id="dash-prob"><div class="dash-empty">—</div></div>
         </div>
     </div>
@@ -464,9 +464,9 @@ function calcProbabilities() {
 
         // トレンドバッジは「評価込みの確率」で判定
         const adjRatio = avgBaseW > 0 ? adjWeights[k] / (totalAdjW / keys.length) : 1;
-        let trend = '➡️';
-        if (adjRatio >= 1.3) trend = '↗️';
-        else if (adjRatio <= 0.7) trend = '↘️';
+        let trend = '→';
+        if (adjRatio >= 1.3) trend = '↑';
+        else if (adjRatio <= 0.7) trend = '↓';
 
         probs[k] = { baseProb: baseP, adjProb: adjP, prob: adjP, ratio, adjRatio, trend, rMult, ratingBoost };
     });
@@ -614,7 +614,7 @@ function getFilteredSorted(probs) {
     let entries = Object.entries(_exercises).map(([key, ex]) => {
         const stat = _postStats[key] || { total: 0, recent7: 0, prev7: 0 };
         const rating = _ratings[key] || null;
-        const prob = probs[key] || { prob: 0, ratio: 1, trend: '➡️' };
+        const prob = probs[key] || { prob: 0, ratio: 1, trend: '→' };
         const wcCount = hist[key] || 0;
         return { key, ex, stat, rating, prob, wcCount };
     });
@@ -831,9 +831,9 @@ function renderCreatorRanking(probs) {
         return;
     }
     const tiers = [
-        { id: 'excellent', label: '⭐ 優良種目クリエイター', cls: 'cr-tier-excellent', test: r => r != null && r >= 4 },
-        { id: 'good',      label: '👍 良種目クリエイター',   cls: 'cr-tier-good',      test: r => r != null && r >= 3 && r < 4 },
-        { id: 'bad',       label: '💩 クソ種目クリエイター', cls: 'cr-tier-bad',        test: r => r != null && r < 3 },
+        { id: 'excellent', label: '<i class="fa-solid fa-trophy" style="font-size:10px"></i> 優良種目クリエイター', cls: 'cr-tier-excellent', test: r => r != null && r >= 4 },
+        { id: 'good',      label: '<i class="fa-solid fa-thumbs-up" style="font-size:10px"></i> 良種目クリエイター',   cls: 'cr-tier-good',      test: r => r != null && r >= 3 && r < 4 },
+        { id: 'bad',       label: '<i class="fa-solid fa-thumbs-down" style="font-size:10px"></i> クソ種目クリエイター', cls: 'cr-tier-bad',        test: r => r != null && r < 3 },
     ];
     let html = '';
     tiers.forEach(tier => {
@@ -887,7 +887,7 @@ function toggleCreatorExercises(uid) {
         if (!ex) return '';
         const stat = _postStats[key] || { total: 0, recent7: 0, prev7: 0 };
         const rating = _ratings[key] || null;
-        const prob = probs[key] || { prob: 0, trend: '➡️' };
+        const prob = probs[key] || { prob: 0, trend: '→' };
         const wcCount = hist[key] || 0;
         return buildExRowHtml(key, ex, stat, rating, prob, wcCount, idPfx, curWcKeys);
     }).join('');
