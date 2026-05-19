@@ -1490,6 +1490,7 @@ function updateModeInfo() {
             rules: '今週の3種目ルール（読み取り専用）',
             score: '今週の週間チャレンジ得点',
             champions: '毎週の総合得点チャンピオンの記録',
+            derby: '週間チャレンジの得点を1ヶ月合計した月間ランキング',
             timer: '指定した秒数ごとに音が鳴り、カウントアップされます'
         }
     };
@@ -1509,7 +1510,8 @@ function updateModeInfo() {
         'rules-mode-info': currentTexts.rules,
         'score-mode-info': currentTexts.score,
         'timer-mode-info': currentTexts.timer,
-        'champions-mode-info': currentTexts.champions
+        'champions-mode-info': currentTexts.champions,
+        'derby-mode-info': currentTexts.derby
     };
     
     Object.entries(modeInfoElements).forEach(([id, text]) => {
@@ -1667,6 +1669,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (tabName === 'champions') {
             loadChampionsHistory();
         }
+
+        // 月間ダービータブの場合はデータ読み込み
+        if (tabName === 'derby') {
+            loadMonthlyDerby();
+        }
     });
 });
 
@@ -1710,6 +1717,9 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
                 break;
             case 'champions-tab':
                 await loadChampionsHistory();
+                break;
+            case 'derby-tab':
+                await loadMonthlyDerby();
                 break;
         }
     } catch (error) {
@@ -7185,6 +7195,451 @@ async function loadChampionsHistory() {
         const errorMessage = error.message || 'エラー詳細不明';
         const errorCode = error.code ? ` (コード: ${error.code})` : '';
         championsList.innerHTML = `<p style="text-align:center; color:#e74c3c; padding:20px;">データの読み込みに失敗しました<br><span style="font-size:0.85em; color:#999;">エラー: ${escapeHtml(errorMessage)}${escapeHtml(errorCode)}</span></p>`;
+    }
+}
+
+// ====================================================================
+// 月間ダービー機能
+// ====================================================================
+
+/** 月間ダービーのChart.jsインスタンス */
+let derbyChart = null;
+
+/**
+ * 指定年月のダービー開始日（その月の最初の月曜、UTC日付で管理）と終了日（次の月のダービー開始前日）を返す
+ * @param {number} year
+ * @param {number} month 1-indexed
+ * @returns {{ derbyStart: Date, derbyEnd: Date }}
+ */
+function getMonthlyDerbyBounds(year, month) {
+    function firstMondayUTC(y, m) {
+        // 月初1日 UTC midnight
+        const d = new Date(Date.UTC(y, m - 1, 1));
+        const dow = d.getUTCDay(); // 0=日,1=月,...,6=土
+        // 月曜まで何日追加するか: 月曜(1)なら0, それ以外は (8-dow)%7
+        const daysToMon = (8 - dow) % 7;
+        return new Date(d.getTime() + daysToMon * 86400000);
+    }
+
+    const derbyStart = firstMondayUTC(year, month);
+
+    let ny = year, nm = month + 1;
+    if (nm > 12) { nm = 1; ny++; }
+    const nextDerbyStart = firstMondayUTC(ny, nm);
+
+    // 終了日 = 次のダービー開始前日（日曜）
+    const derbyEnd = new Date(nextDerbyStart.getTime() - 86400000);
+
+    return { derbyStart, derbyEnd };
+}
+
+/**
+ * 今日（JST）が属する月間ダービーの年月を返す
+ * @returns {{ year: number, month: number }}
+ */
+function getCurrentDerbyYearMonth() {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const jstNow = new Date(Date.now() + JST_OFFSET_MS);
+    let year = jstNow.getUTCFullYear();
+    let month = jstNow.getUTCMonth() + 1;
+
+    // 今日がその月のダービー開始前かチェック
+    const { derbyStart } = getMonthlyDerbyBounds(year, month);
+    const todayUTC = new Date(Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), jstNow.getUTCDate()));
+    if (todayUTC < derbyStart) {
+        // 前月のダービーがまだ進行中
+        month--;
+        if (month < 1) { month = 12; year--; }
+    }
+
+    return { year, month };
+}
+
+/**
+ * 月間ダービーのデータを計算する
+ * @param {number} year
+ * @param {number} month
+ * @returns {Promise<Object>}
+ */
+async function computeMonthlyDerbyData(year, month) {
+    const { derbyStart, derbyEnd } = getMonthlyDerbyBounds(year, month);
+
+    // posts_free / users を一括取得
+    const [postsSnap, usersSnap, historySnap] = await Promise.all([
+        db.collection('posts_free').get(),
+        db.collection('users').get(),
+        db.collection('weekly_challenge_history')
+            .orderBy(firebase.firestore.FieldPath.documentId(), 'asc')
+            .get()
+    ]);
+
+    const usersData = {};
+    usersSnap.forEach(doc => {
+        const d = doc.data();
+        usersData[doc.id] = d.userName || d.email || 'Unknown';
+    });
+
+    if (!freeExercisesLoaded) await loadFreeExercises();
+
+    // ダービー期間に含まれる週を収集
+    const derbyWeeks = [];
+
+    historySnap.forEach(doc => {
+        const data = doc.data();
+        if (!data.weekStart || !data.exercises) return;
+        const weekStart = data.weekStart.toDate();
+        const weekEnd = data.weekEnd ? data.weekEnd.toDate()
+            : new Date(weekStart.getTime() + 7 * 86400000);
+
+        const { monJST } = buildChampionDocMeta(weekStart);
+        // monJST はJST-based "fakeUTC"なので、UTC日付として抽出して比較
+        const monDay = new Date(Date.UTC(monJST.getUTCFullYear(), monJST.getUTCMonth(), monJST.getUTCDate()));
+
+        if (monDay >= derbyStart && monDay <= derbyEnd) {
+            derbyWeeks.push({
+                docId: doc.id,
+                weekStart,
+                weekEnd,
+                exercises: Array.isArray(data.exercises) ? data.exercises : [],
+                monJST
+            });
+        }
+    });
+
+    // 今週が同期間内であれば追加（historyに未登録の場合）
+    if (weeklyChallenge && weeklyChallenge.weekStart) {
+        const { monJST } = buildChampionDocMeta(weeklyChallenge.weekStart);
+        const monDay = new Date(Date.UTC(monJST.getUTCFullYear(), monJST.getUTCMonth(), monJST.getUTCDate()));
+        if (monDay >= derbyStart && monDay <= derbyEnd) {
+            const currentDocId = buildChampionDocMeta(weeklyChallenge.weekStart).docId;
+            if (!derbyWeeks.find(w => w.docId === currentDocId)) {
+                derbyWeeks.push({
+                    docId: currentDocId,
+                    weekStart: weeklyChallenge.weekStart,
+                    weekEnd: weeklyChallenge.weekEnd,
+                    exercises: weeklyChallenge.exercises || [],
+                    monJST
+                });
+            }
+        }
+    }
+
+    // 週の順にソート
+    derbyWeeks.sort((a, b) => a.weekStart - b.weekStart);
+
+    // 各週のスコアを計算
+    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    const fmtD = d => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${dayNames[d.getUTCDay()]})`;
+
+    const weeklyResults = [];
+
+    for (let i = 0; i < derbyWeeks.length; i++) {
+        const week = derbyWeeks[i];
+        const { weekStart, weekEnd, exercises, monJST } = week;
+        const exerciseKeys = exercises.filter(k => freeExercises[k]);
+
+        const userRecords = {};
+
+        postsSnap.forEach(doc => {
+            const post = doc.data();
+            if (!post.timestamp) return;
+            const postDate = post.timestamp.toDate();
+            if (postDate < weekStart || postDate >= weekEnd) return;
+            if (!isWeekdayJST(postDate)) return;
+            if (!exerciseKeys.includes(post.exerciseType)) return;
+
+            const { userId, exerciseType, value } = post;
+            const numVal = Number(value) || 0;
+            if (numVal <= 0) return;
+
+            if (!userRecords[userId]) {
+                userRecords[userId] = {
+                    userId,
+                    userName: usersData[userId] || post.userEmail || 'Unknown',
+                    exercises: {},
+                    scores: {},
+                    totalScore: 0
+                };
+            }
+
+            const isBarbarian = freeExercises[exerciseType] && freeExercises[exerciseType].barbarian;
+            if (isBarbarian) {
+                if (userRecords[userId].exercises[exerciseType] === undefined ||
+                    userRecords[userId].exercises[exerciseType] > numVal) {
+                    userRecords[userId].exercises[exerciseType] = numVal;
+                }
+            } else {
+                if (userRecords[userId].exercises[exerciseType] === undefined ||
+                    userRecords[userId].exercises[exerciseType] < numVal) {
+                    userRecords[userId].exercises[exerciseType] = numVal;
+                }
+            }
+        });
+
+        // 得点（%）計算
+        exerciseKeys.forEach(exKey => {
+            const isBarbarian = freeExercises[exKey] && freeExercises[exKey].barbarian;
+            if (isBarbarian) {
+                let minVal = Infinity;
+                Object.values(userRecords).forEach(u => {
+                    const v = u.exercises[exKey];
+                    if (v !== undefined && v > 0 && v < minVal) minVal = v;
+                });
+                Object.values(userRecords).forEach(u => {
+                    const v = u.exercises[exKey];
+                    const pct = (v !== undefined && v > 0 && minVal !== Infinity) ? (minVal / v) * 100 : 0;
+                    u.scores[exKey] = pct;
+                    u.totalScore += pct;
+                });
+            } else {
+                let maxVal = 0;
+                Object.values(userRecords).forEach(u => {
+                    const v = u.exercises[exKey] || 0;
+                    if (v > maxVal) maxVal = v;
+                });
+                Object.values(userRecords).forEach(u => {
+                    const v = u.exercises[exKey] || 0;
+                    const pct = maxVal > 0 ? (v / maxVal) * 100 : 0;
+                    u.scores[exKey] = pct;
+                    u.totalScore += pct;
+                });
+            }
+        });
+
+        // 順位付け
+        const rankList = Object.values(userRecords).sort((a, b) => {
+            if (Math.abs(b.totalScore - a.totalScore) > 0.001) return b.totalScore - a.totalScore;
+            return a.userId.localeCompare(b.userId);
+        });
+        let prevScore = null, prevRank = 0;
+        rankList.forEach((user, idx) => {
+            if (prevScore !== null && Math.abs(user.totalScore - prevScore) <= 0.001) {
+                user.rank = prevRank;
+            } else {
+                user.rank = idx + 1;
+                prevRank = idx + 1;
+            }
+            prevScore = user.totalScore;
+        });
+
+        const friJST = new Date(monJST.getTime() + 4 * 86400000);
+        weeklyResults.push({
+            docId: week.docId,
+            weekNum: i + 1,
+            weekLabel: `第${i + 1}週 (${fmtD(monJST)}〜${fmtD(friJST)})`,
+            exerciseKeys,
+            exerciseNames: Object.fromEntries(exerciseKeys.map(k => [k, freeExercises[k] ? freeExercises[k].name : k])),
+            exerciseIsBarbarian: Object.fromEntries(exerciseKeys.map(k => [k, !!(freeExercises[k] && freeExercises[k].barbarian)])),
+            scores: userRecords,
+            rankList
+        });
+    }
+
+    // ユーザー別集計
+    const userSummary = {};
+    weeklyResults.forEach((week, wi) => {
+        Object.entries(week.scores).forEach(([uid, user]) => {
+            if (!userSummary[uid]) {
+                userSummary[uid] = {
+                    userId: uid,
+                    userName: user.userName,
+                    total: 0,
+                    weeklyScores: new Array(weeklyResults.length).fill(0)
+                };
+            }
+            userSummary[uid].weeklyScores[wi] = user.totalScore;
+            userSummary[uid].total += user.totalScore;
+        });
+    });
+
+    return { weeks: weeklyResults, userSummary, derbyStart, derbyEnd, year, month };
+}
+
+/**
+ * 月選択ドロップダウンHTMLを生成（直近6か月分）
+ */
+function buildDerbyMonthSelectorHtml(currentYear, currentMonth) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const jstNow = new Date(Date.now() + JST_OFFSET_MS);
+    const thisYear = jstNow.getUTCFullYear();
+    const thisMonth = jstNow.getUTCMonth() + 1;
+
+    let options = '';
+    for (let i = 0; i < 6; i++) {
+        let y = thisYear, m = thisMonth - i;
+        while (m <= 0) { m += 12; y--; }
+        const sel = (y === currentYear && m === currentMonth) ? 'selected' : '';
+        options += `<option value="${y}-${m}" ${sel}>${y}年${m}月</option>`;
+    }
+    return `<div class="derby-month-selector"><label><i class="fa-solid fa-calendar"></i> 期間: <select id="derby-month-select">${options}</select></label></div>`;
+}
+
+/**
+ * 月間ダービーデータを描画する
+ */
+function renderMonthlyDerby(container, data, year, month) {
+    const { weeks, userSummary, derbyStart, derbyEnd } = data;
+
+    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    const fmtD = d => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${dayNames[d.getUTCDay()]})`;
+    const periodLabel = `${fmtD(derbyStart)} 〜 ${fmtD(derbyEnd)}`;
+
+    let html = buildDerbyMonthSelectorHtml(year, month);
+    html += `<div class="derby-header"><span class="derby-title">${year}年${month}月ダービー</span><span class="derby-period">${escapeHtml(periodLabel)}</span></div>`;
+
+    if (weeks.length === 0) {
+        html += `<p class="derby-empty">${year}年${month}月のダービーデータはまだありません</p>`;
+        container.innerHTML = html;
+        setupDerbyMonthSelectorEvents(container);
+        return;
+    }
+
+    const sortedUsers = Object.values(userSummary).sort((a, b) => b.total - a.total);
+
+    if (sortedUsers.length === 0) {
+        html += `<p class="derby-empty">まだ参加者がいません</p>`;
+        container.innerHTML = html;
+        setupDerbyMonthSelectorEvents(container);
+        return;
+    }
+
+    // 週ごとの色定義
+    const WEEK_COLORS = ['#667eea', '#f7971e', '#43e97b', '#f5576c', '#a855f7', '#0ea5e9'];
+
+    // chart canvas（高さはユーザー数に応じて動的に決定）
+    const chartHeight = Math.max(180, sortedUsers.length * 44 + 60);
+    html += `<div class="derby-chart-wrap" style="position:relative;height:${chartHeight}px;margin:10px 0 16px;"><canvas id="derby-chart"></canvas></div>`;
+
+    // 週別詳細テーブル
+    html += `<div class="derby-details">`;
+    weeks.forEach(week => {
+        const exCols = week.exerciseKeys.map(k => {
+            const barb = week.exerciseIsBarbarian[k] ? '(秒)' : '(回)';
+            return `<th class="derby-th-ex">${escapeHtml(week.exerciseNames[k])}<br><small>${barb}</small></th>`;
+        }).join('');
+
+        const rows = week.rankList.map(user => {
+            const exCells = week.exerciseKeys.map(k => {
+                const val = user.exercises[k];
+                const score = Math.round(user.scores[k] || 0);
+                if (val === undefined) return `<td class="derby-td-na">-</td>`;
+                return `<td class="derby-td-val">${Math.round(val)}<br><small class="derby-score-pt">${score}pt</small></td>`;
+            }).join('');
+            return `<tr>
+                <td class="derby-td-rank">${user.rank}位</td>
+                <td class="derby-td-name">${escapeHtml(user.userName)}</td>
+                ${exCells}
+                <td class="derby-td-total">${Math.round(user.totalScore)}pt</td>
+            </tr>`;
+        }).join('');
+
+        html += `<div class="derby-week-section">
+            <div class="derby-week-header"><i class="fa-solid fa-calendar-week" style="color:${WEEK_COLORS[(week.weekNum - 1) % WEEK_COLORS.length]};margin-right:5px;"></i>${escapeHtml(week.weekLabel)}</div>
+            <div class="derby-table-wrap"><table class="derby-week-table">
+                <thead><tr><th>順位</th><th>ユーザー</th>${exCols}<th>合計</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table></div>
+        </div>`;
+    });
+    html += `</div>`;
+
+    container.innerHTML = html;
+
+    // Chart.js 横積み上げ棒グラフ
+    const chartCanvas = document.getElementById('derby-chart');
+    if (chartCanvas) {
+        if (derbyChart) { derbyChart.destroy(); derbyChart = null; }
+
+        const labels = sortedUsers.map((u, i) => `${i + 1}位 ${u.userName}`);
+        const datasets = weeks.map((week, wi) => ({
+            label: `第${week.weekNum}週`,
+            data: sortedUsers.map(u => Math.round((u.weeklyScores[wi] || 0) * 10) / 10),
+            backgroundColor: WEEK_COLORS[wi % WEEK_COLORS.length],
+            borderColor: '#fff',
+            borderWidth: 1,
+            borderRadius: 3
+        }));
+
+        derbyChart = new Chart(chartCanvas.getContext('2d'), {
+            type: 'bar',
+            data: { labels, datasets },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        stacked: true,
+                        title: { display: true, text: '得点 (pt)', font: { size: 10 } },
+                        ticks: { font: { size: 10 } }
+                    },
+                    y: {
+                        stacked: true,
+                        ticks: { font: { size: 11 } }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { font: { size: 11 }, boxWidth: 14, padding: 10 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => `${ctx.dataset.label}: ${ctx.raw}pt`,
+                            footer: items => {
+                                const total = items.reduce((s, i) => s + i.raw, 0);
+                                return `合計: ${Math.round(total)}pt`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    setupDerbyMonthSelectorEvents(container);
+}
+
+/**
+ * 月選択イベントをバインド
+ */
+function setupDerbyMonthSelectorEvents(container) {
+    const sel = container.querySelector('#derby-month-select');
+    if (sel) {
+        sel.addEventListener('change', () => {
+            const [y, m] = sel.value.split('-').map(Number);
+            loadMonthlyDerby(y, m);
+        });
+    }
+}
+
+/**
+ * 月間ダービータブを読み込んで表示
+ * @param {number} [year]
+ * @param {number} [month]
+ */
+async function loadMonthlyDerby(year, month) {
+    const container = document.getElementById('derby-content');
+    if (!container) return;
+
+    container.innerHTML = '<p style="text-align:center;padding:20px;color:#999;">読み込み中...</p>';
+
+    if (!weeklyChallengeLoaded) await getOrUpdateWeeklyChallenge();
+    if (!freeExercisesLoaded) await loadFreeExercises();
+
+    if (!year || !month) {
+        const cur = getCurrentDerbyYearMonth();
+        year = cur.year;
+        month = cur.month;
+    }
+
+    try {
+        const data = await computeMonthlyDerbyData(year, month);
+        renderMonthlyDerby(container, data, year, month);
+    } catch (error) {
+        console.error('[月間ダービー] エラー:', error);
+        const msg = escapeHtml(error.message || 'エラー詳細不明');
+        container.innerHTML = `<p style="text-align:center;color:#e74c3c;padding:20px;">データの読み込みに失敗しました<br><small>${msg}</small></p>`;
     }
 }
 

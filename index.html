@@ -68,6 +68,7 @@
             <button class="tab-btn" data-tab="timer" data-mode="free" style="display: none;"><i class="fa-solid fa-stopwatch"></i> タイマー</button>
             <button class="tab-btn" data-tab="timer" data-mode="weekly" style="display: none;"><i class="fa-solid fa-stopwatch"></i> タイマー</button>
             <button class="tab-btn" data-tab="champions" data-mode="weekly" style="display: none;"><i class="fa-solid fa-crown"></i> 歴代チャンプ</button>
+            <button class="tab-btn" data-tab="derby" data-mode="weekly" style="display: none;"><i class="fa-solid fa-calendar-days"></i> 月間ダービー</button>
         </nav>
 
         <!-- 投稿タブ -->
@@ -215,6 +216,13 @@
             <h2><i class="fa-solid fa-crown"></i> 歴代チャンプ</h2>
             <div id="champions-mode-info" class="mode-info"></div>
             <div id="champions-list" class="champions-list"></div>
+        </div>
+
+        <!-- 月間ダービータブ（週間チャレンジモード専用） -->
+        <div id="derby-tab" class="tab-content" data-mode="weekly">
+            <h2><i class="fa-solid fa-calendar-days"></i> 月間ダービー</h2>
+            <div id="derby-mode-info" class="mode-info"></div>
+            <div id="derby-content"><p style="text-align:center;color:#999;padding:20px;">読み込み中...</p></div>
         </div>
 
         <!-- モード別背景オーバーレイ -->

@@ -2421,6 +2421,137 @@ body.mode-weekly .ranking-category h3 {
 }
 
 /* ====================================================================
+   月間ダービータブ
+   ==================================================================== */
+.derby-month-selector {
+    padding: 8px 12px;
+    background: #f6f8ff;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+}
+.derby-month-selector select {
+    border: 1.5px solid #c8d0ff;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #333;
+    background: #fff;
+    margin-left: 4px;
+}
+
+.derby-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.derby-title {
+    font-size: 1.05em;
+    font-weight: 800;
+    color: #667eea;
+}
+.derby-period {
+    font-size: 0.85em;
+    color: #888;
+}
+
+.derby-chart-wrap {
+    background: #fff;
+    border-radius: 10px;
+    border: 1.5px solid #e8e8e8;
+    padding: 10px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.05);
+}
+
+.derby-empty {
+    text-align: center;
+    color: #999;
+    padding: 24px;
+    font-size: 0.9em;
+}
+
+.derby-details {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 4px;
+}
+.derby-week-section {
+    background: #fff;
+    border-radius: 10px;
+    border: 1.5px solid #e8e8e8;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+}
+.derby-week-header {
+    background: #f6f8ff;
+    border-bottom: 1.5px solid #e8e8e8;
+    padding: 7px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #444;
+}
+.derby-table-wrap {
+    overflow-x: auto;
+}
+.derby-week-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+}
+.derby-week-table th {
+    background: #f0f2fb;
+    color: #555;
+    font-weight: 700;
+    padding: 5px 6px;
+    text-align: center;
+    border-bottom: 1.5px solid #dde0f7;
+    white-space: nowrap;
+}
+.derby-th-ex {
+    min-width: 54px;
+}
+.derby-week-table td {
+    padding: 5px 6px;
+    border-bottom: 1px solid #f0f0f0;
+    text-align: center;
+    vertical-align: middle;
+    color: #333;
+}
+.derby-td-rank {
+    font-weight: 700;
+    color: #667eea;
+    white-space: nowrap;
+    min-width: 30px;
+}
+.derby-td-name {
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.derby-td-total {
+    font-weight: 700;
+    color: #e67e00;
+    white-space: nowrap;
+}
+.derby-td-val small.derby-score-pt {
+    color: #888;
+}
+.derby-td-na {
+    color: #ccc;
+}
+.derby-week-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* ====================================================================
    タグチップ共通スタイル
    ==================================================================== */
 .tag-chip {
