@@ -406,8 +406,8 @@ async function rerollOne(oldKey, idx) {
             const hist = _wc.selectionHistory || {};
             const exp = _wcConfig.weightExponent || 2;
             const currentKeys = _wc.exercises || [];
-            // 候補: 現在選出中以外の全種目
-            const candidates = Object.keys(_exercises).filter(k => !currentKeys.includes(k));
+            // 候補: 現在選出中以外 かつ 週間チャレンジ除外フラグなし
+            const candidates = Object.keys(_exercises).filter(k => !currentKeys.includes(k) && !_exercises[k]?.excludeFromWeekly);
             if (candidates.length === 0) { toast('入替候補がありません'); return; }
             // 重み付き抽選
             const weights = candidates.map(k => 1 / Math.pow((hist[k] || 0) + 1, exp));
@@ -456,23 +456,31 @@ function renderWeight() {
 
     // Weight list
     if (allKeys.length === 0) { html += '<p style="color:var(--tx2)">種目なし</p>'; el.innerHTML = html; updateExpPreview(); return; }
-    const data = allKeys.map(k => { const c = hist[k] || 0; const w = 1 / Math.pow(c + 1, exp); return { k, name: _exercises[k]?.name || '?', count: c, weight: w, sel: curSel.includes(k) }; });
+    const data = allKeys.map(k => {
+        const c = hist[k] || 0;
+        const excluded = !!_exercises[k]?.excludeFromWeekly;
+        const w = excluded ? 0 : 1 / Math.pow(c + 1, exp);
+        return { k, name: _exercises[k]?.name || '?', count: c, weight: w, sel: curSel.includes(k), excluded };
+    });
     const totalW = data.reduce((s, d) => s + d.weight, 0);
-    const maxP = Math.max(...data.map(d => d.weight / totalW));
+    const maxP = data.length > 0 ? Math.max(...data.map(d => totalW > 0 ? d.weight / totalW : 0)) : 0;
     data.sort((a, b) => b.weight - a.weight);
 
-    data.forEach((d, i) => {
-        const p = totalW > 0 ? (d.weight / totalW) : 0;
+    let rank = 0;
+    data.forEach(d => {
+        const p = (!d.excluded && totalW > 0) ? (d.weight / totalW) : 0;
         const pPct = (p * 100).toFixed(1);
         const barW = maxP > 0 ? Math.round(p / maxP * 100) : 0;
         const barColor = d.sel ? '#f57f17' : 'var(--pri)';
         const selMark = d.sel ? ' <span class="badge badge-sel"><i class="fa-solid fa-star"></i></span>' : '';
+        const exclMark = d.excluded ? ' <span class="badge" style="background:#eee;color:#888"><i class="fa-solid fa-calendar-xmark"></i> 除外</span>' : '';
+        const rankLabel = d.excluded ? '—' : ++rank;
         html += `<div class="wt-item">
-            <span class="wt-rank">${i + 1}</span>
-            <span class="wt-name">${esc(d.name)}${selMark}</span>
-            <span class="wt-count">${d.count}回</span>
+            <span class="wt-rank">${rankLabel}</span>
+            <span class="wt-name">${esc(d.name)}${selMark}${exclMark}</span>
+            <span class="wt-count">${d.excluded ? '—' : d.count + '回'}</span>
             <div class="wt-bar-wrap"><div class="wt-bar" style="width:${barW}%;background:${barColor}"></div></div>
-            <span class="wt-pct">${pPct}%</span>
+            <span class="wt-pct">${d.excluded ? '0%' : pPct + '%'}</span>
         </div>`;
     });
     el.innerHTML = html;
@@ -532,10 +540,11 @@ function renderFree() {
         const ic = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-dumbbell';
         const tgs = (ex.tags || []).map(t => `<span class="badge badge-tag">${esc(t)}</span>`).join('');
         const barb = ex.barbarian ? ' <span class="badge badge-barb"><i class="fa-solid fa-stopwatch"></i> TA</span>' : '';
+        const excl = ex.excludeFromWeekly ? ' <span class="badge" style="background:#eee;color:#888"><i class="fa-solid fa-calendar-xmark"></i> 除外</span>' : '';
         html += `<div class="ex-card">
             <i class="${ic} ex-icon"></i>
             <div class="ex-body">
-                <div class="ex-name">${esc(ex.name || '(名称なし)')}${barb}</div>
+                <div class="ex-name">${esc(ex.name || '(名称なし)')}${barb}${excl}</div>
                 <div class="ex-meta">${esc(ex.rule || '')}${ex.createdByName ? ' / ' + esc(ex.createdByName) : ''}</div>
                 <div class="ex-tags">${tgs}</div>
             </div>
