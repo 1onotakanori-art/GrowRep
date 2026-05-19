@@ -3448,6 +3448,9 @@ async function loadFreeExercises() {
                 if (!Array.isArray(freeExercises[key].tags)) {
                     freeExercises[key].tags = [];
                 }
+                if (freeExercises[key].excludeFromWeekly === undefined) {
+                    freeExercises[key].excludeFromWeekly = false;
+                }
             });
         } else {
             freeExercises = {};
@@ -3513,7 +3516,7 @@ function renderIconGrid(containerId, hiddenInputId, selectedIcon = 'fa-dumbbell'
  * @param {string} rule - ルール説明
  * @param {string} icon - アイコンクラス名
  */
-async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = [], barbarian = false) {
+async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = [], barbarian = false, excludeFromWeekly = false) {
     // キー名を生成（ユニークなID）
     const key = 'free_' + Date.now();
     freeExercises[key] = { 
@@ -3522,6 +3525,7 @@ async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = [], barb
         icon: icon,
         tags: tags,
         barbarian: barbarian,
+        excludeFromWeekly: excludeFromWeekly,
         createdBy: currentUser ? currentUser.uid : null,
         createdByName: currentUserData ? currentUserData.userName : (currentUser ? currentUser.email : 'Unknown'),
         createdAt: new Date().toISOString()
@@ -3679,7 +3683,7 @@ async function openRestoreExercisesModal() {
  * @param {string} rule - 新しいルール説明
  * @param {string} icon - 新しいアイコン
  */
-async function editFreeExercise(key, name, rule, icon, tags = [], barbarian = false) {
+async function editFreeExercise(key, name, rule, icon, tags = [], barbarian = false, excludeFromWeekly = false) {
     const existing = freeExercises[key] || {};
     freeExercises[key] = { 
         name, 
@@ -3687,6 +3691,7 @@ async function editFreeExercise(key, name, rule, icon, tags = [], barbarian = fa
         icon,
         tags: tags,
         barbarian: barbarian,
+        excludeFromWeekly: excludeFromWeekly,
         // 既存の作成者情報を保持
         createdBy: existing.createdBy || null,
         createdByName: existing.createdByName || 'Unknown',
@@ -3708,6 +3713,7 @@ function openEditExerciseModal(key) {
     renderIconGrid('edit-exercise-icon-grid', 'edit-exercise-icon', ex.icon || 'fa-dumbbell');
     renderTagSelector('edit-exercise-tags', ex.tags || []);
     document.getElementById('edit-exercise-barbarian').checked = ex.barbarian || false;
+    document.getElementById('edit-exercise-exclude-weekly').checked = ex.excludeFromWeekly || false;
     document.getElementById('edit-exercise-error').textContent = '';
     document.getElementById('edit-exercise-modal').style.display = 'block';
 }
@@ -4061,7 +4067,7 @@ function appendRuleItem(container, key, ex, ratingData = null, canRate = false, 
     }
 
     const item = document.createElement('div');
-    item.className = 'rule-item' + (isBarbarian ? ' barbarian-exercise' : '');
+    item.className = 'rule-item' + (isBarbarian ? ' barbarian-exercise' : '') + (ex.excludeFromWeekly ? ' exercise-excluded-weekly' : '');
     item.dataset.key = key;
     item.style.cursor = isWeeklyMode ? 'default' : 'pointer';
     item.innerHTML = `
@@ -4810,12 +4816,14 @@ document.getElementById('add-free-exercise-btn').addEventListener('click', async
     try {
         const tags = getSelectedTags('free-exercise-tags');
         const barbarian = document.getElementById('free-exercise-barbarian').checked;
-        await addFreeExercise(name, rule, icon, tags, barbarian);
+        const excludeFromWeekly = document.getElementById('free-exercise-exclude-weekly').checked;
+        await addFreeExercise(name, rule, icon, tags, barbarian, excludeFromWeekly);
         nameInput.value = '';
         ruleInput.value = '';
         renderIconGrid('free-exercise-icon-grid', 'free-exercise-icon', 'fa-dumbbell');
         renderTagSelector('free-exercise-tags', []);
         document.getElementById('free-exercise-barbarian').checked = false;
+        document.getElementById('free-exercise-exclude-weekly').checked = false;
         errorEl.textContent = '';
         document.getElementById('free-exercise-modal').style.display = 'none';
         alert('種目を追加しました！');
@@ -4847,7 +4855,8 @@ document.getElementById('save-edit-exercise-btn').addEventListener('click', asyn
     try {
         const tags = getSelectedTags('edit-exercise-tags');
         const barbarian = document.getElementById('edit-exercise-barbarian').checked;
-        await editFreeExercise(key, name, rule, icon, tags, barbarian);
+        const excludeFromWeekly = document.getElementById('edit-exercise-exclude-weekly').checked;
+        await editFreeExercise(key, name, rule, icon, tags, barbarian, excludeFromWeekly);
         errorEl.textContent = '';
         document.getElementById('edit-exercise-modal').style.display = 'none';
         alert('種目を更新しました！');
@@ -5707,7 +5716,7 @@ function selectWeeklyExercises(allKeys, history, count = 3, weightExponent = 2, 
  * @returns {string[]}
  */
 function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExponent = 2, exerciseRatings = {}, creatorData = {}) {
-    const allKeys = Object.keys(allExercises || {});
+    const allKeys = Object.keys(allExercises || {}).filter(key => !allExercises[key]?.excludeFromWeekly);
     if (allKeys.length === 0) return [];
 
     const normalKeys = allKeys.filter(key => !(allExercises[key] && allExercises[key].barbarian));

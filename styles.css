@@ -3068,6 +3068,54 @@ body.dark-mode .post-inline-value:focus {
 .barbarian-exercise {
     border-left: 3px solid #e74c3c !important;
 }
+
+/* 週間チャレンジ除外種目カードの背景 */
+.exercise-excluded-weekly {
+    background: #ebebeb !important;
+}
+body.dark-mode .exercise-excluded-weekly {
+    background: #2a2a2a !important;
+}
+
+/* モーダル内：週間チャレンジ除外トグル */
+.weekly-exclude-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0 4px 0;
+    padding: 12px 14px;
+    background: linear-gradient(135deg, #f5f5f5, #eeeeee);
+    border: 2px solid #bdbdbd;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    user-select: none;
+}
+.weekly-exclude-toggle:hover {
+    border-color: #757575;
+    background: linear-gradient(135deg, #eeeeee, #e0e0e0);
+}
+.weekly-exclude-toggle input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #616161;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.weekly-exclude-toggle span {
+    font-size: 14px;
+    font-weight: 600;
+    color: #424242;
+}
+.weekly-exclude-toggle span i {
+    margin-right: 4px;
+}
+.weekly-exclude-hint {
+    font-size: 12px;
+    color: #757575;
+    margin: 2px 0 10px 4px;
+    opacity: 0.8;
+}
 /* ====================================================================
    種目評価システム スタイル
    ==================================================================== */
