@@ -2432,6 +2432,39 @@ body.mode-weekly .ranking-category h3 {
     font-weight: 600;
     color: #555;
 }
+
+.derby-champ-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
+    border: 2px solid #f7971e;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+.derby-champ-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #b86200;
+    white-space: nowrap;
+}
+.derby-champ-crown {
+    color: #f7971e;
+    font-size: 1.15em;
+}
+.derby-champ-name {
+    font-size: 1.05em;
+    font-weight: 800;
+    color: #333;
+}
+.derby-champ-score {
+    font-size: 11px;
+    color: #e67e00;
+    font-weight: 600;
+    margin-left: auto;
+}
 .derby-month-selector select {
     border: 1.5px solid #c8d0ff;
     border-radius: 6px;

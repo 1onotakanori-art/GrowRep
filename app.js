@@ -7452,7 +7452,22 @@ async function computeMonthlyDerbyData(year, month) {
         });
     });
 
-    return { weeks: weeklyResults, userSummary, derbyStart, derbyEnd, year, month };
+    // ダービー完了判定と月間チャンプ選出
+    let isDerbyComplete = false;
+    let monthlyChamp = null;
+    if (derbyWeeks.length > 0) {
+        const lastWeek = derbyWeeks[derbyWeeks.length - 1];
+        isDerbyComplete = isChampionWeekDecided(lastWeek.weekStart);
+    }
+    if (isDerbyComplete && Object.keys(userSummary).length > 0) {
+        const champCandidates = Object.values(userSummary).sort((a, b) => {
+            if (Math.abs(b.total - a.total) > 0.001) return b.total - a.total;
+            return a.userId.localeCompare(b.userId);
+        });
+        monthlyChamp = champCandidates[0];
+    }
+
+    return { weeks: weeklyResults, userSummary, derbyStart, derbyEnd, year, month, isDerbyComplete, monthlyChamp };
 }
 
 /**
@@ -7475,22 +7490,27 @@ function buildDerbyMonthSelectorHtml(currentYear, currentMonth) {
 }
 
 /**
- * 月間ダービーデータを描画する
+ * 月間ダービーのデータ部分を描画する（セレクターを除くデータエリアのみ）
  */
-function renderMonthlyDerby(container, data, year, month) {
-    const { weeks, userSummary, derbyStart, derbyEnd } = data;
+function renderMonthlyDerbyData(dataWrap, data, year, month) {
+    const { weeks, userSummary, derbyStart, derbyEnd, isDerbyComplete, monthlyChamp } = data;
 
     const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
     const fmtD = d => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${dayNames[d.getUTCDay()]})`;
     const periodLabel = `${fmtD(derbyStart)} 〜 ${fmtD(derbyEnd)}`;
 
-    let html = buildDerbyMonthSelectorHtml(year, month);
+    // 月間チャンプバナー（全週確定済み時のみ）
+    let champBannerHtml = '';
+    if (isDerbyComplete && monthlyChamp) {
+        champBannerHtml = `<div class="derby-champ-banner"><span class="derby-champ-label">${year}年${month}月チャンプ</span><i class="fa-solid fa-crown derby-champ-crown"></i><span class="derby-champ-name">${escapeHtml(monthlyChamp.userName)}</span><span class="derby-champ-score">${Math.round(monthlyChamp.total)}pt</span></div>`;
+    }
+
+    let html = champBannerHtml;
     html += `<div class="derby-header"><span class="derby-title">${year}年${month}月ダービー</span><span class="derby-period">${escapeHtml(periodLabel)}</span></div>`;
 
     if (weeks.length === 0) {
         html += `<p class="derby-empty">${year}年${month}月のダービーデータはまだありません</p>`;
-        container.innerHTML = html;
-        setupDerbyMonthSelectorEvents(container);
+        dataWrap.innerHTML = html;
         return;
     }
 
@@ -7498,15 +7518,13 @@ function renderMonthlyDerby(container, data, year, month) {
 
     if (sortedUsers.length === 0) {
         html += `<p class="derby-empty">まだ参加者がいません</p>`;
-        container.innerHTML = html;
-        setupDerbyMonthSelectorEvents(container);
+        dataWrap.innerHTML = html;
         return;
     }
 
-    // 週ごとの色定義
     const WEEK_COLORS = ['#667eea', '#f7971e', '#43e97b', '#f5576c', '#a855f7', '#0ea5e9'];
+    const firstPlaceTotal = sortedUsers[0].total;
 
-    // chart canvas（高さはユーザー数に応じて動的に決定）
     const chartHeight = Math.max(180, sortedUsers.length * 44 + 60);
     html += `<div class="derby-chart-wrap" style="position:relative;height:${chartHeight}px;margin:10px 0 16px;"><canvas id="derby-chart"></canvas></div>`;
 
@@ -7543,7 +7561,7 @@ function renderMonthlyDerby(container, data, year, month) {
     });
     html += `</div>`;
 
-    container.innerHTML = html;
+    dataWrap.innerHTML = html;
 
     // Chart.js 横積み上げ棒グラフ
     const chartCanvas = document.getElementById('derby-chart');
@@ -7551,6 +7569,8 @@ function renderMonthlyDerby(container, data, year, month) {
         if (derbyChart) { derbyChart.destroy(); derbyChart = null; }
 
         const labels = sortedUsers.map((u, i) => `${i + 1}位 ${u.userName}`);
+
+        // 通常の週ごとデータセット
         const datasets = weeks.map((week, wi) => ({
             label: `第${week.weekNum}週`,
             data: sortedUsers.map(u => Math.round((u.weeklyScores[wi] || 0) * 10) / 10),
@@ -7559,6 +7579,44 @@ function renderMonthlyDerby(container, data, year, month) {
             borderWidth: 1,
             borderRadius: 3
         }));
+
+        // 1位との差分セグメント（2位以下に追加）
+        if (firstPlaceTotal > 0 && sortedUsers.length > 1) {
+            datasets.push({
+                label: '__gap__',
+                data: sortedUsers.map(u => {
+                    const gap = firstPlaceTotal - u.total;
+                    return gap > 0.05 ? Math.round(gap * 10) / 10 : null;
+                }),
+                backgroundColor: 'rgba(220, 53, 69, 0.18)',
+                borderColor: 'rgba(220, 53, 69, 0.38)',
+                borderWidth: 1,
+                borderRadius: 3,
+                hoverBackgroundColor: 'rgba(220, 53, 69, 0.38)'
+            });
+        }
+
+        // 1位ライン描画用インラインプラグイン
+        const capturedFirstPlace = firstPlaceTotal;
+        const firstPlaceLinePlugin = {
+            id: 'derbyFirstPlaceLine',
+            afterDraw(chart) {
+                if (capturedFirstPlace <= 0) return;
+                const ctx = chart.ctx;
+                const xScale = chart.scales.x;
+                const x = xScale.getPixelForValue(capturedFirstPlace);
+                if (!x || x < chart.chartArea.left || x > chart.chartArea.right) return;
+                ctx.save();
+                ctx.strokeStyle = 'rgba(220, 53, 69, 0.85)';
+                ctx.setLineDash([6, 4]);
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(x, chart.chartArea.top);
+                ctx.lineTo(x, chart.chartArea.bottom);
+                ctx.stroke();
+                ctx.restore();
+            }
+        };
 
         derbyChart = new Chart(chartCanvas.getContext('2d'), {
             type: 'bar',
@@ -7581,30 +7639,37 @@ function renderMonthlyDerby(container, data, year, month) {
                 plugins: {
                     legend: {
                         position: 'top',
-                        labels: { font: { size: 11 }, boxWidth: 14, padding: 10 }
+                        labels: {
+                            font: { size: 11 }, boxWidth: 14, padding: 10,
+                            filter: item => item.text !== '__gap__'
+                        }
                     },
                     tooltip: {
                         callbacks: {
-                            label: ctx => `${ctx.dataset.label}: ${ctx.raw}pt`,
+                            label: ctx => {
+                                if (ctx.raw === null || ctx.raw === undefined) return null;
+                                if (ctx.dataset.label === '__gap__') return `1位との差: ${ctx.raw}pt`;
+                                return `${ctx.dataset.label}: ${ctx.raw}pt`;
+                            },
                             footer: items => {
-                                const total = items.reduce((s, i) => s + i.raw, 0);
-                                return `合計: ${Math.round(total)}pt`;
+                                const nonGap = items.filter(i => i.dataset.label !== '__gap__' && i.raw !== null);
+                                const total = nonGap.reduce((s, i) => s + (i.raw || 0), 0);
+                                if (total > 0) return `合計: ${Math.round(total)}pt`;
                             }
                         }
                     }
                 }
-            }
+            },
+            plugins: [firstPlaceLinePlugin]
         });
     }
-
-    setupDerbyMonthSelectorEvents(container);
 }
 
 /**
  * 月選択イベントをバインド
  */
-function setupDerbyMonthSelectorEvents(container) {
-    const sel = container.querySelector('#derby-month-select');
+function setupDerbyMonthSelectorEvents(selectorWrap) {
+    const sel = selectorWrap.querySelector('#derby-month-select');
     if (sel) {
         sel.addEventListener('change', () => {
             const [y, m] = sel.value.split('-').map(Number);
@@ -7614,15 +7679,13 @@ function setupDerbyMonthSelectorEvents(container) {
 }
 
 /**
- * 月間ダービータブを読み込んで表示
+ * 月間ダービータブを読み込んで表示（セレクターは初回のみ生成し再利用）
  * @param {number} [year]
  * @param {number} [month]
  */
 async function loadMonthlyDerby(year, month) {
     const container = document.getElementById('derby-content');
     if (!container) return;
-
-    container.innerHTML = '<p style="text-align:center;padding:20px;color:#999;">読み込み中...</p>';
 
     if (!weeklyChallengeLoaded) await getOrUpdateWeeklyChallenge();
     if (!freeExercisesLoaded) await loadFreeExercises();
@@ -7633,13 +7696,30 @@ async function loadMonthlyDerby(year, month) {
         month = cur.month;
     }
 
+    // セレクターラップを初回のみ生成、以降は使い回す
+    let selectorWrap = container.querySelector('#derby-selector-wrap');
+    let dataWrap = container.querySelector('#derby-data');
+
+    if (!selectorWrap) {
+        container.innerHTML = '<div id="derby-selector-wrap"></div><div id="derby-data"></div>';
+        selectorWrap = container.querySelector('#derby-selector-wrap');
+        dataWrap = container.querySelector('#derby-data');
+    }
+
+    // セレクターを更新（選択月を正しく反映）
+    selectorWrap.innerHTML = buildDerbyMonthSelectorHtml(year, month);
+    setupDerbyMonthSelectorEvents(selectorWrap);
+
+    // データエリアのみローディング表示
+    dataWrap.innerHTML = '<p style="text-align:center;padding:20px;color:#999;">読み込み中...</p>';
+
     try {
         const data = await computeMonthlyDerbyData(year, month);
-        renderMonthlyDerby(container, data, year, month);
+        renderMonthlyDerbyData(dataWrap, data, year, month);
     } catch (error) {
         console.error('[月間ダービー] エラー:', error);
         const msg = escapeHtml(error.message || 'エラー詳細不明');
-        container.innerHTML = `<p style="text-align:center;color:#e74c3c;padding:20px;">データの読み込みに失敗しました<br><small>${msg}</small></p>`;
+        dataWrap.innerHTML = `<p style="text-align:center;color:#e74c3c;padding:20px;">データの読み込みに失敗しました<br><small>${msg}</small></p>`;
     }
 }
 
