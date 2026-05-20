@@ -7580,24 +7580,23 @@ function renderMonthlyDerbyData(dataWrap, data, year, month) {
             borderRadius: 3
         }));
 
-        // 1位との差分セグメント（2位以下に追加）
-        if (firstPlaceTotal > 0 && sortedUsers.length > 1) {
+        // 1位との差分セグメント（ダービー継続中のみ表示）
+        if (!isDerbyComplete && firstPlaceTotal > 0 && sortedUsers.length > 1) {
             datasets.push({
                 label: '__gap__',
                 data: sortedUsers.map(u => {
                     const gap = firstPlaceTotal - u.total;
                     return gap > 0.05 ? Math.round(gap * 10) / 10 : null;
                 }),
-                backgroundColor: 'rgba(220, 53, 69, 0.18)',
-                borderColor: 'rgba(220, 53, 69, 0.38)',
-                borderWidth: 1,
+                backgroundColor: 'rgba(220, 53, 69, 0.08)',
+                borderWidth: 0,
                 borderRadius: 3,
-                hoverBackgroundColor: 'rgba(220, 53, 69, 0.38)'
+                hoverBackgroundColor: 'rgba(220, 53, 69, 0.22)'
             });
         }
 
-        // 1位ライン描画用インラインプラグイン
-        const capturedFirstPlace = firstPlaceTotal;
+        // 1位ライン描画用インラインプラグイン（ダービー継続中のみ）
+        const capturedFirstPlace = isDerbyComplete ? -1 : firstPlaceTotal;
         const firstPlaceLinePlugin = {
             id: 'derbyFirstPlaceLine',
             afterDraw(chart) {
@@ -7710,7 +7709,8 @@ async function loadMonthlyDerby(year, month) {
     selectorWrap.innerHTML = buildDerbyMonthSelectorHtml(year, month);
     setupDerbyMonthSelectorEvents(selectorWrap);
 
-    // データエリアのみローディング表示
+    // スクロール位置を保存してからローディング表示
+    const savedScrollY = window.scrollY;
     dataWrap.innerHTML = '<p style="text-align:center;padding:20px;color:#999;">読み込み中...</p>';
 
     try {
@@ -7720,6 +7720,9 @@ async function loadMonthlyDerby(year, month) {
         console.error('[月間ダービー] エラー:', error);
         const msg = escapeHtml(error.message || 'エラー詳細不明');
         dataWrap.innerHTML = `<p style="text-align:center;color:#e74c3c;padding:20px;">データの読み込みに失敗しました<br><small>${msg}</small></p>`;
+    } finally {
+        // スクロール位置を復元
+        window.scrollTo({ top: savedScrollY, behavior: 'instant' });
     }
 }
 
