@@ -5840,7 +5840,9 @@ async function getOrUpdateWeeklyChallenge() {
                     weekStart,
                     weekEnd,
                     exercises: data.exercises || [],
-                    selectionHistory: data.selectionHistory || {}
+                    selectionHistory: data.selectionHistory || {},
+                    isManualOverride: data.isManualOverride || false,
+                    overrideLabel: data.overrideLabel || null
                 };
                 weeklyChallengeLoaded = true;
                 console.log('[週間チャレンジ] 既存チャレンジを使用:', weeklyChallenge.exercises);
@@ -5875,6 +5877,39 @@ async function getOrUpdateWeeklyChallenge() {
         }
 
         const existingHistory = (doc.exists && doc.data().selectionHistory) ? doc.data().selectionHistory : {};
+
+        // 手動上書き設定を確認（管理者が事前に来週の種目を指定している場合）
+        const overrideDoc = await db.collection('settings_free').doc('weekly_override').get();
+        if (overrideDoc.exists) {
+            const overrideData = overrideDoc.data();
+            const selectedExercises = overrideData.exercises || [];
+            const newHistory = { ...existingHistory };
+            selectedExercises.forEach(key => { newHistory[key] = (newHistory[key] || 0) + 1; });
+            await db.collection('settings_free').doc('weekly_challenge').set({
+                weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
+                weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
+                exercises: selectedExercises,
+                selectionHistory: newHistory,
+                isManualOverride: true,
+                overrideLabel: overrideData.label || '特別イベント',
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            await db.collection('settings_free').doc('weekly_override').delete();
+            weeklyChallenge = {
+                weekStart, weekEnd,
+                exercises: selectedExercises,
+                selectionHistory: newHistory,
+                isManualOverride: true,
+                overrideLabel: overrideData.label || '特別イベント'
+            };
+            weeklyChallengeLoaded = true;
+            rankingCache.weekly = null;
+            rankingCacheTime.weekly = null;
+            scoreCache.weekly = null;
+            scoreCacheTime.weekly = null;
+            console.log('[週間チャレンジ] 手動上書き設定を使用:', selectedExercises);
+            return weeklyChallenge;
+        }
 
         // 週間チャレンジ設定（重み指数）を取得
         const weeklyConfig = await getWeeklyConfig();
@@ -6004,10 +6039,14 @@ function renderWeeklyChallengeInfo() {
 
     const nextWeekEndJST = new Date(weeklyChallenge.weekEnd.getTime() + JST_OFFSET_MS);
 
+    const overrideBadge = weeklyChallenge.isManualOverride
+        ? `<span class="barbarian-badge" style="background:linear-gradient(135deg,#667eea,#764ba2);margin-left:6px"><i class="fa-solid fa-star"></i> ${escapeHtml(weeklyChallenge.overrideLabel || '特別イベント')}</span>`
+        : '';
+
     infoEl.style.display = 'block';
     infoEl.className = 'weekly-challenge-info';
     infoEl.innerHTML = `
-        <h3><i class="fa-solid fa-trophy"></i> 今週のチャレンジ</h3>
+        <h3><i class="fa-solid fa-trophy"></i> 今週のチャレンジ${overrideBadge}</h3>
         <div class="weekly-challenge-period"><i class="fa-solid fa-calendar"></i> 第${weekNumber}週：${formatDate(monJST)} 〜 ${formatDate(friJST)}</div>
         <div class="weekly-challenge-exercises">${exercisesHtml}</div>
         <div class="weekly-challenge-next">次回発表: ${formatDate(nextWeekEndJST)} 17:00</div>

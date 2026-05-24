@@ -278,7 +278,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
 // GLOBALS
 // ====================================================================
 const $ = id => document.getElementById(id);
-let _exercises = {}, _wc = null, _wcConfig = {}, _users = {};
+let _exercises = {}, _wc = null, _wcConfig = {}, _users = {}, _override = null;
 
 // ====================================================================
 // UTILS
@@ -334,10 +334,11 @@ $('refresh-btn').addEventListener('click', () => loadAll());
 async function loadAll() {
     $('loading').classList.remove('hide');
     try {
-        const [exDoc, wcDoc, cfgDoc, mFree, mNorm, mInt, champSnap, histSnap, usrSnap] = await Promise.all([
+        const [exDoc, wcDoc, cfgDoc, overrideDoc, mFree, mNorm, mInt, champSnap, histSnap, usrSnap] = await Promise.all([
             db.collection('settings_free').doc('exercises').get(),
             db.collection('settings_free').doc('weekly_challenge').get(),
             db.collection('settings_free').doc('weekly_config').get(),
+            db.collection('settings_free').doc('weekly_override').get(),
             db.collection('settings_free').doc('multipliers').get(),
             db.collection('settings').doc('multipliers').get(),
             db.collection('settings_interval').doc('multipliers').get(),
@@ -348,6 +349,7 @@ async function loadAll() {
         _exercises = exDoc.exists ? (exDoc.data().exercises || {}) : {};
         _wc = wcDoc.exists ? wcDoc.data() : null;
         _wcConfig = cfgDoc.exists ? cfgDoc.data() : { weightExponent: 2 };
+        _override = overrideDoc.exists ? overrideDoc.data() : null;
         _users = {};
         usrSnap.forEach(d => { _users[d.id] = d.data(); });
 
@@ -371,19 +373,27 @@ async function loadAll() {
 // ====================================================================
 function renderWeekly() {
     const el = $('sec-weekly');
-    if (!_wc) { el.innerHTML = '<p style="color:var(--tx2);text-align:center;padding:12px">データなし</p>'; return; }
-    const keys = _wc.exercises || [];
-    let html = `<div class="info-panel">
-        <div class="ip-row"><span class="ip-label">期間</span><span class="ip-val">${fmtDate(_wc.weekStart)} 〜 ${fmtDate(_wc.weekEnd)}</span></div>
+    let html = '';
+    if (!_wc) {
+        html = '<p style="color:var(--tx2);text-align:center;padding:12px">データなし</p>';
+    } else {
+        const keys = _wc.exercises || [];
+        const overrideMark = _wc.isManualOverride
+            ? ` <span class="badge badge-star"><i class="fa-solid fa-star"></i> ${esc(_wc.overrideLabel || '特別イベント')}</span>`
+            : '';
+        html = `<div class="info-panel">
+        <div class="ip-row"><span class="ip-label">期間</span><span class="ip-val">${fmtDate(_wc.weekStart)} 〜 ${fmtDate(_wc.weekEnd)}${overrideMark}</span></div>
         <div class="ip-row"><span class="ip-label">更新</span><span class="ip-val">${fmtTs(_wc.updatedAt)}</span></div>
     </div>`;
-    if (keys.length === 0) { html += '<p style="color:var(--tx2)">選出種目なし</p>'; el.innerHTML = html; return; }
-    keys.forEach((key, i) => {
-        const ex = _exercises[key] || {};
-        const ic = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-question';
-        const barb = ex.barbarian ? ' <span class="badge badge-barb"><i class="fa-solid fa-stopwatch"></i> TA</span>' : '';
-        const selCount = (_wc.selectionHistory || {})[key] || 0;
-        html += `<div class="wk-ex">
+        if (keys.length === 0) {
+            html += '<p style="color:var(--tx2)">選出種目なし</p>';
+        } else {
+            keys.forEach((key, i) => {
+                const ex = _exercises[key] || {};
+                const ic = ex.icon ? `fa-solid ${ex.icon}` : 'fa-solid fa-question';
+                const barb = ex.barbarian ? ' <span class="badge badge-barb"><i class="fa-solid fa-stopwatch"></i> TA</span>' : '';
+                const selCount = (_wc.selectionHistory || {})[key] || 0;
+                html += `<div class="wk-ex">
             <i class="${ic} wk-icon"></i>
             <div class="wk-body">
                 <div class="wk-name">${esc(ex.name || key)}${barb}</div>
@@ -393,7 +403,39 @@ function renderWeekly() {
                 <button class="btn btn-sm btn-warn" onclick="rerollOne('${esc(key)}',${i})" title="この種目だけ再抽選"><i class="fa-solid fa-dice"></i></button>
             </div>
         </div>`;
-    });
+            });
+        }
+    }
+
+    // 来週の手動設定セクション
+    const availExs = Object.entries(_exercises)
+        .filter(([, ex]) => !ex.excludeFromWeekly)
+        .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || '', 'ja'));
+    const hasBarbEx = availExs.some(([, ex]) => ex.barbarian);
+    const preKeys = (_override && _override.exercises) || ['', '', ''];
+    const preLabel = (_override && _override.label) || '特別イベント';
+    const makeOpts = (sel) => availExs.map(([k, ex]) =>
+        `<option value="${esc(k)}"${k === sel ? ' selected' : ''}>${esc(ex.name + (ex.barbarian ? ' [TA]' : ''))}</option>`
+    ).join('');
+
+    html += `<hr style="border:none;border-top:1px solid #eee;margin:10px 0">
+    <div style="font-size:11px;font-weight:700;color:var(--pri);margin-bottom:8px"><i class="fa-solid fa-wand-magic-sparkles"></i> 来週のチャレンジを手動設定</div>`;
+    if (_override) {
+        html += `<div class="cfg-result" style="margin-bottom:8px"><i class="fa-solid fa-circle-check"></i> 設定済み: ${esc(preLabel)} — ${preKeys.map(k => esc((_exercises[k] && _exercises[k].name) || k)).join(' / ')}</div>`;
+    }
+    html += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+        <select id="override-ex-0" style="padding:6px 8px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px"><option value="">— 種目1を選択 —</option>${makeOpts(preKeys[0])}</select>
+        <select id="override-ex-1" style="padding:6px 8px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px"><option value="">— 種目2を選択 —</option>${makeOpts(preKeys[1])}</select>
+        <select id="override-ex-2" style="padding:6px 8px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px"><option value="">— 種目3を選択 —</option>${makeOpts(preKeys[2])}</select>
+    </div>
+    <div class="cfg-row" style="margin-bottom:8px">
+        <label>イベント名:</label>
+        <input type="text" id="override-label" value="${esc(preLabel)}" placeholder="特別イベント" style="flex:1;padding:6px 8px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px">
+    </div>`;
+    if (hasBarbEx) {
+        html += `<p class="cfg-hint" style="margin-bottom:8px"><i class="fa-solid fa-circle-info" style="color:var(--info)"></i> Barbarian（TA）種目を1つ含めることを推奨します</p>`;
+    }
+    html += `<button class="btn btn-ok" style="width:100%;margin-top:2px" onclick="saveWeeklyOverride()"><i class="fa-solid fa-floppy-disk"></i> 来週の種目を設定する</button>`;
     el.innerHTML = html;
 }
 
@@ -630,6 +672,47 @@ function renderUsers(snap) {
     });
     html += '</div>';
     el.innerHTML = html;
+}
+
+// ====================================================================
+// 手動上書き保存
+// ====================================================================
+async function saveWeeklyOverride() {
+    const keys = [
+        $('override-ex-0').value,
+        $('override-ex-1').value,
+        $('override-ex-2').value
+    ];
+    const label = ($('override-label').value || '').trim() || '特別イベント';
+    if (keys.some(k => !k)) { toast('3種目すべて選択してください'); return; }
+    if (new Set(keys).size !== 3) { toast('重複しない種目を選んでください'); return; }
+
+    const hasBarb = keys.some(k => _exercises[k] && _exercises[k].barbarian);
+
+    const doSave = async () => {
+        $('loading').classList.remove('hide');
+        try {
+            await db.collection('settings_free').doc('weekly_override').set({
+                exercises: keys,
+                label,
+                setAt: firebase.firestore.FieldValue.serverTimestamp(),
+                setBy: auth.currentUser ? auth.currentUser.uid : ''
+            });
+            toast('来週の手動設定を保存しました');
+            await loadAll();
+        } catch (e) { toast('エラー: ' + e.message); }
+        finally { $('loading').classList.add('hide'); }
+    };
+
+    if (!hasBarb) {
+        showConfirm(
+            'Barbarian種目が含まれていません',
+            'Barbarian（TA）種目が選ばれていません。通常は1種目含めることを推奨しています。このまま設定しますか？',
+            doSave
+        );
+    } else {
+        await doSave();
+    }
 }
 </script>
 </body>
