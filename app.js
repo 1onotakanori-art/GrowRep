@@ -108,6 +108,13 @@ const confirmPasswordInput = document.getElementById('confirm-password');
 const updatePasswordBtn = document.getElementById('update-password-btn');
 const passwordError = document.getElementById('password-error');
 
+// ゲストログイン関連
+const guestLoginBtn = document.getElementById('guest-login-btn');
+const guestModeSection = document.getElementById('guest-mode-section');
+const guestDaysRemaining = document.getElementById('guest-days-remaining');
+const usernameSectionEl = document.getElementById('username-section');
+const passwordSectionEl = document.getElementById('password-section');
+
 // 歴代チャンプ詳細モーダル関連
 const championDetailModal = document.getElementById('champion-detail-modal');
 const closeChampionDetailModal = document.querySelector('.close-champion-detail-modal');
@@ -1082,21 +1089,49 @@ async function loadUserCheckboxes(forceRefresh = false) {
 auth.onAuthStateChanged(async (user) => {
     if (user) {
         currentUser = user;
-        
-        // ユーザー情報を取得
-        currentUserData = await getUserData(user.uid);
-        
-        // ユーザー情報が存在しない場合（既存ユーザーの初回ログイン）
-        if (!currentUserData) {
-            await createUserData(user.uid, user.email, user.email);
+
+        if (user.isAnonymous) {
+            // ゲストユーザー処理
+            let guestData = await getUserData(user.uid);
+            if (!guestData) {
+                // 新規ゲスト: Firestoreドキュメント作成（uniquenessチェック bypass）
+                const expiresAt = new Date(Date.now() + 4 * 7 * 24 * 60 * 60 * 1000);
+                await db.collection('users').doc(user.uid).set({
+                    userId: user.uid,
+                    userName: 'ゲスト',
+                    email: '',
+                    isGuest: true,
+                    guestExpiresAt: firebase.firestore.Timestamp.fromDate(expiresAt),
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                guestData = await getUserData(user.uid);
+            }
+            // 期限切れチェック
+            if (guestData.guestExpiresAt) {
+                const expires = guestData.guestExpiresAt.toDate
+                    ? guestData.guestExpiresAt.toDate()
+                    : new Date(guestData.guestExpiresAt);
+                if (expires < new Date()) {
+                    await auth.signOut();
+                    authError.textContent = 'ゲストの試用期間（4週間）が終了しました。アカウント登録してご利用ください。';
+                    return;
+                }
+            }
+            currentUserData = guestData;
+        } else {
+            // 通常ユーザー処理
             currentUserData = await getUserData(user.uid);
+
+            // ユーザー情報が存在しない場合（既存ユーザーの初回ログイン）
+            if (!currentUserData) {
+                await createUserData(user.uid, user.email, user.email);
+                currentUserData = await getUserData(user.uid);
+            }
         }
-        
+
         // ユーザー名をプロフィールボタンに表示
-        let displayName = user.email;
-        if (currentUserData.userName && currentUserData.userName !== user.email) {
-            displayName = currentUserData.userName;
-        }
+        let displayName = currentUserData?.userName || user.email || 'ゲスト';
         profileBtn.innerHTML = '<i class="fa-solid fa-user"></i> ' + displayName;
         
         loginContainer.style.display = 'none';
@@ -1187,6 +1222,16 @@ signupBtn.addEventListener('click', async () => {
     }
 });
 
+// ゲストログイン
+guestLoginBtn.addEventListener('click', async () => {
+    authError.textContent = '';
+    try {
+        await auth.signInAnonymously();
+    } catch (error) {
+        authError.textContent = 'ゲストログインに失敗しました: ' + error.message;
+    }
+});
+
 // ログアウト
 logoutBtn.addEventListener('click', () => {
     auth.signOut();
@@ -1267,15 +1312,41 @@ sendResetBtn.addEventListener('click', async () => {
 // プロフィールボタンクリック
 profileBtn.addEventListener('click', () => {
     if (currentUser && currentUserData) {
-        profileEmail.textContent = currentUser.email;
-        
-        // 現在のユーザー名を表示
-        if (currentUserData.userName && currentUserData.userName !== currentUser.email) {
-            currentUsername.textContent = currentUserData.userName;
+        const isGuest = !!currentUserData.isGuest;
+
+        if (isGuest) {
+            // ゲスト専用表示
+            profileEmail.textContent = 'ゲストユーザー';
+            currentUsername.textContent = 'ゲスト';
+
+            // 試用残り日数を計算
+            let daysLeft = '—';
+            if (currentUserData.guestExpiresAt) {
+                const expires = currentUserData.guestExpiresAt.toDate
+                    ? currentUserData.guestExpiresAt.toDate()
+                    : new Date(currentUserData.guestExpiresAt);
+                const diff = Math.ceil((expires - new Date()) / (1000 * 60 * 60 * 24));
+                daysLeft = diff > 0 ? `あと ${diff} 日` : '期限切れ';
+            }
+            guestDaysRemaining.textContent = `試用期間: ${daysLeft}`;
+
+            guestModeSection.style.display = 'block';
+            usernameSectionEl.style.display = 'none';
+            passwordSectionEl.style.display = 'none';
         } else {
-            currentUsername.textContent = '未設定';
+            // 通常ユーザー表示
+            guestModeSection.style.display = 'none';
+            usernameSectionEl.style.display = '';
+            passwordSectionEl.style.display = '';
+
+            profileEmail.textContent = currentUser.email;
+            if (currentUserData.userName && currentUserData.userName !== currentUser.email) {
+                currentUsername.textContent = currentUserData.userName;
+            } else {
+                currentUsername.textContent = '未設定';
+            }
         }
-        
+
         newUsernameInput.value = '';
         usernameError.textContent = '';
         currentPasswordInput.value = '';
