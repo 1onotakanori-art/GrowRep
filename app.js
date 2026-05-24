@@ -1171,6 +1171,11 @@ auth.onAuthStateChanged(async (user) => {
         
         loginContainer.style.display = 'block';
         mainContainer.style.display = 'none';
+
+        // 開いているモーダルをすべて閉じる
+        if (profileModal) profileModal.style.display = 'none';
+        if (championDetailModal) championDetailModal.style.display = 'none';
+        if (resetPasswordModal) resetPasswordModal.style.display = 'none';
     }
 });
 
@@ -1217,6 +1222,10 @@ signupBtn.addEventListener('click', async () => {
 // ゲストログイン
 guestLoginBtn.addEventListener('click', async () => {
     authError.textContent = '';
+    if (GUEST_EMAIL === '__GUEST_EMAIL__' || GUEST_PASSWORD === '__GUEST_PASSWORD__') {
+        authError.textContent = 'ゲストアカウントが未設定です。firebase-config.js の GUEST_EMAIL / GUEST_PASSWORD を設定してください。';
+        return;
+    }
     try {
         await auth.signInWithEmailAndPassword(GUEST_EMAIL, GUEST_PASSWORD);
     } catch (error) {

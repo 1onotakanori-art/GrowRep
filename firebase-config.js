@@ -47,6 +47,10 @@ const db = firebase.firestore();
 const GUEST_EMAIL = "__GUEST_EMAIL__";
 const GUEST_PASSWORD = "__GUEST_PASSWORD__";
 
+if (GUEST_EMAIL === '__GUEST_EMAIL__' || GUEST_PASSWORD === '__GUEST_PASSWORD__') {
+    console.warn('⚠️ ゲスト認証情報が未設定です。GitHub Secrets (GUEST_EMAIL / GUEST_PASSWORD) を確認するか、ローカルではfirebase-config.jsを直接編集してください。');
+}
+
 // 日本語のエラーメッセージ
 const errorMessages = {
     'auth/email-already-in-use': 'このメールアドレスは既に使用されています',
