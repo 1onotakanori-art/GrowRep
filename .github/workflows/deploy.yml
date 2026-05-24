@@ -27,6 +27,8 @@ jobs:
       - name: Inject Firebase API Key
         run: |
           sed -i 's/__FIREBASE_API_KEY__/${{ secrets.FIREBASE_API_KEY }}/g' firebase-config.js
+          sed -i 's/__GUEST_EMAIL__/${{ secrets.GUEST_EMAIL }}/g' firebase-config.js
+          sed -i 's/__GUEST_PASSWORD__/${{ secrets.GUEST_PASSWORD }}/g' firebase-config.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

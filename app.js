@@ -111,7 +111,6 @@ const passwordError = document.getElementById('password-error');
 // ゲストログイン関連
 const guestLoginBtn = document.getElementById('guest-login-btn');
 const guestModeSection = document.getElementById('guest-mode-section');
-const guestDaysRemaining = document.getElementById('guest-days-remaining');
 const usernameSectionEl = document.getElementById('username-section');
 const passwordSectionEl = document.getElementById('password-section');
 
@@ -1090,33 +1089,26 @@ auth.onAuthStateChanged(async (user) => {
     if (user) {
         currentUser = user;
 
-        if (user.isAnonymous) {
-            // ゲストユーザー処理
+        const isGuestAccount = user.email === GUEST_EMAIL;
+
+        if (isGuestAccount) {
+            // 固定ゲストアカウント処理
             let guestData = await getUserData(user.uid);
             if (!guestData) {
-                // 新規ゲスト: Firestoreドキュメント作成（uniquenessチェック bypass）
-                const expiresAt = new Date(Date.now() + 4 * 7 * 24 * 60 * 60 * 1000);
+                // 初回ログイン時にFirestoreドキュメントを作成
                 await db.collection('users').doc(user.uid).set({
                     userId: user.uid,
                     userName: 'ゲスト',
-                    email: '',
+                    email: GUEST_EMAIL,
                     isGuest: true,
-                    guestExpiresAt: firebase.firestore.Timestamp.fromDate(expiresAt),
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
                 guestData = await getUserData(user.uid);
-            }
-            // 期限切れチェック
-            if (guestData.guestExpiresAt) {
-                const expires = guestData.guestExpiresAt.toDate
-                    ? guestData.guestExpiresAt.toDate()
-                    : new Date(guestData.guestExpiresAt);
-                if (expires < new Date()) {
-                    await auth.signOut();
-                    authError.textContent = 'ゲストの試用期間（4週間）が終了しました。アカウント登録してご利用ください。';
-                    return;
-                }
+            } else if (!guestData.isGuest) {
+                // isGuestフラグが未設定の場合は補完
+                await db.collection('users').doc(user.uid).update({ isGuest: true });
+                guestData = { ...guestData, isGuest: true };
             }
             currentUserData = guestData;
         } else {
@@ -1226,7 +1218,7 @@ signupBtn.addEventListener('click', async () => {
 guestLoginBtn.addEventListener('click', async () => {
     authError.textContent = '';
     try {
-        await auth.signInAnonymously();
+        await auth.signInWithEmailAndPassword(GUEST_EMAIL, GUEST_PASSWORD);
     } catch (error) {
         authError.textContent = 'ゲストログインに失敗しました: ' + error.message;
     }
@@ -1316,19 +1308,8 @@ profileBtn.addEventListener('click', () => {
 
         if (isGuest) {
             // ゲスト専用表示
-            profileEmail.textContent = 'ゲストユーザー';
+            profileEmail.textContent = 'ゲストユーザー（共有アカウント）';
             currentUsername.textContent = 'ゲスト';
-
-            // 試用残り日数を計算
-            let daysLeft = '—';
-            if (currentUserData.guestExpiresAt) {
-                const expires = currentUserData.guestExpiresAt.toDate
-                    ? currentUserData.guestExpiresAt.toDate()
-                    : new Date(currentUserData.guestExpiresAt);
-                const diff = Math.ceil((expires - new Date()) / (1000 * 60 * 60 * 24));
-                daysLeft = diff > 0 ? `あと ${diff} 日` : '期限切れ';
-            }
-            guestDaysRemaining.textContent = `試用期間: ${daysLeft}`;
 
             guestModeSection.style.display = 'block';
             usernameSectionEl.style.display = 'none';

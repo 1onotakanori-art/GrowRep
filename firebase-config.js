@@ -43,6 +43,10 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
+// ゲストログイン用固定アカウント（GitHub Actions secrets で置換）
+const GUEST_EMAIL = "__GUEST_EMAIL__";
+const GUEST_PASSWORD = "__GUEST_PASSWORD__";
+
 // 日本語のエラーメッセージ
 const errorMessages = {
     'auth/email-already-in-use': 'このメールアドレスは既に使用されています',
