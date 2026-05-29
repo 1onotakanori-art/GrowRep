@@ -344,6 +344,21 @@ async function checkUsernameExists(userName) {
 }
 
 /**
+ * スケルトンUI（読み込み中プレースホルダ）のHTMLを生成
+ * 通信中に「止まって見える」のを防ぎ、体感速度を改善する。
+ * @param {number} count - プレースホルダ行数
+ * @returns {string} スケルトンHTML
+ */
+function skeletonHTML(count = 3) {
+    let html = '<div class="skeleton-loader" aria-busy="true" aria-label="読み込み中">';
+    for (let i = 0; i < count; i++) {
+        html += '<div class="skeleton-item"></div>';
+    }
+    html += '</div>';
+    return html;
+}
+
+/**
  * 全ユーザー情報を一括取得（N+1クエリ削減）
  * users コレクションを1回だけ取得してキャッシュし、行ごとの個別取得を避ける。
  * @param {boolean} forceRefresh - キャッシュを無視して再取得するか
@@ -1967,6 +1982,9 @@ async function loadPosts(forceRefresh = false) {
             const collectionName = getCollectionName('posts');
             console.log(`[loadPosts] Firestoreから取得中: ${collectionName} (${mode}モード)`);
 
+            // 読み込み中のスケルトン表示（体感速度の改善）
+            postsList.innerHTML = skeletonHTML(4);
+
             // 投稿一覧とユーザー一覧を並列取得（行ごとの getUserData によるN+1を回避）
             const [snapshot, usersMap] = await Promise.all([
                 db.collection(collectionName).orderBy('timestamp', 'desc').get(),
@@ -2345,7 +2363,10 @@ async function loadRanking(forceRefresh = false) {
         // Firestoreからデータを取得
         const collectionName = getCollectionName('posts');
         console.log(`[loadRanking] Firestoreから取得中: ${collectionName} (${mode}モード)`);
-        
+
+        // 読み込み中のスケルトン表示（体感速度の改善）
+        rankingList.innerHTML = skeletonHTML(3);
+
         const snapshot = await db.collection(collectionName).get();
         countReads(snapshot.size);
 
@@ -2545,17 +2566,26 @@ async function loadProgressChart() {
     const selectedType = graphExerciseType.value;
     
     try {
-        // 全投稿を取得してクライアント側でフィルタリング（複合インデックス不要）
-        const collectionName = getCollectionName('posts');
-        const snapshot = await db.collection(collectionName).get();
-        
+        // 投稿データは postsCache を再利用（掲示板で取得済みなら再通信しない）。
+        // キャッシュが無効な場合のみ Firestore から取得する。
+        const mode = currentMode;
+        const now = Date.now();
+        let rawPosts;
+        if (postsCache[mode] && postsCacheTime[mode] && (now - postsCacheTime[mode] < CACHE_DURATION)) {
+            rawPosts = postsCache[mode].map(p => p.data);
+        } else {
+            const collectionName = getCollectionName('posts');
+            const snapshot = await db.collection(collectionName).get();
+            countReads(snapshot.size);
+            rawPosts = snapshot.docs.map(doc => doc.data());
+        }
+
         const userPosts = [];
-        
+
         // 現在のユーザーかつ選択された種目の投稿を抽出
-        snapshot.forEach((doc) => {
-            const post = doc.data();
-            if (post.userId === currentUser.uid && 
-                post.exerciseType === selectedType && 
+        rawPosts.forEach((post) => {
+            if (post.userId === currentUser.uid &&
+                post.exerciseType === selectedType &&
                 post.timestamp) {
                 userPosts.push({
                     timestamp: post.timestamp,

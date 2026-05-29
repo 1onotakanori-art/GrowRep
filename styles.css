@@ -3604,3 +3604,32 @@ body.dark-mode .review-item-own { border-color: #2d5a3d; }
 }
 body.dark-mode .btn-delete-review { color: #e57373; border-color: #e57373; }
 body.dark-mode .btn-delete-review:hover:not(:disabled) { background: #3a1f1f; }
+
+/* ====================================================================
+   スケルトンUI（読み込み中プレースホルダ）
+   通信完了までの「止まって見える」体感を緩和する。
+   ==================================================================== */
+.skeleton-loader {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 8px 0;
+}
+.skeleton-item {
+    height: 64px;
+    border-radius: 10px;
+    background: linear-gradient(90deg, #eceff1 25%, #f5f7f8 37%, #eceff1 63%);
+    background-size: 400% 100%;
+    animation: skeletonShimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeletonShimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .skeleton-item { animation: none; }
+}
+body.dark-mode .skeleton-item {
+    background: linear-gradient(90deg, #2a2f33 25%, #353b40 37%, #2a2f33 63%);
+    background-size: 400% 100%;
+}
