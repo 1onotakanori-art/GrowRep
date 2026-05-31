@@ -402,6 +402,7 @@ function renderWeekly() {
         html = `<div class="info-panel">
         <div class="ip-row"><span class="ip-label">期間</span><span class="ip-val">${fmtDate(_wc.weekStart)} 〜 ${fmtDate(_wc.weekEnd)}${overrideMark}</span></div>
         <div class="ip-row"><span class="ip-label">更新</span><span class="ip-val">${fmtTs(_wc.updatedAt)}</span></div>
+        <div class="ip-row"><span class="ip-label">操作</span><span class="ip-val"><button class="btn btn-sm btn-warn" onclick="forceReselect()" style="font-size:11px"><i class="fa-solid fa-rotate"></i> 今週を強制再選定</button></span></div>
     </div>`;
         if (keys.length === 0) {
             html += '<p style="color:var(--tx2)">選出種目なし</p>';
@@ -691,6 +692,31 @@ function renderUsers(snap) {
     });
     html += '</div>';
     el.innerHTML = html;
+}
+
+// ====================================================================
+// 今週の強制再選定
+// ====================================================================
+async function forceReselect() {
+    showConfirm(
+        '今週の種目を再選定',
+        '現在の週間チャレンジ設定を破棄し、今週の種目を自動選出し直します。投稿データは消えません。実行しますか？',
+        async () => {
+            $('loading').classList.remove('hide');
+            try {
+                // weekly_challenge を削除（次回 getOrUpdateWeeklyChallenge が自動選出を再実行）
+                await db.collection('settings_free').doc('weekly_challenge').delete();
+                // 念のため weekly_override も削除（再選定後に古いイベントが上書きされないよう）
+                await db.collection('settings_free').doc('weekly_override').delete().catch(() => {});
+                toast('再選定の準備完了。チャレンジページを開くと自動的に新しい種目が選定されます。');
+                await loadAll();
+            } catch (e) {
+                toast('エラー: ' + e.message);
+            } finally {
+                $('loading').classList.add('hide');
+            }
+        }
+    );
 }
 
 // ====================================================================
