@@ -89,7 +89,8 @@ service cloud.firestore {
     match /settings_free/{docId} {
       allow read: if request.auth != null;
       allow create, update: if request.auth != null;
-      allow delete: if false;
+      // 週間チャレンジの override 無効化等、管理操作で削除が必要なため認証済みユーザーに許可
+      allow delete: if request.auth != null;
     }
 
     // weekly_champions コレクション（歴代チャンプ記録）

@@ -704,10 +704,18 @@ async function forceReselect() {
         async () => {
             $('loading').classList.remove('hide');
             try {
-                // weekly_challenge を削除（次回 getOrUpdateWeeklyChallenge が自動選出を再実行）
-                await db.collection('settings_free').doc('weekly_challenge').delete();
-                // 念のため weekly_override も削除（再選定後に古いイベントが上書きされないよう）
-                await db.collection('settings_free').doc('weekly_override').delete().catch(() => {});
+                // weekly_challenge の weekStart フィールドを削除して再選定をトリガー
+                // （ドキュメント削除は Firestore ルールで禁止のため update で対応）
+                await db.collection('settings_free').doc('weekly_challenge').update({
+                    weekStart: firebase.firestore.FieldValue.delete(),
+                    isManualOverride: firebase.firestore.FieldValue.delete(),
+                    overrideLabel: firebase.firestore.FieldValue.delete()
+                });
+                // weekly_override を無効化（削除不可のため invalidated フラグを立てる）
+                if (_override) {
+                    await db.collection('settings_free').doc('weekly_override')
+                        .set({ invalidated: true }).catch(() => {});
+                }
                 toast('再選定の準備完了。チャレンジページを開くと自動的に新しい種目が選定されます。');
                 await loadAll();
             } catch (e) {

@@ -5996,13 +5996,18 @@ async function getOrUpdateWeeklyChallenge() {
         if (overrideDoc.exists) {
             const overrideData = overrideDoc.data();
 
+            // 無効化済み・空の override はスキップして自動選出へ
+            if (overrideData.invalidated || !overrideData.exercises || overrideData.exercises.length === 0) {
+                console.log('[週間チャレンジ] weekly_override は無効です。自動選出を実行します。');
+                // fall through to auto-selection below
+
             // targetWeekStart が設定されている場合、現在の週と一致するか確認
-            if (overrideData.targetWeekStart) {
+            } else if (overrideData.targetWeekStart) {
                 const targetDate = overrideData.targetWeekStart.toDate();
                 if (Math.abs(targetDate.getTime() - weekStart.getTime()) >= 60 * 1000) {
-                    // 対象週が現在の週と一致しない（期限切れ）→ 削除して通常選出へ
-                    console.warn('[週間チャレンジ] weekly_override の対象週が現在の週と一致しないため無視して削除します。対象週:', targetDate, '現在の週:', weekStart);
-                    await db.collection('settings_free').doc('weekly_override').delete();
+                    // 対象週が現在の週と一致しない（期限切れ）→ 無効化して通常選出へ
+                    console.warn('[週間チャレンジ] weekly_override の対象週が現在の週と一致しないため無視します。対象週:', targetDate, '現在の週:', weekStart);
+                    await db.collection('settings_free').doc('weekly_override').set({ invalidated: true });
                     // fall through to auto-selection below
                 } else {
                     // 対象週が一致 → オーバーライドを適用
@@ -6018,7 +6023,7 @@ async function getOrUpdateWeeklyChallenge() {
                         overrideLabel: overrideData.label || '特別イベント',
                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
-                    await db.collection('settings_free').doc('weekly_override').delete();
+                    await db.collection('settings_free').doc('weekly_override').set({ invalidated: true });
                     weeklyChallenge = {
                         weekStart, weekEnd,
                         exercises: selectedExercises,
@@ -6048,7 +6053,7 @@ async function getOrUpdateWeeklyChallenge() {
                     overrideLabel: overrideData.label || '特別イベント',
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                await db.collection('settings_free').doc('weekly_override').delete();
+                await db.collection('settings_free').doc('weekly_override').set({ invalidated: true });
                 weeklyChallenge = {
                     weekStart, weekEnd,
                     exercises: selectedExercises,
