@@ -5995,33 +5995,75 @@ async function getOrUpdateWeeklyChallenge() {
         const overrideDoc = await db.collection('settings_free').doc('weekly_override').get();
         if (overrideDoc.exists) {
             const overrideData = overrideDoc.data();
-            const selectedExercises = overrideData.exercises || [];
-            const newHistory = { ...existingHistory };
-            selectedExercises.forEach(key => { newHistory[key] = (newHistory[key] || 0) + 1; });
-            await db.collection('settings_free').doc('weekly_challenge').set({
-                weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
-                weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
-                exercises: selectedExercises,
-                selectionHistory: newHistory,
-                isManualOverride: true,
-                overrideLabel: overrideData.label || '特別イベント',
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            await db.collection('settings_free').doc('weekly_override').delete();
-            weeklyChallenge = {
-                weekStart, weekEnd,
-                exercises: selectedExercises,
-                selectionHistory: newHistory,
-                isManualOverride: true,
-                overrideLabel: overrideData.label || '特別イベント'
-            };
-            weeklyChallengeLoaded = true;
-            rankingCache.weekly = null;
-            rankingCacheTime.weekly = null;
-            scoreCache.weekly = null;
-            scoreCacheTime.weekly = null;
-            console.log('[週間チャレンジ] 手動上書き設定を使用:', selectedExercises);
-            return weeklyChallenge;
+
+            // targetWeekStart が設定されている場合、現在の週と一致するか確認
+            if (overrideData.targetWeekStart) {
+                const targetDate = overrideData.targetWeekStart.toDate();
+                if (Math.abs(targetDate.getTime() - weekStart.getTime()) >= 60 * 1000) {
+                    // 対象週が現在の週と一致しない（期限切れ）→ 削除して通常選出へ
+                    console.warn('[週間チャレンジ] weekly_override の対象週が現在の週と一致しないため無視して削除します。対象週:', targetDate, '現在の週:', weekStart);
+                    await db.collection('settings_free').doc('weekly_override').delete();
+                    // fall through to auto-selection below
+                } else {
+                    // 対象週が一致 → オーバーライドを適用
+                    const selectedExercises = overrideData.exercises || [];
+                    const newHistory = { ...existingHistory };
+                    selectedExercises.forEach(key => { newHistory[key] = (newHistory[key] || 0) + 1; });
+                    await db.collection('settings_free').doc('weekly_challenge').set({
+                        weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
+                        weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
+                        exercises: selectedExercises,
+                        selectionHistory: newHistory,
+                        isManualOverride: true,
+                        overrideLabel: overrideData.label || '特別イベント',
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    await db.collection('settings_free').doc('weekly_override').delete();
+                    weeklyChallenge = {
+                        weekStart, weekEnd,
+                        exercises: selectedExercises,
+                        selectionHistory: newHistory,
+                        isManualOverride: true,
+                        overrideLabel: overrideData.label || '特別イベント'
+                    };
+                    weeklyChallengeLoaded = true;
+                    rankingCache.weekly = null;
+                    rankingCacheTime.weekly = null;
+                    scoreCache.weekly = null;
+                    scoreCacheTime.weekly = null;
+                    console.log('[週間チャレンジ] 手動上書き設定を使用:', selectedExercises);
+                    return weeklyChallenge;
+                }
+            } else {
+                // targetWeekStart なし（旧形式）→ 後方互換のためそのまま適用
+                const selectedExercises = overrideData.exercises || [];
+                const newHistory = { ...existingHistory };
+                selectedExercises.forEach(key => { newHistory[key] = (newHistory[key] || 0) + 1; });
+                await db.collection('settings_free').doc('weekly_challenge').set({
+                    weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
+                    weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
+                    exercises: selectedExercises,
+                    selectionHistory: newHistory,
+                    isManualOverride: true,
+                    overrideLabel: overrideData.label || '特別イベント',
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                await db.collection('settings_free').doc('weekly_override').delete();
+                weeklyChallenge = {
+                    weekStart, weekEnd,
+                    exercises: selectedExercises,
+                    selectionHistory: newHistory,
+                    isManualOverride: true,
+                    overrideLabel: overrideData.label || '特別イベント'
+                };
+                weeklyChallengeLoaded = true;
+                rankingCache.weekly = null;
+                rankingCacheTime.weekly = null;
+                scoreCache.weekly = null;
+                scoreCacheTime.weekly = null;
+                console.log('[週間チャレンジ] 手動上書き設定を使用（旧形式）:', selectedExercises);
+                return weeklyChallenge;
+            }
         }
 
         // 週間チャレンジ設定（重み指数）を取得

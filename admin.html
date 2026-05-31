@@ -288,6 +288,24 @@ function fmtTs(ts) { if (!ts) return '—'; const d = ts.toDate ? ts.toDate() : 
 function fmtDate(ts) { if (!ts) return '—'; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', weekday: 'short' }); }
 function tog(el) { el.classList.toggle('shut'); el.nextElementSibling.classList.toggle('shut'); }
 
+// 来週の開始日時（JST 日曜17:00, UTC換算）を返す
+function getNextWeekStart() {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const now = new Date();
+    const jstMs = now.getTime() + JST_OFFSET_MS;
+    const jstDate = new Date(jstMs);
+    const jstDayOfWeek = jstDate.getUTCDay();
+    const jstHour = jstDate.getUTCHours();
+    const jstMin = jstDate.getUTCMinutes();
+    const jstSec = jstDate.getUTCSeconds();
+    const jstMsec = jstDate.getUTCMilliseconds();
+    const todayJstDayStartMs = jstMs - (jstHour * 3600 + jstMin * 60 + jstSec) * 1000 - jstMsec;
+    let daysBack = (jstDayOfWeek === 0 && jstHour < 17) ? 7 : jstDayOfWeek;
+    const lastSundayJstDayStartMs = todayJstDayStartMs - daysBack * 24 * 60 * 60 * 1000;
+    const currentWeekStartUTC = new Date(lastSundayJstDayStartMs + 17 * 60 * 60 * 1000 - JST_OFFSET_MS);
+    return new Date(currentWeekStartUTC.getTime() + 7 * 24 * 60 * 60 * 1000);
+}
+
 // Toast
 function toast(msg, dur = 2000) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), dur); }
 
@@ -421,7 +439,8 @@ function renderWeekly() {
     html += `<hr style="border:none;border-top:1px solid #eee;margin:10px 0">
     <div style="font-size:11px;font-weight:700;color:var(--pri);margin-bottom:8px"><i class="fa-solid fa-wand-magic-sparkles"></i> 来週のチャレンジを手動設定</div>`;
     if (_override) {
-        html += `<div class="cfg-result" style="margin-bottom:8px"><i class="fa-solid fa-circle-check"></i> 設定済み: ${esc(preLabel)} — ${preKeys.map(k => esc((_exercises[k] && _exercises[k].name) || k)).join(' / ')}</div>`;
+        const targetWeekStr = _override.targetWeekStart ? fmtDate(_override.targetWeekStart) + '週' : '来週';
+        html += `<div class="cfg-result" style="margin-bottom:8px"><i class="fa-solid fa-circle-check"></i> 設定済み（対象: ${esc(targetWeekStr)}）: ${esc(preLabel)} — ${preKeys.map(k => esc((_exercises[k] && _exercises[k].name) || k)).join(' / ')}</div>`;
     }
     html += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
         <select id="override-ex-0" style="padding:6px 8px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px"><option value="">— 種目1を選択 —</option>${makeOpts(preKeys[0])}</select>
@@ -695,6 +714,7 @@ async function saveWeeklyOverride() {
             await db.collection('settings_free').doc('weekly_override').set({
                 exercises: keys,
                 label,
+                targetWeekStart: firebase.firestore.Timestamp.fromDate(getNextWeekStart()),
                 setAt: firebase.firestore.FieldValue.serverTimestamp(),
                 setBy: auth.currentUser ? auth.currentUser.uid : ''
             });
