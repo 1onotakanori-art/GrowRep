@@ -90,7 +90,23 @@ npm run digest -- --date=2026-06-06 # 日付指定
 
 ---
 
-## 次のステップ（未実装）
+## ④ Claude Cowork で分析（エンタメ週報を出す）
 
-- Cowork に渡す固定プロンプト（`PROMPT.md`）と定型レポート様式
-- `digest.json` を入力に、ユーザー別カルテ＋優勝予想＋珍記録を Markdown 出力させる
+数値は集計済みなので、Cowork には解釈・実況・物語化だけさせます。
+
+1. `npm run weekly` 実行後、Claude Cowork（デスクトップ版）で `analytics\` フォルダを開く
+2. **`PROMPT.md` の中身を Cowork に貼り付ける**
+3. Cowork が `exports\YYYY-MM-DD\digest.json` を読み、`REPORT_TEMPLATE.md` の構成に従って
+   **`report_YYYY-MM-DD.md`**（エンタメ寄りの週報）を同じフォルダに生成
+
+| ファイル | 役割 |
+|---|---|
+| `PROMPT.md` | Cowork に貼る固定プロンプト（役割・厳守ルール・データの読みどころ） |
+| `REPORT_TEMPLATE.md` | 週報の見出し・構成テンプレ（毎週ブレないため） |
+
+> サンプル: `exports\2099-01-01\report_2099-01-01.md`（合成データでの出力見本）
+
+### 設計上のポイント
+- **数値は digest.json の値だけを使い、LLM に再計算・推測させない**（PROMPT.md で厳守ルール化）。
+- percentile は「上位%＝100−percentile」で表示。
+- 比較材料が少ない項目は断定せず「判定材料が少ない」と正直に書かせる。

@@ -358,7 +358,12 @@ for (const a of userAgg.values()) {
     .filter((e) => e.percentile !== null)
     .sort((x, y) => y.percentile - x.percentile);
   const strengths = ranked.slice(0, 3);
-  const weaknesses = ranked.slice(-3).reverse();
+  const strengthKeys = new Set(strengths.map((e) => e.key));
+  // 苦手は得意と重複させない（種目数が少ない人は空＝「苦手と呼べる種目なし」）
+  const weaknesses = ranked
+    .filter((e) => !strengthKeys.has(e.key))
+    .slice(-3)
+    .reverse();
 
   // 成長スター / 停滞
   const improving = perExercise
