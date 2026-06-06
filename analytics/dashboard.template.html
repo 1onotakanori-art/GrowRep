@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GrowRep 週次分析ダッシュボード</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#171c24; --panel2:#1f2630; --line:#2a323d;
+    --tx:#e6edf3; --tx2:#9aa7b4; --accent:#4ea1ff; --good:#3fb950; --bad:#f85149;
+    --warn:#d29922; --gold:#e3b341;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,"Segoe UI",
+    "Hiragino Kaku Gothic ProN",Meiryo,sans-serif;font-size:14px;line-height:1.5}
+  header{padding:20px 24px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#141a22,#0e1116)}
+  header h1{margin:0;font-size:20px}
+  header .sub{color:var(--tx2);font-size:12px;margin-top:4px}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px 24px 80px}
+  h2{font-size:16px;margin:34px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  h2 .ic{color:var(--accent);margin-right:6px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .stat{font-size:26px;font-weight:700}
+  .stat.small{font-size:18px}
+  .lbl{color:var(--tx2);font-size:11px;margin-top:2px}
+  .grid-users{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+  .ucard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;
+    display:flex;flex-direction:column}
+  .uhead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .uname{font-size:16px;font-weight:700}
+  .utype{font-size:10px;color:var(--tx2);border:1px solid var(--line);border-radius:20px;
+    padding:2px 8px}
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+  .badge{font-size:10px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+    padding:3px 7px;color:var(--gold)}
+  .badge.no{color:var(--tx2)}
+  .mini{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+  .mini div{background:var(--panel2);border-radius:8px;padding:6px;text-align:center}
+  .mini .n{font-size:15px;font-weight:700}
+  .mini .l{font-size:9px;color:var(--tx2)}
+  .row{display:flex;gap:12px}
+  .col{flex:1;min-width:0}
+  .lst{margin:6px 0 0;padding:0;list-style:none;font-size:12px}
+  .lst li{display:flex;justify-content:space-between;gap:8px;padding:2px 0;
+    border-bottom:1px dashed var(--line)}
+  .lst li span:last-child{color:var(--tx2);white-space:nowrap}
+  .sect-lbl{font-size:11px;color:var(--tx2);margin-top:12px;text-transform:uppercase;
+    letter-spacing:.05em}
+  .pct{font-weight:700}
+  .pct.hi{color:var(--good)} .pct.lo{color:var(--bad)} .pct.mid{color:var(--warn)}
+  .trend-improving{color:var(--good)} .trend-declining{color:var(--bad)}
+  .trend-plateau{color:var(--warn)} .trend-new,.trend-insufficient{color:var(--tx2)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--tx2);font-weight:600;font-size:11px}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .mom-up{color:var(--good)} .mom-down{color:var(--bad)} .mom-flat{color:var(--tx2)}
+  .chip{display:inline-block;font-size:10px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:5px;padding:1px 6px;margin:1px;color:var(--tx2)}
+  .rival{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;
+    margin-bottom:8px}
+  .rival .vs{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .rival .who{font-weight:700}
+  .rival .gap{font-size:11px;color:var(--warn)}
+  .bar{height:6px;background:var(--panel2);border-radius:4px;overflow:hidden;margin-top:6px}
+  .bar > i{display:block;height:100%;background:var(--accent)}
+  .neglect{font-size:11px;color:var(--tx2);margin-top:8px}
+  .canvas-wrap{position:relative;height:200px;margin-top:8px}
+  .empty{color:var(--tx2);font-size:12px;padding:8px 0}
+  footer{color:var(--tx2);font-size:11px;text-align:center;padding:24px}
+</style>
+</head>
+<body>
+<header>
+  <h1>💪 GrowRep 週次分析ダッシュボード</h1>
+  <div class="sub" id="subtitle"></div>
+</header>
+<div class="wrap">
+  <section>
+    <h2><span class="ic">📊</span>今週のサマリー</h2>
+    <div class="cards" id="summary-cards"></div>
+  </section>
+
+  <section>
+    <h2><span class="ic">🏅</span>二つ名・ペルソナ</h2>
+    <div class="cards" id="persona-cards"></div>
+  </section>
+
+  <section>
+    <h2><span class="ic">👤</span>ユーザー別カルテ</h2>
+    <div class="grid-users" id="user-cards"></div>
+  </section>
+
+  <section>
+    <h2><span class="ic">🔥</span>種目ランキング（人気・勢い）</h2>
+    <div class="card" style="overflow:auto">
+      <table id="exercise-table"></table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="ic">🏷️</span>タグ別の傾向</h2>
+    <div class="card" style="overflow:auto">
+      <table id="tag-table"></table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="ic">⚔️</span>注目ライバル対決（僅差）</h2>
+    <div id="rivalry-list"></div>
+  </section>
+</div>
+<footer>GrowRep analytics — 数値は決定論的に集計済み。解釈・物語化は Claude Cowork で。</footer>
+
+<script>
+const DIGEST = "__DIGEST_JSON__";
+const D = DIGEST;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+document.getElementById('subtitle').textContent =
+  `エクスポート日: ${D.meta.exportDate} ／ 生成: ${new Date(D.meta.generatedAt).toLocaleString('ja-JP')} ／ project: ${D.meta.projectId || '-'}`;
+
+// ---- サマリー ----
+function summaryCards() {
+  const s = D.summary;
+  const cards = [
+    { n: s.postsThisWeek, l: '今週の投稿数' },
+    { n: s.activeUsersThisWeek, l: '今週の活動人数' },
+    { n: s.hottestExercise || '-', l: '今週の人気種目', small: true },
+    { n: s.mvp ? s.mvp.userName : '-', l: `今週のMVP${s.mvp ? `（PB${s.mvp.pbThisWeek}・投稿${s.mvp.postsThisWeek}）` : ''}`, small: true },
+    { n: s.totalPosts, l: '累計投稿数' },
+    { n: s.activeUsers + '/' + s.totalUsers, l: '活動ユーザー' },
+    { n: s.totalExercises, l: '種目数' },
+  ];
+  $('summary-cards').innerHTML = cards.map((c) =>
+    `<div class="card"><div class="stat ${c.small ? 'small' : ''}">${esc(c.n)}</div><div class="lbl">${esc(c.l)}</div></div>`
+  ).join('');
+}
+
+// ---- ペルソナ（バッジ保有者一覧） ----
+function personaCards() {
+  const holders = {};
+  for (const u of D.users) {
+    for (const b of (u.badges || [])) {
+      if (!holders[b.label]) holders[b.label] = [];
+      holders[b.label].push({ user: u.userName, desc: b.desc, value: b.value });
+    }
+  }
+  const order = ['投稿王','継続の鬼','急成長株','人気者','いいね職人','コメント番長','種目クリエイター','神種目メーカー','万能型','一点特化型','朝型','夜型'];
+  const keys = Object.keys(holders).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  $('persona-cards').innerHTML = keys.map((k) => {
+    const list = holders[k];
+    const who = list.map((h) => esc(h.user) + (h.value != null ? ` <span style="color:var(--tx2)">(${h.value})</span>` : '')).join('、');
+    return `<div class="card"><div class="stat small" style="color:var(--gold)">${esc(k)}</div>
+      <div class="lbl">${esc(list[0].desc)}</div>
+      <div style="margin-top:6px;font-weight:600">${who}</div></div>`;
+  }).join('') || '<div class="empty">該当者なし</div>';
+}
+
+function pctClass(p) { return p >= 66 ? 'hi' : p <= 33 ? 'lo' : 'mid'; }
+const trendLabel = { improving: '↗ 成長中', declining: '↘ 下降', plateau: '→ 停滞', new: '・新規', insufficient: '・データ不足' };
+const WD = ['日','月','火','水','木','金','土'];
+
+// ---- ユーザーカルテ ----
+function userCards() {
+  const cont = $('user-cards');
+  const actives = D.users.filter((u) => u.totalPosts > 0);
+  cont.innerHTML = actives.map((u, i) => {
+    const tagKeys = Object.keys(u.tagStrength);
+    const badges = (u.badges || []).map((b) => `<span class="badge" title="${esc(b.desc)}">${esc(b.label)}</span>`).join('')
+      || '<span class="badge no">称号なし</span>';
+    const strengths = u.strengths.length ? u.strengths.map((e) =>
+      `<li><span>${esc(e.name)}</span><span class="pct ${pctClass(e.percentile)}">上位${(100 - e.percentile).toFixed(0)}%</span></li>`).join('') : '<li class="empty">比較データ不足</li>';
+    const weak = u.weaknesses.length ? u.weaknesses.map((e) =>
+      `<li><span>${esc(e.name)}</span><span class="pct ${pctClass(e.percentile)}">上位${(100 - e.percentile).toFixed(0)}%</span></li>`).join('') : '<li class="empty">-</li>';
+    const grow = u.growthStars.length ? u.growthStars.map((e) =>
+      `<li><span>${esc(e.name)}</span><span class="trend-improving">+${e.relSlopeWeekPct}%/週</span></li>`).join('') : '<li class="empty">該当なし</li>';
+    const neglect = u.neglectedTags.length ? u.neglectedTags.map((t) => `<span class="chip">${esc(t)}</span>`).join('') : '<span class="empty">なし</span>';
+    return `<div class="ucard">
+      <div class="uhead"><div class="uname">${esc(u.userName)}</div><div class="utype">${esc(u.type || '-')}</div></div>
+      <div class="badges">${badges}</div>
+      <div class="mini">
+        <div><div class="n">${u.totalPosts}</div><div class="l">投稿</div></div>
+        <div><div class="n">${u.activeDays}</div><div class="l">活動日</div></div>
+        <div><div class="n">${u.longestStreak}</div><div class="l">最長連続</div></div>
+        <div><div class="n">${u.overallSkill ?? '-'}</div><div class="l">総合力%</div></div>
+      </div>
+      <div class="mini">
+        <div><div class="n">${u.social.likesReceived}</div><div class="l">被いいね</div></div>
+        <div><div class="n">${u.social.likesGiven}</div><div class="l">応援した</div></div>
+        <div><div class="n">${u.social.commentsReceived}</div><div class="l">被コメ</div></div>
+        <div><div class="n">${u.social.commentsGiven}</div><div class="l">コメした</div></div>
+      </div>
+      ${tagKeys.length >= 3 ? `<div class="sect-lbl">タグ別の強み（相対パーセンタイル）</div>
+        <div class="canvas-wrap"><canvas id="radar-${i}"></canvas></div>` : ''}
+      <div class="row"><div class="col">
+        <div class="sect-lbl">得意トップ3</div><ul class="lst">${strengths}</ul>
+      </div><div class="col">
+        <div class="sect-lbl">苦手ワースト3</div><ul class="lst">${weak}</ul>
+      </div></div>
+      <div class="sect-lbl">急成長中</div><ul class="lst">${grow}</ul>
+      <div class="sect-lbl">未開拓タグ（次の挑戦候補）</div><div class="neglect">${neglect}</div>
+      <div class="sect-lbl">曜日別の投稿</div>
+      <div class="canvas-wrap" style="height:120px"><canvas id="wd-${i}"></canvas></div>
+    </div>`;
+  }).join('');
+
+  // チャート描画
+  actives.forEach((u, i) => {
+    const tagKeys = Object.keys(u.tagStrength);
+    if (tagKeys.length >= 3) {
+      new Chart($(`radar-${i}`), {
+        type: 'radar',
+        data: { labels: tagKeys, datasets: [{ data: tagKeys.map((t) => u.tagStrength[t]),
+          backgroundColor: 'rgba(78,161,255,.2)', borderColor: '#4ea1ff', pointBackgroundColor: '#4ea1ff' }] },
+        options: { plugins: { legend: { display: false } },
+          scales: { r: { suggestedMin: 0, suggestedMax: 100, ticks: { display: false, stepSize: 25 },
+            grid: { color: '#2a323d' }, angleLines: { color: '#2a323d' },
+            pointLabels: { color: '#9aa7b4', font: { size: 10 } } } },
+          responsive: true, maintainAspectRatio: false }
+      });
+    }
+    new Chart($(`wd-${i}`), {
+      type: 'bar',
+      data: { labels: WD, datasets: [{ data: u.weekday, backgroundColor: '#4ea1ff' }] },
+      options: { plugins: { legend: { display: false } },
+        scales: { x: { ticks: { color: '#9aa7b4', font: { size: 10 } }, grid: { display: false } },
+          y: { ticks: { display: false }, grid: { color: '#222' } } },
+        responsive: true, maintainAspectRatio: false }
+    });
+  });
+}
+
+// ---- 種目テーブル ----
+function exerciseTable() {
+  const rows = D.exercises.map((e) => {
+    const mom = e.momentum > 0 ? `<span class="mom-up">▲${e.momentum}</span>`
+      : e.momentum < 0 ? `<span class="mom-down">▼${Math.abs(e.momentum)}</span>`
+      : '<span class="mom-flat">−</span>';
+    const rating = e.rating && e.rating.count > 0 ? `★${e.rating.avg} (${e.rating.count})` : '-';
+    return `<tr>
+      <td>${esc(e.name)}</td>
+      <td>${e.tags.map((t) => `<span class="chip">${esc(t)}</span>`).join('') || '-'}</td>
+      <td class="num">${e.totalPosts}</td>
+      <td class="num">${e.uniqueUsers}</td>
+      <td class="num">${e.recent7}</td>
+      <td class="num">${mom}</td>
+      <td>${esc(e.topUser || '-')}</td>
+      <td>${rating}</td>
+      <td style="color:var(--tx2)">${esc(e.createdByName || '-')}</td>
+    </tr>`;
+  }).join('');
+  $('exercise-table').innerHTML =
+    `<thead><tr><th>種目</th><th>タグ</th><th>累計</th><th>人数</th><th>今週</th><th>勢い</th><th>トップ</th><th>評価</th><th>作成者</th></tr></thead><tbody>${rows}</tbody>`;
+}
+
+// ---- タグテーブル ----
+function tagTable() {
+  const rows = D.tags.map((t) =>
+    `<tr><td>${esc(t.tag)}</td><td class="num">${t.exerciseCount}</td><td class="num">${t.postCount}</td>
+     <td>${t.king ? esc(t.king.user) + ` <span style="color:var(--tx2)">(${t.king.score})</span>` : '-'}</td></tr>`
+  ).join('');
+  $('tag-table').innerHTML =
+    `<thead><tr><th>タグ</th><th>種目数</th><th>投稿数</th><th>タグ王（相対実力）</th></tr></thead><tbody>${rows}</tbody>`;
+}
+
+// ---- ライバル ----
+function rivalryList() {
+  const cont = $('rivalry-list');
+  if (!D.rivalries.length) { cont.innerHTML = '<div class="empty">僅差の対決はありません</div>'; return; }
+  cont.innerHTML = D.rivalries.map((r) => {
+    const ratio = r.leaderValue > 0 ? (r.challengerValue / r.leaderValue) * 100 : 0;
+    return `<div class="rival">
+      <div class="vs"><span class="who">🥇 ${esc(r.leader)} (${r.leaderValue})</span>
+        <span class="gap">差 ${r.gapPct}%</span>
+        <span class="who" style="color:var(--tx2)">${esc(r.challenger)} (${r.challengerValue}) 🥈</span></div>
+      <div style="font-size:11px;color:var(--tx2);margin-top:4px">${esc(r.exercise)}</div>
+      <div class="bar"><i style="width:${ratio}%"></i></div>
+    </div>`;
+  }).join('');
+}
+
+summaryCards();
+personaCards();
+userCards();
+exerciseTable();
+tagTable();
+rivalryList();
+</script>
+</body>
+</html>
