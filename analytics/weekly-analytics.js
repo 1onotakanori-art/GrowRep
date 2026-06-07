@@ -711,12 +711,78 @@ function buildNextWeekForecast(ds, exByKey, nameOf) {
   };
 }
 
+/**
+ * 次週チャレンジ「確定」分析（日曜17時の選出後）
+ * --------------------------------------------------------------
+ * select-weekly.js が settings_free/weekly_override に来週の3種目を確定済みの場合、
+ * その確定種目について「出たら本命（全期間ベスト記録保持者）」と見どころを添える。
+ * これにより Cowork は確率予想ではなく「確定したカード」を実況できる。
+ * override が無い/無効化済みの場合は null（＝従来どおり確率予想にフォールバック）。
+ */
+function buildNextWeekConfirmed(ds, exByKey, nameOf) {
+  const ov = ds.weeklyOverride;
+  if (!ov || ov.invalidated || !Array.isArray(ov.exercises) || ov.exercises.length === 0) {
+    return null;
+  }
+
+  // 全期間ベスト記録（出たら本命を推定）
+  const bestByEx = new Map();
+  for (const p of ds.posts) {
+    if (!p.exerciseKey || !p.uid) continue;
+    const v = Number(p.value) || 0;
+    if (v <= 0) continue;
+    if (!bestByEx.has(p.exerciseKey)) bestByEx.set(p.exerciseKey, new Map());
+    const m = bestByEx.get(p.exerciseKey);
+    const isBar = !!exByKey.get(p.exerciseKey)?.barbarian;
+    const cur = m.get(p.uid);
+    if (cur === undefined || (isBar ? v < cur : v > cur)) m.set(p.uid, v);
+  }
+  const favoritesOf = (key, barbarian) => {
+    const m = bestByEx.get(key);
+    if (!m || m.size === 0) return { favorite: null, contenders: [], recordHolders: 0 };
+    const ranked = [...m.entries()]
+      .map(([uid, v]) => ({ user: nameOf(uid), value: v }))
+      .sort((a, b) => (barbarian ? a.value - b.value : b.value - a.value));
+    return { favorite: ranked[0] || null, contenders: ranked.slice(0, 3), recordHolders: m.size };
+  };
+
+  const exercises = ov.exercises
+    .filter((k) => exByKey.has(k))
+    .map((k) => {
+      const e = exByKey.get(k);
+      const fav = favoritesOf(k, !!e?.barbarian);
+      return {
+        key: k,
+        name: e?.name || k,
+        barbarian: !!e?.barbarian,
+        tags: e?.tags || [],
+        ratingAvg: e?.rating?.avg ?? null,
+        ratingCount: e?.rating?.count ?? 0,
+        createdByName: e?.createdByName || null,
+        unit: e?.barbarian ? '秒(短いほど良い)' : '回/値(多いほど良い)',
+        favorite: fav.favorite,
+        contenders: fav.contenders,
+        recordHolders: fav.recordHolders,
+      };
+    });
+
+  return {
+    targetWeekStart: ov.targetWeekStart || null,
+    label: ov.label || null,
+    exercises,
+    note:
+      '日曜17時に確定した来週の3種目（settings_free/weekly_override）。favorite=その種目の全期間ベスト記録保持者（出たら本命）。' +
+      'これは確率予想ではなく確定カードなので「来週はこの3種目で決まり」と断言してよい。',
+  };
+}
+
 export function buildChallengeSections(ds, exByKey, nameOf) {
   return {
     weeklyChallenge: buildWeeklyChallenge(ds, exByKey, nameOf),
     monthlyDerby: buildMonthlyDerby(ds, exByKey, nameOf),
     offChallenge: buildOffChallenge(ds, exByKey, nameOf),
     nextWeekForecast: buildNextWeekForecast(ds, exByKey, nameOf),
+    nextWeekConfirmed: buildNextWeekConfirmed(ds, exByKey, nameOf),
     ratingScene: buildRatingScene(ds, exByKey, nameOf),
   };
 }

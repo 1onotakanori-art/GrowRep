@@ -93,6 +93,14 @@ service cloud.firestore {
       allow delete: if request.auth != null;
     }
 
+    // weekly_reports コレクション（週次ウィークリー: Cowork週報 + 分析ダッシュボード）
+    // ローカルPCのサービスアカウント（admin SDK）からのみ publish される「公式発表」。
+    // admin SDK はルールを無視して書き込めるため、クライアントは読み取り専用にして改ざんを防ぐ。
+    match /weekly_reports/{weekId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // weekly_champions コレクション（歴代チャンプ記録）
     match /weekly_champions/{docId} {
       allow read: if request.auth != null;

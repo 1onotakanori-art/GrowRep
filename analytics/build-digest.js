@@ -632,6 +632,7 @@ const digest = {
   monthlyDerby: challenge.monthlyDerby,
   offChallenge: challenge.offChallenge,
   nextWeekForecast: challenge.nextWeekForecast,
+  nextWeekConfirmed: challenge.nextWeekConfirmed, // 日曜17時の選出後は確定カード（無ければ null）
   ratingScene: challenge.ratingScene,
   // ▼ 補足: フリーモード全体の実力・成長・キャラ付け
   users: users.sort((a, b) => b.totalPosts - a.totalPosts),

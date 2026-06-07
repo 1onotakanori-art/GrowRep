@@ -1253,6 +1253,9 @@ auth.onAuthStateChanged(async (user) => {
 
         loadPosts();
         loadRanking();
+
+        // 週次ウィークリー（週報＆分析）の新着チェック（NEWバッジ／バナー制御）
+        checkLatestWeeklyReport();
     } else {
         // ログアウト時の処理
         currentUser = null;
@@ -1278,6 +1281,30 @@ auth.onAuthStateChanged(async (user) => {
         if (resetPasswordModal) resetPasswordModal.style.display = 'none';
     }
 });
+
+/**
+ * 週次ウィークリー（weekly_reports）の最新を確認し、未読なら NEW バッジ／バナーを表示する。
+ * 既読判定は report.html と共有の localStorage キー（最後に開いた週の docId）で行う。
+ */
+async function checkLatestWeeklyReport() {
+    try {
+        const snap = await db.collection('weekly_reports')
+            .orderBy('publishedAt', 'desc')
+            .limit(1)
+            .get();
+        if (snap.empty) return;
+        const latestId = snap.docs[0].id;
+        let seen = null;
+        try { seen = localStorage.getItem('growrep_lastSeenWeekly'); } catch (e) { /* localStorage 不可は無視 */ }
+        const unseen = seen !== latestId;
+        const badge = document.getElementById('weekly-new-badge');
+        const banner = document.getElementById('weekly-report-banner');
+        if (badge) badge.style.display = unseen ? 'block' : 'none';
+        if (banner) banner.style.display = unseen ? 'flex' : 'none';
+    } catch (e) {
+        console.warn('[ウィークリー] 最新レポート確認に失敗:', e);
+    }
+}
 
 // ログイン
 loginBtn.addEventListener('click', async () => {
