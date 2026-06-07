@@ -1,5 +1,11 @@
 # Firebase設定
 firebase-config.local.js
+# サービスアカウント秘密鍵（絶対に公開しない）
+serviceAccountKey.json
+**/serviceAccountKey.json
+*.serviceaccount.json
+# 分析エクスポート（投稿データ=個人情報を含む）
+analytics/exports/
 .env
 .env.local
 .env.development

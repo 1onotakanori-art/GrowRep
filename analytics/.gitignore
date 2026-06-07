@@ -1,0 +1,9 @@
+# サービスアカウント鍵（絶対にコミットしない）
+serviceAccountKey.json
+*.serviceaccount.json
+
+# 依存
+node_modules/
+
+# エクスポート結果（投稿データ・個人情報を含むためコミットしない）
+exports/
