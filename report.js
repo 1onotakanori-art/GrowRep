@@ -131,73 +131,30 @@ async function loadReport(id) {
   const data = doc.data();
   const D = data.digest || {};
 
-  // コンテナ骨組み
+  // コンテナ骨組み（データ → 文章 → その他 の順。先にデータを見せて頭に入れてもらう）
   $('content').innerHTML = `
-    <div id="nextweek-slot"></div>
-    <section><h2><span class="ic">📰</span>今週の週報</h2><div id="report-slot" class="report"></div></section>
-    <section><h2><span class="ic">🏆</span>週間チャレンジ結果</h2><div id="wc-slot"></div></section>
+    <section><h2><span class="ic">🏆</span>先週の週間チャレンジ結果</h2><div id="wc-slot"></div></section>
     <section><h2><span class="ic">📅</span>月間ダービー</h2><div id="derby-slot"></div></section>
-    <section><h2><span class="ic">📊</span>今週のサマリー</h2><div class="cards" id="summary-cards"></div></section>
+    <section><h2><span class="ic">📊</span>先週のサマリー</h2><div class="cards" id="summary-cards"></div></section>
     <section><h2><span class="ic">🏅</span>二つ名・ペルソナ</h2><div class="cards" id="persona-cards"></div></section>
     <section><h2><span class="ic">👤</span>ユーザー別カルテ</h2><div class="grid-users" id="user-cards"></div></section>
+    <section><h2><span class="ic">📰</span>先週の週報</h2><div id="report-slot" class="report"></div></section>
     <section><h2><span class="ic">🔥</span>種目ランキング（人気・勢い）</h2><div class="card" style="overflow:auto"><table class="tbl" id="exercise-table"></table></div></section>
     <section><h2><span class="ic">🏷️</span>タグ別の傾向</h2><div class="card" style="overflow:auto"><table class="tbl" id="tag-table"></table></div></section>
     <section><h2><span class="ic">⚔️</span>注目ライバル対決（僅差）</h2><div id="rivalry-list"></div></section>
   `;
 
-  renderNextWeek(D, data);
-  $('report-slot').innerHTML = data.reportHtml || '<div class="empty">週報がありません。</div>';
   renderWeeklyChallenge(D);
   renderDerby(D);
   if (D.summary) summaryCards(D);
   if (Array.isArray(D.users)) {
     personaCards(D);
-    userCards(D);
+    userCards(D, data.memberNotes || {});
   }
+  $('report-slot').innerHTML = data.reportHtml || '<div class="empty">週報がありません。</div>';
   if (Array.isArray(D.exercises)) exerciseTable(D);
   if (Array.isArray(D.tags)) tagTable(D);
   if (Array.isArray(D.rivalries)) rivalryList(D);
-}
-
-// ====================================================================
-// 来週の確定種目バナー（無ければ確率予想にフォールバック）
-// ====================================================================
-function renderNextWeek(D, data) {
-  const slot = $('nextweek-slot');
-  const nc = D.nextWeekConfirmed;
-  if (nc && Array.isArray(nc.exercises) && nc.exercises.length) {
-    const items = nc.exercises
-      .map((e) => {
-        const bar = e.barbarian ? '<span class="bar-badge">バーバリアン</span>' : '';
-        const fav = e.favorite
-          ? `<div class="fav">出たら本命: <b>${esc(e.favorite.user)}</b>（${esc(e.favorite.value)}${e.barbarian ? '秒' : ''}）</div>`
-          : '<div class="fav">記録保持者まだなし</div>';
-        return `<div class="nw-item"><div class="nm">${esc(e.name)}${bar}</div>${fav}</div>`;
-      })
-      .join('');
-    slot.innerHTML = `<div class="nextweek">
-      <div class="nw-head"><i class="fa-solid fa-bullhorn"></i> 来週の確定種目${nc.label ? `・${esc(nc.label)}` : ''}</div>
-      <div class="nw-grid">${items}</div>
-    </div>`;
-    return;
-  }
-  // フォールバック: 確率予想
-  const fc = D.nextWeekForecast;
-  if (fc) {
-    const top = [...(fc.barbarianCandidates || []).slice(0, 1), ...(fc.normalCandidates || []).slice(0, 2)];
-    const items = top
-      .map(
-        (e) =>
-          `<div class="nw-item"><div class="nm">${esc(e.name)}${e.barbarian ? '<span class="bar-badge">バーバリアン</span>' : ''}</div>
-           <div class="nw-prob">出やすさ ${esc(e.pickChance ?? '-')}%${e.favorite ? ` / 本命 ${esc(e.favorite.user)}` : ''}</div></div>`
-      )
-      .join('');
-    slot.innerHTML = `<div class="nextweek">
-      <div class="nw-head"><i class="fa-solid fa-dice"></i> 来週の予想（確率・抽選前）</div>
-      <div class="nw-grid">${items}</div>
-      <div class="nw-prob">※ 種目は日曜17時の加重ランダム抽選で確定します。</div>
-    </div>`;
-  }
 }
 
 // ====================================================================
@@ -207,7 +164,7 @@ function renderWeeklyChallenge(D) {
   const slot = $('wc-slot');
   const wc = D.weeklyChallenge;
   if (!wc || !Array.isArray(wc.standings) || wc.standings.length === 0) {
-    slot.innerHTML = '<div class="empty">今週の週間チャレンジ記録はありません。</div>';
+    slot.innerHTML = '<div class="empty">先週の週間チャレンジ記録はありません。</div>';
     return;
   }
   const champ = wc.champion;
@@ -215,7 +172,7 @@ function renderWeeklyChallenge(D) {
   const head = `<div class="card" style="margin-bottom:10px">
     <div class="stat small"><span class="crown"><i class="fa-solid fa-crown"></i></span> ${champ ? esc(champ.userName) : '-'}
       ${champ && champ.perfect ? '<span class="lead-pill">完全優勝</span>' : ''}</div>
-    <div class="lbl">今週の王者（${champ ? esc(champ.totalScore) : '-'} / ${esc(wc.maxScore ?? '-')}点）${
+    <div class="lbl">先週の王者（${champ ? esc(champ.totalScore) : '-'} / ${esc(wc.maxScore ?? '-')}点）${
     wc.leadMargin != null ? ` ・2位と${esc(wc.leadMargin)}点差` : ''
   }</div>
     <div class="lbl" style="margin-top:6px">種目: ${exNames || '-'}（${esc(wc.period?.label || '')}）</div>
@@ -289,10 +246,10 @@ function renderDerby(D) {
 function summaryCards(D) {
   const s = D.summary;
   const cards = [
-    { n: s.postsThisWeek, l: '今週の投稿数' },
-    { n: s.activeUsersThisWeek, l: '今週の活動人数' },
-    { n: s.hottestExercise || '-', l: '今週の人気種目', small: true },
-    { n: s.mvp ? s.mvp.userName : '-', l: `今週のMVP${s.mvp ? `（PB${s.mvp.pbThisWeek}・投稿${s.mvp.postsThisWeek}）` : ''}`, small: true },
+    { n: s.postsThisWeek, l: '先週の投稿数' },
+    { n: s.activeUsersThisWeek, l: '先週の活動人数' },
+    { n: s.hottestExercise || '-', l: '先週の人気種目', small: true },
+    { n: s.mvp ? s.mvp.userName : '-', l: `先週のMVP${s.mvp ? `（PB${s.mvp.pbThisWeek}・投稿${s.mvp.postsThisWeek}）` : ''}`, small: true },
     { n: s.totalPosts, l: '累計投稿数' },
     { n: s.activeUsers + '/' + s.totalUsers, l: '活動ユーザー' },
     { n: s.totalExercises, l: '種目数' },
@@ -331,7 +288,7 @@ function pctClass(p) {
 }
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 
-function userCards(D) {
+function userCards(D, memberNotes = {}) {
   const cont = $('user-cards');
   const actives = D.users.filter((u) => u.totalPosts > 0);
   cont.innerHTML = actives
@@ -340,6 +297,9 @@ function userCards(D) {
       const badges =
         (u.badges || []).map((b) => `<span class="badge" title="${esc(b.desc)}">${esc(b.label)}</span>`).join('') ||
         '<span class="badge no">称号なし</span>';
+      // メンバー名鑑の「ひとことMC」（Cowork が書いた寸評）をカルテ内に取り込む
+      const mc = memberNotes[u.userName];
+      const mcBlock = mc ? `<div class="mc"><i class="fa-solid fa-comment-dots"></i> ${esc(mc)}</div>` : '';
       const strengths = u.strengths && u.strengths.length
         ? u.strengths
             .map((e) => `<li><span>${esc(e.name)}</span><span class="pct ${pctClass(e.percentile)}">上位${(100 - e.percentile).toFixed(0)}%</span></li>`)
@@ -359,6 +319,7 @@ function userCards(D) {
       return `<div class="ucard">
       <div class="uhead"><div class="uname2">${esc(u.userName)}</div><div class="utype">${esc(u.type || '-')}</div></div>
       <div class="badges">${badges}</div>
+      ${mcBlock}
       <div class="mini">
         <div><div class="n">${esc(u.totalPosts)}</div><div class="l">投稿</div></div>
         <div><div class="n">${esc(u.activeDays)}</div><div class="l">活動日</div></div>
