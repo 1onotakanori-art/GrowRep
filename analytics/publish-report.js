@@ -54,6 +54,37 @@ function sanitizeHtml(html) {
     .replace(/javascript:/gi, '');
 }
 
+/**
+ * 週報 Markdown から「メンバー寸評（ひとことMC）」セクションを抜き出す。
+ * --------------------------------------------------------------
+ * テンプレートの `## 👤 メンバー寸評` セクションは `- 名前: 寸評` の1行1人形式。
+ * これを { userName: 寸評 } に変換し、report.js がユーザー別カルテの各カードへ差し込む。
+ * 同セクションは本文（reportHtml）からは取り除き、カルテと二重表示にならないようにする。
+ * 旧フォーマット（セクション無し）の場合は notes={} を返し、本文はそのまま。
+ */
+function extractMemberNotes(md) {
+  const lines = md.split(/\r?\n/);
+  const notes = {};
+  let start = -1;
+  let end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (start === -1) {
+      if (/^#{1,6}\s+.*メンバー寸評/.test(lines[i])) start = i;
+      continue;
+    }
+    if (/^#{1,6}\s+/.test(lines[i])) {
+      end = i;
+      break;
+    }
+    // `- **名前**: 寸評` / `- 名前: 寸評`（全角コロンも許容）
+    const m = lines[i].match(/^\s*[-*]\s+(?:\*\*)?([^:：*]+?)(?:\*\*)?\s*[:：]\s*(.+?)\s*$/);
+    if (m) notes[m[1].trim()] = m[2].trim();
+  }
+  if (start === -1) return { notes: {}, mdStripped: md };
+  const mdStripped = [...lines.slice(0, start), ...lines.slice(end)].join('\n');
+  return { notes, mdStripped };
+}
+
 async function main() {
   const dateStr = typeof args.date === 'string' ? args.date : latestDateDir();
   if (!dateStr) {
@@ -85,8 +116,11 @@ async function main() {
   const digest = JSON.parse(readFileSync(digestPath, 'utf8'));
   const reportMarkdown = readFileSync(reportPath, 'utf8');
 
+  // メンバー寸評（ひとことMC）をカルテ用に抜き出し、本文からは除外
+  const { notes: memberNotes, mdStripped } = extractMemberNotes(reportMarkdown);
+
   marked.setOptions({ gfm: true, breaks: false });
-  const reportHtml = sanitizeHtml(marked.parse(reportMarkdown));
+  const reportHtml = sanitizeHtml(marked.parse(mdStripped));
 
   // ドキュメントが肥大化していないか軽くチェック（Firestore 1ドキュメント=1MB上限）
   const approxBytes = Buffer.byteLength(JSON.stringify(digest)) + Buffer.byteLength(reportHtml);
@@ -113,6 +147,7 @@ async function main() {
     coverPeriodLabel,
     reportHtml,
     reportMarkdown,
+    memberNotes, // { userName: ひとことMC } … report.js がカルテ各カードへ差し込む
     digest,
     nextWeekExercises,
     publishedAt: FieldValue.serverTimestamp(),
@@ -120,9 +155,7 @@ async function main() {
 
   console.log(
     `[publish] 完了: weekly_reports/${dateStr} を配信しました（約${(approxBytes / 1024).toFixed(0)}KB）。\n` +
-      `  対象週: ${coverPeriodLabel || '-'} ／ 来週の確定種目: ${
-        nextWeekExercises.length ? nextWeekExercises.map((e) => e.name).join('・') : '（未確定）'
-      }\n` +
+      `  対象週: ${coverPeriodLabel || '-'} ／ メンバー寸評: ${Object.keys(memberNotes).length}人ぶん抽出\n` +
       `  → アプリの「ウィークリー」ページに即反映されます。`
   );
   process.exit(0);

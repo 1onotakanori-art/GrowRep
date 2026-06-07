@@ -237,6 +237,26 @@ function resolveReportWeek(ds) {
       overrideLabel: null,
     });
   }
+  // weekly_challenge_history（champion がまだ書かれていない終了週の保険）。
+  // 日曜のロールオーバー直後はアプリが weekly_champions を書く前に export される場合があり、
+  // その週の champion が無いと「進行中の空っぽな新週」しか候補に残らず空レポートになる。
+  // champion がある docId は種目の正として既に登録済み（seen）なのでスキップし、
+  // champion 不在の終了週だけ history の種目で補う。
+  for (const h of ds.weeklyHistory || []) {
+    const wsMs = tsMs(h.weekStart);
+    if (wsMs === null || !Array.isArray(h.exercises) || h.exercises.length === 0) continue;
+    const { docId } = championDocMeta(wsMs);
+    if (seen.has(docId)) continue;
+    seen.add(docId);
+    cands.push({
+      docId,
+      weekStartMs: wsMs,
+      weekEndMs: tsMs(h.weekEnd) ?? wsMs + 7 * DAY,
+      exercises: h.exercises,
+      isManualOverride: false,
+      overrideLabel: null,
+    });
+  }
   // ライブの weekly_challenge（champion 未確定の進行中週）
   const wc = ds.weeklyChallenge;
   if (wc && wc.weekStart && Array.isArray(wc.exercises) && wc.exercises.length) {
