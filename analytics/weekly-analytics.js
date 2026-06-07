@@ -191,24 +191,99 @@ function computeWeekRecords(posts, exByKey, weekStartMs, weekEndMs, exerciseKeys
 }
 
 /**
- * 今週の週間チャレンジ標準分析
+ * weekly_champions（アプリがロールオーバー時に確定保存した正式記録）から
+ * docId -> その週の正しい種目キー配列 を作る。
+ * weekly_challenge_history は種目がずれて保存されるケースがあるため、
+ * 終了済みの週については champions を「種目の真実」として優先採用する。
+ */
+function champExercisesByDocId(ds) {
+  const m = new Map();
+  for (const c of ds.weeklyChampions || []) {
+    if (!c || !c.id) continue;
+    // 種目キーは exerciseTop5 のキー（無ければ exercises のキー）
+    const keys = c.exerciseTop5
+      ? Object.keys(c.exerciseTop5)
+      : c.exercises && typeof c.exercises === 'object'
+        ? Object.keys(c.exercises)
+        : [];
+    if (keys.length) m.set(c.id, { keys, weekStart: c.weekStart, weekEnd: c.weekEnd });
+  }
+  return m;
+}
+
+/**
+ * 週報の対象週を決める。
+ * 日曜17時に週がロールすると、ライブの weekly_challenge は「まだ始まっていない新週」を
+ * 指すため、そのまま分析すると空になる。よって「直近で金曜が終了した週（=総決算対象）」を
+ * 選ぶ。種目はその週の champion 記録（正）を優先し、無ければライブ種目を使う。
+ */
+function resolveReportWeek(ds) {
+  const nowMs = tsMs(ds.meta?.exportedAt) || Date.now();
+  const champMap = champExercisesByDocId(ds);
+  const cands = [];
+  const seen = new Set();
+
+  // champion 確定済みの各週（種目は champion のものが正）
+  for (const [docId, c] of champMap) {
+    const wsMs = tsMs(c.weekStart);
+    if (wsMs === null || c.keys.length === 0) continue;
+    seen.add(docId);
+    cands.push({
+      docId,
+      weekStartMs: wsMs,
+      weekEndMs: tsMs(c.weekEnd) ?? wsMs + 7 * DAY,
+      exercises: c.keys,
+      isManualOverride: false,
+      overrideLabel: null,
+    });
+  }
+  // ライブの weekly_challenge（champion 未確定の進行中週）
+  const wc = ds.weeklyChallenge;
+  if (wc && wc.weekStart && Array.isArray(wc.exercises) && wc.exercises.length) {
+    const wsMs = tsMs(wc.weekStart);
+    if (wsMs !== null) {
+      const { docId } = championDocMeta(wsMs);
+      if (!seen.has(docId)) {
+        cands.push({
+          docId,
+          weekStartMs: wsMs,
+          weekEndMs: tsMs(wc.weekEnd) ?? wsMs + 7 * DAY,
+          exercises: wc.exercises,
+          isManualOverride: !!wc.isManualOverride,
+          overrideLabel: wc.overrideLabel || null,
+        });
+      }
+    }
+  }
+  if (cands.length === 0) return null;
+
+  // 金曜終了済み（decided）の最新週を総決算対象に。無ければ最新週（＝進行中の今週）。
+  const decided = cands.filter((c) => isChampionWeekDecided(c.weekStartMs, nowMs));
+  const pool = decided.length ? decided : cands;
+  pool.sort((a, b) => b.weekStartMs - a.weekStartMs);
+  const picked = pool[0];
+  picked.decided = isChampionWeekDecided(picked.weekStartMs, nowMs);
+  return picked;
+}
+
+/**
+ * 週間チャレンジ標準分析（総決算対象 = 直近終了週）
  */
 function buildWeeklyChallenge(ds, exByKey, nameOf) {
-  const wc = ds.weeklyChallenge;
-  if (!wc || !Array.isArray(wc.exercises) || wc.exercises.length === 0) return null;
-  const weekStartMs = tsMs(wc.weekStart);
-  const weekEndMs = tsMs(wc.weekEnd);
-  if (weekStartMs === null || weekEndMs === null) return null;
+  const target = resolveReportWeek(ds);
+  if (!target || !Array.isArray(target.exercises) || target.exercises.length === 0) return null;
+  const { weekStartMs, weekEndMs } = target;
+  const targetKeys = target.exercises;
 
   const { rec, exerciseLeader, keys } = computeWeekRecords(
     ds.posts,
     exByKey,
     weekStartMs,
     weekEndMs,
-    wc.exercises
+    targetKeys
   );
 
-  const exercises = wc.exercises.map((k) => {
+  const exercises = targetKeys.map((k) => {
     const e = exByKey.get(k);
     return {
       key: k,
@@ -274,9 +349,14 @@ function buildWeeklyChallenge(ds, exByKey, nameOf) {
   });
 
   return {
-    period: { weekStart: wc.weekStart, weekEnd: wc.weekEnd, label: periodLabel(weekStartMs) },
-    isManualOverride: !!wc.isManualOverride,
-    overrideLabel: wc.overrideLabel || null,
+    period: {
+      weekStart: new Date(weekStartMs).toISOString(),
+      weekEnd: new Date(weekEndMs).toISOString(),
+      label: periodLabel(weekStartMs),
+    },
+    isFinishedWeek: !!target.decided, // 金曜終了済みの「総決算」週か（進行中の今週なら false）
+    isManualOverride: !!target.isManualOverride,
+    overrideLabel: target.overrideLabel || null,
     maxScore: keys.length * 100,
     exercises,
     champion: leader
@@ -297,6 +377,8 @@ function buildMonthlyDerby(ds, exByKey, nameOf) {
   const { derbyStart, derbyEnd } = monthlyDerbyBounds(year, month);
 
   // 履歴 + 今週から、ダービー期間内の週を収集
+  // 種目は weekly_champions（正式記録）を優先採用し、history の種目ズレを補正する。
+  const champMap = champExercisesByDocId(ds);
   const weeks = [];
   const seen = new Set();
   const addWeek = (weekStart, weekEnd, exercises) => {
@@ -311,11 +393,14 @@ function buildMonthlyDerby(ds, exByKey, nameOf) {
     if (monDay < derbyStart || monDay > derbyEnd) return;
     if (seen.has(docId)) return;
     seen.add(docId);
+    // champion 記録があればその種目（正）を採用、無ければ渡された種目（ライブ/履歴）
+    const champ = champMap.get(docId);
+    const finalExercises = champ ? champ.keys : Array.isArray(exercises) ? exercises : [];
     weeks.push({
       docId,
       weekStartMs: wsMs,
-      weekEndMs: tsMs(weekEnd) ?? wsMs + 7 * DAY,
-      exercises: Array.isArray(exercises) ? exercises : [],
+      weekEndMs: champ ? tsMs(champ.weekEnd) ?? tsMs(weekEnd) ?? wsMs + 7 * DAY : tsMs(weekEnd) ?? wsMs + 7 * DAY,
+      exercises: finalExercises,
     });
   };
 

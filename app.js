@@ -7357,6 +7357,29 @@ async function checkAndFinalizePassedWeeks() {
                 continue;
             }
 
+            // 履歴の種目ズレを自己修復: 確定チャンプ記録（正）と種目が違えば、履歴をチャンプに合わせる。
+            // （週途中で種目が変わると saveWeeklyChallengeHistory の既存ガードで履歴が古いまま固定されるため。
+            //   この履歴は下のバックフィルやダービー集計の入力になるので、先に正しておく）
+            if (champData && champData.exercises && typeof champData.exercises === 'object') {
+                const champKeys = Object.keys(champData.exercises);
+                const histKeys = Array.isArray(historyData.exercises) ? historyData.exercises : [];
+                const differs = champKeys.length > 0
+                    && (histKeys.length !== champKeys.length || champKeys.some(k => !histKeys.includes(k)));
+                if (differs) {
+                    try {
+                        await db.collection('weekly_challenge_history').doc(historyDoc.id).set({
+                            exercises: champKeys,
+                            reconciledFromChampion: true,
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true });
+                        historyData.exercises = champKeys; // 以降の処理にも反映
+                        console.log(`[歴代チャンプ] 履歴 ${historyDoc.id} の種目をチャンプ記録に合わせて補正`);
+                    } catch (e) {
+                        console.warn('[歴代チャンプ] 履歴補正に失敗:', historyDoc.id, e);
+                    }
+                }
+            }
+
             const hasDetail = !!(champData && champData.schemaVersion >= 2 && champData.exerciseTop5);
             if (hasDetail) continue;
 
@@ -7565,19 +7588,31 @@ function getCurrentDerbyYearMonth() {
 async function computeMonthlyDerbyData(year, month) {
     const { derbyStart, derbyEnd } = getMonthlyDerbyBounds(year, month);
 
-    // posts_free / users を一括取得
-    const [postsSnap, usersSnap, historySnap] = await Promise.all([
+    // posts_free / users / 履歴 / チャンプ記録 を一括取得
+    const [postsSnap, usersSnap, historySnap, champsSnap] = await Promise.all([
         db.collection('posts_free').get(),
         db.collection('users').get(),
         db.collection('weekly_challenge_history')
             .orderBy(firebase.firestore.FieldPath.documentId(), 'asc')
-            .get()
+            .get(),
+        db.collection('weekly_champions').get()
     ]);
 
     const usersData = {};
     usersSnap.forEach(doc => {
         const d = doc.data();
         usersData[doc.id] = d.userName || d.email || 'Unknown';
+    });
+
+    // 確定チャンプ記録の種目（正）。history は週途中の種目変更でズレることがあるため、
+    // chamption がある週はそちらの種目を真とする。
+    const champExByDoc = {};
+    champsSnap.forEach(doc => {
+        const d = doc.data();
+        if (d && d.exercises && typeof d.exercises === 'object') {
+            const keys = Object.keys(d.exercises);
+            if (keys.length > 0) champExByDoc[doc.id] = keys;
+        }
     });
 
     if (!freeExercisesLoaded) await loadFreeExercises();
@@ -7597,11 +7632,14 @@ async function computeMonthlyDerbyData(year, month) {
         const monDay = new Date(Date.UTC(monJST.getUTCFullYear(), monJST.getUTCMonth(), monJST.getUTCDate()));
 
         if (monDay >= derbyStart && monDay <= derbyEnd) {
+            // チャンプ記録があればその種目（正）を優先
+            const exercises = champExByDoc[doc.id]
+                || (Array.isArray(data.exercises) ? data.exercises : []);
             derbyWeeks.push({
                 docId: doc.id,
                 weekStart,
                 weekEnd,
-                exercises: Array.isArray(data.exercises) ? data.exercises : [],
+                exercises,
                 monJST
             });
         }
