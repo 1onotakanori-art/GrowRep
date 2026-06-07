@@ -38,6 +38,12 @@ cd analytics
 npm run weekly
 ```
 
+> **推奨タイミング: 土曜の朝。** 週間チャレンジは月〜金で勝負が決まり、土日は次週への準備期間
+> （日曜17時に次週3種目が抽選発表）。土曜に回すと `weekly_challenge` は「金曜に終わった週」を
+> 指しているので、その週の総決算（振り返り＋次週の確率予想）がそのまま作れます。
+> ※ 次週予想は確率ベース（実際の種目はまだ未確定）。種目確定後の本命予想が欲しくなったら、
+> 　 日曜17時以降にもう一度回せば `weeklyChallenge.exercises` が新しい3種目に変わります。
+
 `npm run weekly` = エクスポート → 集計 を一括実行。
 `exports\YYYY-MM-DD\` に以下が生成されます：
 
@@ -75,7 +81,23 @@ npm run digest -- --date=2026-06-06 # 日付指定
 
 ---
 
-## 指標の定義（digest.json）
+## digest.json の主要セクション
+
+レポートの**主役**は週間チャレンジ／月間ダービー。フリーモードの相対分析は味付けです。
+
+| セクション | 内容 |
+|---|---|
+| `weeklyChallenge` | 今週の3種目・順位表(`standings`)・王者(`champion`)・各人の逆転材料(`perUser`)。**本体と同じ得点ロジックを再現**（平日・今週の3種目、通常=self/max×100、バーバリアン=min/self×100、合計） |
+| `monthlyDerby` | その月の各週の週間チャレンジ得点を合計した総合順位。`leader`/`leadMargin`/週別推移(`weeklyScores`)。`monthOver` が false の間は暫定 |
+| `offChallenge` | 今週あえてチャレンジ3種目以外をやった人（個性・偏愛のシグナル。`challengeDoneCount` 付き） |
+| `nextWeekForecast` | 次週に出やすい種目の**確率予想**（本体の選出アルゴリズムを再現）。候補ごとに本命記録保持者つき |
+| `ratingScene` | 種目作成・評価・コメントの交流（`creators`/`mostLoved`/`topEvaluators`/`engagement`/`notableComments`/`freshExercises`） |
+| `users` / `exercises` / `tags` / `rivalries` | フリーモード全体の実力・成長・キャラ付け（味付け用） |
+
+> 週間チャレンジ／ダービーの計算は `weekly-analytics.js` に分離（app.js のロジックを移植）。
+> 現在進行中の週は、古い種目が残った履歴より **ライブの `weekly_challenge` を優先**します。
+
+## 指標の定義（フリーモード分析）
 
 - **percentile（パーセンタイル）**: 同一種目の全員ベスト値の中での相対位置（0〜100、高いほど得意）。
   比較には2人以上の記録が必要。「得意・苦手」判定の基礎。
