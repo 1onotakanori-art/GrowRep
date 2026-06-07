@@ -7,9 +7,13 @@
   "scripts": {
     "export": "node export-firestore.js",
     "digest": "node build-digest.js",
-    "weekly": "node export-firestore.js && node build-digest.js"
+    "weekly": "node export-firestore.js && node build-digest.js",
+    "select": "node select-weekly.js",
+    "announce": "node select-weekly.js && node export-firestore.js && node build-digest.js",
+    "publish": "node publish-report.js"
   },
   "dependencies": {
-    "firebase-admin": "^13.0.0"
+    "firebase-admin": "^13.0.0",
+    "marked": "^14.1.2"
   }
 }

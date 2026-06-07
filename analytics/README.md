@@ -31,38 +31,48 @@ Firestore ──①export──> dataset.json ──②digest──> digest.json
 
 ---
 
-## 毎週の実行（これだけ）
+## 毎週の運用フロー（日曜の流れ）
+
+週間チャレンジの週境界は **日曜17:00 JST**。この時刻に来週の種目を確定し、その総決算＋来週発表を
+日曜夜にアプリへ配信する。タイムラインは次のとおり:
 
 ```powershell
 cd analytics
-npm run weekly
+
+# ① 16:45〜16:55  来週の3種目を選出 → weekly_override に書込（アプリへ反映）
+#                 さらに export→digest（確定種目が digest.nextWeekConfirmed に入る）
+npm run announce          # = select-weekly.js → export → digest
+
+# ② 18:00  Claude Cowork で PROMPT.md を貼り、report_<exportDate>.md を生成（確定カードを実況）
+
+# ③ 18:30  週報＋ダッシュボードを Firestore に配信
+npm run publish           # = publish-report.js
 ```
 
-> **推奨タイミング: 土曜の朝。** 週間チャレンジは月〜金で勝負が決まり、土日は次週への準備期間
-> （日曜17時に次週3種目が抽選発表）。土曜に回すと `weekly_challenge` は「金曜に終わった週」を
-> 指しているので、その週の総決算（振り返り＋次週の確率予想）がそのまま作れます。
-> ※ 次週予想は確率ベース（実際の種目はまだ未確定）。種目確定後の本命予想が欲しくなったら、
-> 　 日曜17時以降にもう一度回せば `weeklyChallenge.exercises` が新しい3種目に変わります。
+> **なぜ日曜夜か:** 17時に種目を確定してから Cowork を回すので、「次週予想（確率）」が
+> 「来週の確定カード解説」に格上げされる。デプロイ不要・auth ゲート内で完結する。
 
-`npm run weekly` = エクスポート → 集計 を一括実行。
-`exports\YYYY-MM-DD\` に以下が生成されます：
+`announce` 実行後、`exports\YYYY-MM-DD\` に以下が生成されます：
 
 | ファイル | 用途 |
 |---|---|
 | `dataset.json` | 正規化済みの生データ（全件） |
-| `digest.json` | **Cowork に渡す**事前集計済みデータ |
+| `digest.json` | **Cowork に渡す**事前集計済みデータ（`nextWeekConfirmed` に来週の確定3種目） |
 | `posts.flat.jsonl` | 1行1投稿の denormalize 済み（必要なら） |
-| `dashboard.html` | **ダブルクリックで開く**人間向けダッシュボード |
+| `dashboard.html` | **ダブルクリックで開く**所有者向けのフル分析ツール（手元用） |
 
 個別に実行したい場合：
 ```powershell
-npm run export                      # 今日の日付で取得
-npm run export -- --date=2026-06-06 # 日付指定
-npm run digest                      # exports 内の最新日付を集計
-npm run digest -- --date=2026-06-06 # 日付指定
+npm run select                       # 来週ぶんを選出（weekly_override 書込）
+npm run select -- --dry-run          # 書込まず選出結果だけ確認
+npm run select -- --label="特別回"    # ラベル付き
+npm run weekly                       # export→digest（選出を反映するため select の後に）
+npm run publish                      # 最新日付の週報を Firestore に配信
+npm run publish -- --date=2026-06-07 # 日付指定で配信
 ```
 
-> Windows でダブルクリック運用したい場合は、`npm run weekly` を呼ぶ `.bat` を作ると楽です。
+> Windows でダブルクリック運用したい場合は、`npm run announce` / `npm run publish` を呼ぶ
+> `.bat` を2つ作ると楽です。
 
 ---
 
@@ -90,7 +100,8 @@ npm run digest -- --date=2026-06-06 # 日付指定
 | `weeklyChallenge` | 今週の3種目・順位表(`standings`)・王者(`champion`)・各人の逆転材料(`perUser`)。**本体と同じ得点ロジックを再現**（平日・今週の3種目、通常=self/max×100、バーバリアン=min/self×100、合計） |
 | `monthlyDerby` | その月の各週の週間チャレンジ得点を合計した総合順位。`leader`/`leadMargin`/週別推移(`weeklyScores`)。`monthOver` が false の間は暫定 |
 | `offChallenge` | 今週あえてチャレンジ3種目以外をやった人（個性・偏愛のシグナル。`challengeDoneCount` 付き） |
-| `nextWeekForecast` | 次週に出やすい種目の**確率予想**（本体の選出アルゴリズムを再現）。候補ごとに本命記録保持者つき |
+| `nextWeekConfirmed` | **日曜17時に確定した来週の3種目**（`select-weekly.js` が書いた `weekly_override` 由来）。各種目に出たら本命(`favorite`)・対抗(`contenders`)。選出前は `null` |
+| `nextWeekForecast` | 次週に出やすい種目の**確率予想**（本体の選出アルゴリズムを再現）。候補ごとに本命記録保持者つき。`nextWeekConfirmed` が無いときのフォールバック用 |
 | `ratingScene` | 種目作成・評価・コメントの交流（`creators`/`mostLoved`/`topEvaluators`/`engagement`/`notableComments`/`freshExercises`） |
 | `users` / `exercises` / `tags` / `rivalries` | フリーモード全体の実力・成長・キャラ付け（味付け用） |
 
@@ -132,3 +143,32 @@ npm run digest -- --date=2026-06-06 # 日付指定
 - **数値は digest.json の値だけを使い、LLM に再計算・推測させない**（PROMPT.md で厳守ルール化）。
 - percentile は「上位%＝100−percentile」で表示。
 - 比較材料が少ない項目は断定せず「判定材料が少ない」と正直に書かせる。
+
+---
+
+## ⑤ アプリへ配信（publish）
+
+Cowork が `report_<exportDate>.md` を生成したら、Firestore に配信します。
+
+```powershell
+npm run publish     # exports 内の最新日付を weekly_reports/<exportDate> へ
+```
+
+`publish-report.js` が行うこと:
+- `report_<exportDate>.md` を **HTML 化**（marked）して `reportHtml` に格納
+- `digest.json` 全量を `digest` に格納（アプリのダッシュボード描画用）
+- 来週の確定種目を `nextWeekExercises` に格納
+- `weekly_reports/<exportDate>` ドキュメントとして **サービスアカウントで書き込み**
+
+アプリ側はトップの **「📊 ウィークリー」**（[`report.html`](../report.html)）でこれを auth 越しに読み、
+週報＋ダッシュボードを表示します。新着があるとトップに NEW バッジ／バナーが出ます。
+
+| 仕組み | 内容 |
+|---|---|
+| 配信先 | Firestore `weekly_reports`（read: 認証ユーザー / write: **不可**＝サービスアカウントのみ） |
+| 反映 | アップロード即時。GitHub Pages のデプロイは不要 |
+| プライバシー | 個人の記録は公開リポジトリに出さず auth ゲート内に留まる |
+| 既読管理 | `localStorage['growrep_lastSeenWeekly']`（report.html を開くと最新を既読化） |
+
+> Firestore は1ドキュメント1MB 上限。6人規模では digest 全量でも十分収まるが、
+> `publish-report.js` は概算サイズが 950KB を超えると警告を出す（その時は分離を検討）。
