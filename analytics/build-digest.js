@@ -17,6 +17,7 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildChallengeSections } from './weekly-analytics.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -609,6 +610,11 @@ const summary = {
 };
 
 // ====================================================================
+// 週間チャレンジ / 月間ダービー / チャレンジ外 / 評価交流（本体ロジック再現）
+// ====================================================================
+const challenge = buildChallengeSections(ds, exByKey, nameOf);
+
+// ====================================================================
 // digest 組み立て & 出力
 // ====================================================================
 const digest = {
@@ -617,9 +623,17 @@ const digest = {
     exportDate: ds.meta?.exportDate || dateStr,
     projectId: ds.meta?.projectId || null,
     note:
-      'パーセンタイルは同一種目の全員ベスト値中の相対位置。slope/相対成長率は value の時系列単回帰（3投稿以上）。',
+      'パーセンタイルは同一種目の全員ベスト値中の相対位置。slope/相対成長率は value の時系列単回帰（3投稿以上）。' +
+      'weeklyChallenge/monthlyDerby は本体と同じ得点ロジック（平日・今週の3種目、通常=self/max×100、バーバリアン=min/self×100、合計）。',
   },
   summary,
+  // ▼ 主役: 週間チャレンジ & 月間ダービー（優勝争い）
+  weeklyChallenge: challenge.weeklyChallenge,
+  monthlyDerby: challenge.monthlyDerby,
+  offChallenge: challenge.offChallenge,
+  nextWeekForecast: challenge.nextWeekForecast,
+  ratingScene: challenge.ratingScene,
+  // ▼ 補足: フリーモード全体の実力・成長・キャラ付け
   users: users.sort((a, b) => b.totalPosts - a.totalPosts),
   exercises: exercisesOut.sort((a, b) => b.totalPosts - a.totalPosts),
   tags: tagsOut,
