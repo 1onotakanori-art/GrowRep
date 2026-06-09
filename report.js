@@ -288,18 +288,84 @@ function pctClass(p) {
 }
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 
+// 展開時に初めてチャートを描画する（折りたたみ中は canvas が 0px で正しく描けないため遅延生成）
+const _userChartReady = new Set();
+
+function initUserCharts(u, i) {
+  if (_userChartReady.has(i)) return;
+  _userChartReady.add(i);
+  const tagKeys = Object.keys(u.tagStrength || {});
+  if (tagKeys.length >= 3 && $(`radar-${i}`)) {
+    _charts.push(
+      new Chart($(`radar-${i}`), {
+        type: 'radar',
+        data: {
+          labels: tagKeys,
+          datasets: [
+            {
+              data: tagKeys.map((t) => u.tagStrength[t]),
+              backgroundColor: 'rgba(102,126,234,.2)',
+              borderColor: '#667eea',
+              pointBackgroundColor: '#667eea',
+            },
+          ],
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: {
+            r: {
+              suggestedMin: 0,
+              suggestedMax: 100,
+              ticks: { display: false, stepSize: 25 },
+              grid: { color: '#e2e6f2' },
+              angleLines: { color: '#e2e6f2' },
+              pointLabels: { color: '#6b7280', font: { size: 10 } },
+            },
+          },
+          responsive: true,
+          maintainAspectRatio: false,
+        },
+      })
+    );
+  }
+  if ($(`wd-${i}`)) {
+    _charts.push(
+      new Chart($(`wd-${i}`), {
+        type: 'bar',
+        data: { labels: WD, datasets: [{ data: u.weekday, backgroundColor: '#667eea' }] },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#6b7280', font: { size: 10 } }, grid: { display: false } },
+            y: { ticks: { display: false }, grid: { color: '#e2e6f2' } },
+          },
+          responsive: true,
+          maintainAspectRatio: false,
+        },
+      })
+    );
+  }
+}
+
 function userCards(D, memberNotes = {}) {
   const cont = $('user-cards');
   const actives = D.users.filter((u) => u.totalPosts > 0);
+  _userChartReady.clear();
   cont.innerHTML = actives
     .map((u, i) => {
       const tagKeys = Object.keys(u.tagStrength || {});
       const badges =
         (u.badges || []).map((b) => `<span class="badge" title="${esc(b.desc)}">${esc(b.label)}</span>`).join('') ||
         '<span class="badge no">称号なし</span>';
-      // メンバー名鑑の「ひとことMC」（Cowork が書いた寸評）をカルテ内に取り込む
+      // 折りたたみ時の見出しに出す「二つ名」（最大2件まで。なければ称号なし）
+      const titleBadges =
+        (u.badges || []).slice(0, 2).map((b) => `<span class="uname-badge" title="${esc(b.desc)}">${esc(b.label)}</span>`).join('') ||
+        '<span class="uname-badge" style="color:var(--tx2)">称号なし</span>';
+      // メンバー名鑑の「ひとことMC」（Cowork が書いた寸評）をカルテ末尾に抽出表示
       const mc = memberNotes[u.userName];
-      const mcBlock = mc ? `<div class="mc"><i class="fa-solid fa-comment-dots"></i> ${esc(mc)}</div>` : '';
+      const mcBlock = mc
+        ? `<div class="sect-lbl">ひとことMC（Cowork）</div><div class="mc-card"><i class="fa-solid fa-comment-dots"></i>${esc(mc)}</div>`
+        : '';
       const strengths = u.strengths && u.strengths.length
         ? u.strengths
             .map((e) => `<li><span>${esc(e.name)}</span><span class="pct ${pctClass(e.percentile)}">上位${(100 - e.percentile).toFixed(0)}%</span></li>`)
@@ -316,10 +382,17 @@ function userCards(D, memberNotes = {}) {
       const neglect = u.neglectedTags && u.neglectedTags.length
         ? u.neglectedTags.map((t) => `<span class="chip">${esc(t)}</span>`).join('')
         : '<span class="empty">なし</span>';
-      return `<div class="ucard">
-      <div class="uhead"><div class="uname2">${esc(u.userName)}</div><div class="utype">${esc(u.type || '-')}</div></div>
+      return `<div class="ucard collapsed" data-idx="${i}">
+      <div class="uhead">
+        <div class="uhead-main">
+          <span class="uname2">${esc(u.userName)}</span>
+          ${titleBadges}
+          <span class="utype">${esc(u.type || '-')}</span>
+        </div>
+        <i class="fa-solid fa-chevron-down uchev"></i>
+      </div>
+      <div class="ucard-body">
       <div class="badges">${badges}</div>
-      ${mcBlock}
       <div class="mini">
         <div><div class="n">${esc(u.totalPosts)}</div><div class="l">投稿</div></div>
         <div><div class="n">${esc(u.activeDays)}</div><div class="l">活動日</div></div>
@@ -342,62 +415,24 @@ function userCards(D, memberNotes = {}) {
       <div class="sect-lbl">未開拓タグ（次の挑戦候補）</div><div class="neglect">${neglect}</div>
       <div class="sect-lbl">曜日別の投稿</div>
       <div class="canvas-wrap" style="height:120px"><canvas id="wd-${i}"></canvas></div>
+      ${mcBlock}
+      </div>
     </div>`;
     })
     .join('');
 
-  actives.forEach((u, i) => {
-    const tagKeys = Object.keys(u.tagStrength || {});
-    if (tagKeys.length >= 3 && $(`radar-${i}`)) {
-      _charts.push(
-        new Chart($(`radar-${i}`), {
-          type: 'radar',
-          data: {
-            labels: tagKeys,
-            datasets: [
-              {
-                data: tagKeys.map((t) => u.tagStrength[t]),
-                backgroundColor: 'rgba(78,161,255,.2)',
-                borderColor: '#4ea1ff',
-                pointBackgroundColor: '#4ea1ff',
-              },
-            ],
-          },
-          options: {
-            plugins: { legend: { display: false } },
-            scales: {
-              r: {
-                suggestedMin: 0,
-                suggestedMax: 100,
-                ticks: { display: false, stepSize: 25 },
-                grid: { color: '#2a323d' },
-                angleLines: { color: '#2a323d' },
-                pointLabels: { color: '#9aa7b4', font: { size: 10 } },
-              },
-            },
-            responsive: true,
-            maintainAspectRatio: false,
-          },
-        })
-      );
-    }
-    if ($(`wd-${i}`)) {
-      _charts.push(
-        new Chart($(`wd-${i}`), {
-          type: 'bar',
-          data: { labels: WD, datasets: [{ data: u.weekday, backgroundColor: '#4ea1ff' }] },
-          options: {
-            plugins: { legend: { display: false } },
-            scales: {
-              x: { ticks: { color: '#9aa7b4', font: { size: 10 } }, grid: { display: false } },
-              y: { ticks: { display: false }, grid: { color: '#222' } },
-            },
-            responsive: true,
-            maintainAspectRatio: false,
-          },
-        })
-      );
-    }
+  // タップで展開／格納。初回展開時にチャートを描画する。
+  cont.querySelectorAll('.ucard').forEach((card) => {
+    const i = Number(card.dataset.idx);
+    card.querySelector('.uhead').addEventListener('click', () => {
+      const willOpen = card.classList.contains('collapsed');
+      card.classList.toggle('collapsed');
+      if (willOpen) {
+        initUserCharts(actives[i], i);
+        // 折りたたみ中に 0px だった canvas を実サイズへ追従させる
+        requestAnimationFrame(() => _charts.forEach((c) => { try { c.resize(); } catch (e) {} }));
+      }
+    });
   });
 }
 
