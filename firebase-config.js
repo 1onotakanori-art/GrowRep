@@ -43,6 +43,24 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
+// オフライン永続化（IndexedDBキャッシュ）を有効化
+// - 再訪・通信不良時に前回取得データを即描画でき、体感速度が向上する
+// - 他のFirestore操作より前に呼ぶ必要があるため、ここで実行する
+// - 複数タブ同時利用やブラウザ非対応時は失敗するが、その場合も通常動作に支障はない
+try {
+    db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+        if (err && err.code === 'failed-precondition') {
+            console.warn('[永続化] 複数タブが開いているため無効化（1タブのみ有効）');
+        } else if (err && err.code === 'unimplemented') {
+            console.warn('[永続化] このブラウザは未対応のため無効化');
+        } else {
+            console.warn('[永続化] 有効化に失敗:', err);
+        }
+    });
+} catch (e) {
+    console.warn('[永続化] 初期化エラー:', e);
+}
+
 // ゲストログイン用固定アカウント（GitHub Actions secrets で置換）
 const GUEST_EMAIL = "__GUEST_EMAIL__";
 const GUEST_PASSWORD = "__GUEST_PASSWORD__";

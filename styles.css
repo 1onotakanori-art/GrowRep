@@ -595,6 +595,35 @@ body.mode-interval header h1::after {
     transition: all 0.3s;
 }
 
+/* 投稿フィードの「もっと見る」ボタン */
+.load-more-posts-btn {
+    display: block;
+    width: 100%;
+    margin: 12px 0 4px;
+    padding: 12px;
+    background: #f0f0f0;
+    color: #333;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+@media (hover: hover) {
+    .load-more-posts-btn:hover {
+        background: #667eea;
+        color: white;
+        border-color: #667eea;
+    }
+}
+
+.load-more-posts-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
 @media (hover: hover) {
     .refresh-btn:hover {
         background: #667eea;
