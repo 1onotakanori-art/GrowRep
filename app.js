@@ -151,6 +151,10 @@ let postsCacheTime = {
     free: null,
     weekly: null
 };
+// 投稿フィードの表示件数（全期間スキャンを避けるため初期は新しい順50件）
+const POSTS_PAGE_SIZE = 50;
+let postsDisplayLimit = POSTS_PAGE_SIZE;
+let postsHasMore = false;
 let rankingCache = {
     normal: null,
     interval: null,
@@ -1727,7 +1731,11 @@ async function changeMode(newMode) {
     
     currentMode = newMode;
     resetWeeklySimulatorState();
-    
+
+    // フィードの表示件数を初期化（モードごとに新しい順50件から）
+    postsDisplayLimit = POSTS_PAGE_SIZE;
+    postsHasMore = false;
+
     // モードセレクターの値を同期
     modeSelect.value = newMode;
     
@@ -1973,6 +1981,8 @@ async function submitPost(exerciseKey) {
             scoreCacheTime.free = null;
             postsCache.free = null;
             postsCacheTime.free = null;
+            // 自分の投稿が反映されていない古い先行表示を避けるため、週間の前回値も破棄
+            try { localStorage.removeItem(WEEKLY_RANKING_LS_KEY); } catch (e) { /* 無視 */ }
         }
         
         // 選択をクリア
@@ -2012,12 +2022,15 @@ async function loadPosts(forceRefresh = false) {
             // 読み込み中のスケルトン表示（体感速度の改善）
             postsList.innerHTML = skeletonHTML(4);
 
-            // 投稿一覧とユーザー一覧を並列取得（行ごとの getUserData によるN+1を回避）
+            // 投稿一覧（新しい順に上限件数のみ）とユーザー一覧を並列取得
+            // 全期間スキャンを避けるため limit を付与。続きは「もっと見る」で取得する。
             const [snapshot, usersMap] = await Promise.all([
-                db.collection(collectionName).orderBy('timestamp', 'desc').get(),
+                db.collection(collectionName).orderBy('timestamp', 'desc').limit(postsDisplayLimit).get(),
                 getUsersMap()
             ]);
             countReads(snapshot.size);
+            // 取得件数が上限に達していれば、まだ続きがある可能性が高い
+            postsHasMore = snapshot.size >= postsDisplayLimit;
 
             console.log(`[loadPosts] ${snapshot.size}件の投稿を取得 (${mode}モード)`);
 
@@ -2067,6 +2080,20 @@ function renderPosts(posts) {
         const postElement = createPostElement(id, data, userName);
         postsList.appendChild(postElement);
     });
+
+    // まだ続きがある場合のみ「もっと見る」ボタンを表示
+    if (postsHasMore) {
+        const moreBtn = document.createElement('button');
+        moreBtn.className = 'load-more-posts-btn';
+        moreBtn.textContent = 'もっと見る';
+        moreBtn.addEventListener('click', () => {
+            moreBtn.disabled = true;
+            moreBtn.textContent = '読み込み中...';
+            postsDisplayLimit += POSTS_PAGE_SIZE;
+            loadPosts(true);
+        });
+        postsList.appendChild(moreBtn);
+    }
 }
 
 // 投稿要素の作成
@@ -6240,6 +6267,42 @@ function renderWeeklyChallengeInfo() {
     `;
 }
 
+// 週間ランキングの前回値をローカル保存するキー（週が変わったら破棄）
+const WEEKLY_RANKING_LS_KEY = 'growrep_weekly_ranking_v1';
+
+/**
+ * 週間ランキング集計結果をlocalStorageへ保存（次回起動時の先行表示用）
+ * @param {Date} weekStart
+ * @param {Object} rankings
+ */
+function saveWeeklyRankingToLocal(weekStart, rankings) {
+    try {
+        localStorage.setItem(WEEKLY_RANKING_LS_KEY, JSON.stringify({
+            weekStartMs: weekStart.getTime(),
+            rankings
+        }));
+    } catch (e) {
+        // 容量超過やプライベートモード等は無視（先行表示は任意機能のため）
+    }
+}
+
+/**
+ * localStorageから今週分の週間ランキングを取得（週が異なれば無効）
+ * @param {Date} weekStart
+ * @returns {Object|null}
+ */
+function loadWeeklyRankingFromLocal(weekStart) {
+    try {
+        const raw = localStorage.getItem(WEEKLY_RANKING_LS_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.weekStartMs !== weekStart.getTime()) return null;
+        return parsed.rankings || null;
+    } catch (e) {
+        return null;
+    }
+}
+
 /**
  * 週間チャレンジ: ランキング読み込み
  * @param {boolean} forceRefresh
@@ -6257,6 +6320,9 @@ async function loadWeeklyRanking(forceRefresh = false) {
         return;
     }
 
+    const { weekStart, weekEnd, exercises } = weeklyChallenge;
+
+    // メモリキャッシュが有効ならそれを使用
     if (!forceRefresh && rankingCache.weekly && rankingCacheTime.weekly && (now - rankingCacheTime.weekly < CACHE_DURATION)) {
         console.log('[週間チャレンジ] ランキングキャッシュを使用');
         renderWeeklyChallengeInfo();
@@ -6264,10 +6330,24 @@ async function loadWeeklyRanking(forceRefresh = false) {
         return;
     }
 
-    try {
-        const snapshot = await db.collection('posts_free').get();
+    // stale-while-revalidate: 前回保存値があれば先に即描画し、通信待ちの空白を防ぐ
+    if (!forceRefresh) {
+        const stale = loadWeeklyRankingFromLocal(weekStart);
+        if (stale) {
+            console.log('[週間チャレンジ] 前回値を先行表示（裏で最新を取得）');
+            renderWeeklyChallengeInfo();
+            renderRanking(stale);
+        }
+    }
 
-        const { weekStart, weekEnd, exercises } = weeklyChallenge;
+    try {
+        // 今週分のみ取得（全期間スキャンを回避）。種目・平日の絞り込みはクライアント側で実施。
+        const snapshot = await db.collection('posts_free')
+            .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(weekStart))
+            .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(weekEnd))
+            .get();
+        countReads(snapshot.size);
+
         const rankings = {};
         exercises.forEach(key => { rankings[key] = {}; });
 
@@ -6312,6 +6392,7 @@ async function loadWeeklyRanking(forceRefresh = false) {
 
         rankingCache.weekly = rankings;
         rankingCacheTime.weekly = now;
+        saveWeeklyRankingToLocal(weekStart, rankings);
 
         console.log('[週間チャレンジ] ランキング集計完了');
         renderWeeklyChallengeInfo();
@@ -6346,9 +6427,12 @@ async function getAllUsersScoresWeekly(forceRefresh = false) {
         const { weekStart, weekEnd, exercises } = weeklyChallenge;
         const exerciseKeys = exercises.filter(k => freeExercises[k]);
 
-        // posts と users を並列取得（直列ウォーターフォール解消）
+        // posts（今週分のみ）と users を並列取得（直列ウォーターフォール＋全期間スキャンを解消）
         const [postsSnapshot, usersMap] = await Promise.all([
-            db.collection('posts_free').get(),
+            db.collection('posts_free')
+                .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(weekStart))
+                .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(weekEnd))
+                .get(),
             getUsersMap()
         ]);
         countReads(postsSnapshot.size);
@@ -6629,9 +6713,13 @@ async function initWeeklyMode() {
     }
 
     // 過去週の詳細データをセッション中1回だけバックフィル
+    // 重い全期間集計のため、ここでawaitすると3種目表示・ランキング表示がブロックされる。
+    // 表示に必須ではないので、ブロックせず後追い（非同期）で実行する。
     if (!weeklyChampionBackfillDoneInSession) {
-        await checkAndFinalizePassedWeeks();
         weeklyChampionBackfillDoneInSession = true;
+        checkAndFinalizePassedWeeks().catch(err => {
+            console.warn('[週間チャレンジ] 過去週バックフィルに失敗:', err);
+        });
     }
 }
 
