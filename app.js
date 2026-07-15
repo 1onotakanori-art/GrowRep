@@ -188,6 +188,31 @@ let progressCache = {
 const CACHE_DURATION = 5 * 60 * 1000;  // キャッシュ有効期間: 5分
 const RANKING_TIE_EPSILON = 1e-6;
 
+// ====================================================================
+// Chart.js 遅延ロード
+//   グラフ（成長グラフ/総合得点/月間ダービー）でしか使わない ~200KB の
+//   Chart.js を初期ロードから外し、初回にグラフを描く直前で一度だけ取得する。
+//   これにより初期表示（3種目・投稿・得点数値）が Chart.js の到着を待たない。
+// ====================================================================
+const CHART_JS_SRC = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+let _chartJsPromise = null;
+function ensureChartJs() {
+    if (typeof Chart !== 'undefined') return Promise.resolve();
+    if (_chartJsPromise) return _chartJsPromise;
+    _chartJsPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = CHART_JS_SRC;
+        s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => {
+            _chartJsPromise = null;  // 失敗時は次回リトライできるようにする
+            reject(new Error('Chart.js の読み込みに失敗しました'));
+        };
+        document.head.appendChild(s);
+    });
+    return _chartJsPromise;
+}
+
 // ユーザー情報の一括キャッシュ（N+1クエリ削減用）
 // 投稿/ランキングの行ごとに getUserData() を逐次呼ぶと参加人数に比例して
 // Firestore 読み取りが増えるため、users コレクションを1回だけ取得して使い回す。
@@ -602,12 +627,16 @@ async function loadScoreChart(selectedUserIds = []) {
         scoreError.textContent = '';
         
         const usersScores = await getAllUsersScores();
-        
+
+        // 総合得点ランキングを先に描画する。
+        // Chart.js の読み込み/描画に依存させないことで、通信が悪くても数値は即表示される。
+        displayTotalScores(usersScores);
+
         // 選択されたユーザーがいない場合は全ユーザー表示
         if (selectedUserIds.length === 0) {
             selectedUserIds = Object.keys(usersScores);
         }
-        
+
         // 集計方法は「最高得点を100%とした%の合計」で固定
         const isDeviationMode = false;
         const isPercentageMode = true;
@@ -703,11 +732,14 @@ async function loadScoreChart(selectedUserIds = []) {
             };
         }).filter(dataset => dataset !== null);
         
+        // Chart.js を遅延ロード（初回のみ取得）
+        await ensureChartJs();
+
         // 既存のチャートを破棄
         if (myScoreChart) {
             myScoreChart.destroy();
         }
-        
+
         // レーダーチャートを描画
         const ctx = scoreChart.getContext('2d');
         myScoreChart = new Chart(ctx, {
@@ -771,13 +803,11 @@ async function loadScoreChart(selectedUserIds = []) {
                 }
             }
         });
-        
-        // 総合得点ランキングを表示
-        displayTotalScores(usersScores);
-        
+
     } catch (error) {
         console.error('得点チャートの描画に失敗しました:', error);
-        scoreError.textContent = '得点チャートの描画に失敗しました';
+        // 数値ランキングは既に表示済みなので、チャートのみ失敗した旨を伝える
+        scoreError.textContent = '得点グラフの描画に失敗しました（通信状態をご確認ください）';
     }
 }
 
@@ -1255,8 +1285,10 @@ auth.onAuthStateChanged(async (user) => {
             restoreStandardExerciseUI();
         }
 
+        // 初期表示は投稿タブのみ。掲示板の投稿一覧を読み込む。
         loadPosts();
-        loadRanking();
+        // ランキングは表示中でないため初期ロードしない（ランキングタブを開いた時に読み込む）。
+        // 全postsの取得を初期クリティカルパスから外し、初回表示を軽くする。
 
         // 週次ウィークリー（週報＆分析）の新着チェック（NEWバッジ／バナー制御）
         checkLatestWeeklyReport();
@@ -2704,6 +2736,9 @@ async function loadProgressChart() {
             cursor.setDate(cursor.getDate() + 1);
         }
 
+        // Chart.js を遅延ロード（初回のみ取得）
+        await ensureChartJs();
+
         myChart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -3700,6 +3735,7 @@ async function loadFreeExercises() {
             freeExercises = {};
         }
         freeExercisesLoaded = true;
+        saveFreeExercisesCache();  // 次回の楽観描画用にローカル保存
         console.log('[フリーモード] 種目ロード完了:', Object.keys(freeExercises).length, '種目');
     } catch (error) {
         console.error('[フリーモード] 種目の取得に失敗:', error);
@@ -5256,6 +5292,9 @@ async function loadFreeScoreChart(selectedUserIds = []) {
             return;
         }
 
+        // 総合得点ランキングを先に描画（Chart.js の読み込み/描画に依存させない）
+        displayFreeScores(usersScores, exerciseKeys);
+
         // 番号ラベル（①②③...）を作成
         const circledNumbers = exerciseKeys.map((_, i) => {
             const nums = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩',
@@ -5303,6 +5342,9 @@ async function loadFreeScoreChart(selectedUserIds = []) {
                 pointHoverBorderColor: borderColors[colorIndex]
             };
         }).filter(d => d !== null);
+
+        // Chart.js を遅延ロード（初回のみ取得）
+        await ensureChartJs();
 
         if (myScoreChart) { myScoreChart.destroy(); }
 
@@ -5356,12 +5398,10 @@ async function loadFreeScoreChart(selectedUserIds = []) {
             return `<span class="legend-annotation-item">${circledNumbers[i]} ${escapeHtml(freeExercises[key].name)}</span>`;
         }).join('');
 
-        // 総合得点ランキング表示
-        displayFreeScores(usersScores, exerciseKeys);
-
     } catch (error) {
         console.error('[フリーモード] レーダーチャートエラー:', error);
-        scoreError.textContent = 'チャートの描画に失敗しました';
+        // 数値ランキングは既に表示済み。チャートのみ失敗した旨を伝える
+        scoreError.textContent = '得点グラフの描画に失敗しました（通信状態をご確認ください）';
     }
 }
 
@@ -5837,6 +5877,77 @@ function renderStarRatingHtml(avgRating, ratingCount) {
 /** 週間チャレンジの現在のデータ */
 let weeklyChallenge = null;  // { weekStart, weekEnd, exercises, selectionHistory }
 let weeklyChallengeLoaded = false;
+
+// ====================================================================
+// 週間チャレンジ: localStorage 楽観描画キャッシュ
+//   通信が悪い/初回のFirestore応答が遅いときでも、前回開いたときの
+//   「今週の3種目」を即座に描画するためのローカルキャッシュ。
+//   ・あくまで Firestore 取得までの“つなぎ”。取得完了後は本データで上書きされる。
+//   ・週替わりの誤表示を防ぐため、weekStart が現在の週と一致する場合のみ使う。
+// ====================================================================
+const LS_FREE_EXERCISES = 'growrep_freeExercises_cache';
+const LS_WEEKLY_CHALLENGE = 'growrep_weeklyChallenge_cache';
+
+function saveFreeExercisesCache() {
+    try {
+        localStorage.setItem(LS_FREE_EXERCISES, JSON.stringify(freeExercises || {}));
+    } catch (e) { /* 保存不可（容量超過/プライベートモード等）は無視 */ }
+}
+
+function saveWeeklyChallengeCache() {
+    try {
+        if (!weeklyChallenge) return;
+        localStorage.setItem(LS_WEEKLY_CHALLENGE, JSON.stringify({
+            weekStart: weeklyChallenge.weekStart ? weeklyChallenge.weekStart.getTime() : null,
+            weekEnd: weeklyChallenge.weekEnd ? weeklyChallenge.weekEnd.getTime() : null,
+            exercises: weeklyChallenge.exercises || [],
+            isManualOverride: weeklyChallenge.isManualOverride || false,
+            overrideLabel: weeklyChallenge.overrideLabel || null
+        }));
+    } catch (e) { /* 無視 */ }
+}
+
+/**
+ * localStorageのキャッシュから「今週の3種目」を即座に仮描画する。
+ * Firestore応答前に呼び、通信不良でも3種目が見える状態を作る。
+ * 実データ取得後は initWeeklyMode 内の各 update 関数で上書きされる。
+ */
+function prepaintWeeklyFromCache() {
+    try {
+        if (currentMode !== 'weekly') return;
+        // 既に本データが揃っているなら仮描画は不要
+        if (freeExercisesLoaded && weeklyChallengeLoaded) return;
+
+        const exRaw = localStorage.getItem(LS_FREE_EXERCISES);
+        const wRaw = localStorage.getItem(LS_WEEKLY_CHALLENGE);
+        if (!exRaw || !wRaw) return;
+
+        const exCache = JSON.parse(exRaw);
+        const wCache = JSON.parse(wRaw);
+        if (!exCache || !wCache || !Array.isArray(wCache.exercises) || wCache.exercises.length === 0) return;
+
+        // 週替わりの誤表示防止: キャッシュが現在の週のものでなければ使わない
+        const { start } = getWeekBoundaries();
+        if (!wCache.weekStart || Math.abs(wCache.weekStart - start.getTime()) > 60 * 1000) return;
+
+        // 本データ未取得の変数のみ仮設定（*Loaded フラグは立てない＝実取得は継続される）
+        if (!freeExercisesLoaded) freeExercises = exCache;
+        if (!weeklyChallengeLoaded) {
+            weeklyChallenge = {
+                weekStart: new Date(wCache.weekStart),
+                weekEnd: wCache.weekEnd ? new Date(wCache.weekEnd) : null,
+                exercises: wCache.exercises,
+                selectionHistory: {},
+                isManualOverride: wCache.isManualOverride || false,
+                overrideLabel: wCache.overrideLabel || null
+            };
+        }
+
+        // 同期的に描画できる軽い部分のみ（Firestore読み取りを伴う評価表示等は本フローに任せる）
+        updateWeeklyPostDropdown();
+        renderWeeklyChallengeInfo();
+    } catch (e) { /* 仮描画失敗は無視して本フローに委ねる */ }
+}
 
 /**
  * 現在の週の境界日時を返す（JST基準）
@@ -6597,6 +6708,10 @@ async function loadWeeklyScoreChart(selectedUserIds, exerciseKeys, usersScores) 
             return;
         }
 
+        // 総合得点ランキングを先に描画する。
+        // Chart.js の読み込み/描画に依存させないことで、通信が悪くても得点は即表示される。
+        displayFreeScores(usersScores, exerciseKeys);
+
         const circledNumbers = exerciseKeys.map((_, i) => {
             const nums = ['①','②','③'];
             return i < nums.length ? nums[i] : `(${i + 1})`;
@@ -6643,6 +6758,9 @@ async function loadWeeklyScoreChart(selectedUserIds, exerciseKeys, usersScores) 
             };
         }).filter(d => d !== null);
 
+        // Chart.js を遅延ロード（初回のみ取得）
+        await ensureChartJs();
+
         if (myScoreChart) { myScoreChart.destroy(); }
 
         const ctx = scoreChart.getContext('2d');
@@ -6685,12 +6803,10 @@ async function loadWeeklyScoreChart(selectedUserIds, exerciseKeys, usersScores) 
             return `<span class="legend-annotation-item">${circledNumbers[i]} ${escapeHtml(ex.name)}</span>`;
         }).join('');
 
-        // 総合得点ランキング
-        displayFreeScores(usersScores, exerciseKeys);
-
     } catch (error) {
         console.error('[週間チャレンジ] チャートエラー:', error);
-        scoreError.textContent = 'チャートの描画に失敗しました';
+        // 得点の数値ランキングは既に表示済み。チャートのみ失敗した旨を伝える
+        scoreError.textContent = '得点グラフの描画に失敗しました（通信状態をご確認ください）';
     }
 }
 
@@ -6698,10 +6814,14 @@ async function loadWeeklyScoreChart(selectedUserIds, exerciseKeys, usersScores) 
  * 週間チャレンジモード入場時のUI初期化
  */
 async function initWeeklyMode() {
+    // まずローカルキャッシュから今週の3種目を即描画（通信不良でも“まず出る”）
+    prepaintWeeklyFromCache();
+
     if (!freeExercisesLoaded) {
         await loadFreeExercises();
     }
     await getOrUpdateWeeklyChallenge();
+    saveWeeklyChallengeCache();  // 次回の楽観描画用にローカル保存
     updateWeeklyPostDropdown();
     updateWeeklyRulesTab();
     updateWeeklyGraphDropdown();
@@ -7919,7 +8039,7 @@ function buildDerbyMonthSelectorHtml(currentYear, currentMonth) {
 /**
  * 月間ダービーのデータ部分を描画する（セレクターを除くデータエリアのみ）
  */
-function renderMonthlyDerbyData(dataWrap, data, year, month) {
+async function renderMonthlyDerbyData(dataWrap, data, year, month) {
     const { weeks, userSummary, derbyStart, derbyEnd, isDerbyComplete, monthlyChamp } = data;
 
     const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
@@ -8043,6 +8163,9 @@ function renderMonthlyDerbyData(dataWrap, data, year, month) {
                 ctx.restore();
             }
         };
+
+        // Chart.js を遅延ロード（初回のみ取得）。数値データ(dataWrap)は上で描画済み。
+        await ensureChartJs();
 
         derbyChart = new Chart(chartCanvas.getContext('2d'), {
             type: 'bar',

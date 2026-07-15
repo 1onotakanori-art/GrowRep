@@ -8,6 +8,22 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "//": "HTMLは常に最新を取得（新デプロイを即反映）。本体は毎回ETag再検証。",
+        "source": "**/*.html",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" }
+        ]
+      },
+      {
+        "//": "JS/CSS/画像/フォントは1時間キャッシュ＋SWRで再訪・通信不良時を高速化。期限切れ後もETagで304の軽い再検証のみ。",
+        "source": "**/*.@(js|css|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" }
+        ]
+      }
     ]
   }
 }
