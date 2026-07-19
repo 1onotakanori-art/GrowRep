@@ -514,6 +514,35 @@ function renderWeight() {
     </div>
     <div class="cfg-hint" id="exp-preview"></div>
     <div id="cfg-exp-result" class="cfg-result"></div>
+    <hr style="border:none;border-top:1px solid #eee;margin:10px 0">
+    <div class="cfg-hint"><i class="fa-solid fa-sliders"></i> 週間チャレンジ改革の設定（段階リリース用）</div>
+    <div class="cfg-row">
+        <label>公平化:</label>
+        <select id="cfg-fairness" style="padding:4px">
+            <option value="two_stage" ${(_wcConfig.fairnessMode || 'two_stage') === 'two_stage' ? 'selected' : ''}>2段階抽選(作成者公平)</option>
+            <option value="legacy" ${_wcConfig.fairnessMode === 'legacy' ? 'selected' : ''}>従来(種目単位)</option>
+        </select>
+    </div>
+    <div class="cfg-row">
+        <label>種目数:</label>
+        <select id="cfg-exercise-count" style="padding:4px">
+            <option value="3" ${(_wcConfig.exerciseCount || 3) == 3 ? 'selected' : ''}>3種目(従来)</option>
+            <option value="4" ${(_wcConfig.exerciseCount || 3) == 4 ? 'selected' : ''}>4種目(木曜追加・下位3採用)</option>
+        </select>
+    </div>
+    <div class="cfg-row">
+        <label><input type="checkbox" id="cfg-streak" ${_wcConfig.enableStreak ? 'checked' : ''}> 連続投稿ストリーク加点</label>
+        <span style="color:var(--tx2);font-size:.85em">/日</span>
+        <input type="number" id="cfg-streak-per" value="${_wcConfig.streakBonusPerDay != null ? _wcConfig.streakBonusPerDay : 3}" min="0" max="50" step="1" style="width:52px">
+        <span style="color:var(--tx2);font-size:.85em">上限</span>
+        <input type="number" id="cfg-streak-cap" value="${_wcConfig.streakBonusCap != null ? _wcConfig.streakBonusCap : 15}" min="0" max="300" step="1" style="width:56px">
+    </div>
+    <div class="cfg-row">
+        <label><input type="checkbox" id="cfg-prediction" ${_wcConfig.enablePrediction ? 'checked' : ''}> チャンプ予想</label>
+        <button class="btn btn-sm btn-ok" onclick="saveReformConfig()"><i class="fa-solid fa-floppy-disk"></i> 改革設定を保存</button>
+    </div>
+    <div id="cfg-reform-result" class="cfg-result"></div>
+    <div id="creator-share"></div>
     <hr style="border:none;border-top:1px solid #eee;margin:10px 0">`;
 
     // Weight list
@@ -547,6 +576,7 @@ function renderWeight() {
     });
     el.innerHTML = html;
     updateExpPreview();
+    renderCreatorShare();
     // Live preview when input changes
     const inp = $('cfg-exp');
     if (inp) inp.addEventListener('input', updateExpPreview);
@@ -577,6 +607,62 @@ async function saveWeightConfig() {
         $('cfg-exp-result').textContent = '保存失敗: ' + e.message;
         $('cfg-exp-result').className = 'cfg-result cfg-err';
     }
+}
+
+async function saveReformConfig() {
+    const fairnessMode = $('cfg-fairness').value;
+    const exerciseCount = parseInt($('cfg-exercise-count').value, 10) || 3;
+    const enableStreak = $('cfg-streak').checked;
+    const streakBonusPerDay = Math.max(0, parseInt($('cfg-streak-per').value, 10) || 0);
+    const streakBonusCap = Math.max(0, parseInt($('cfg-streak-cap').value, 10) || 0);
+    const enablePrediction = $('cfg-prediction').checked;
+    try {
+        await db.collection('settings_free').doc('weekly_config').set({
+            fairnessMode, exerciseCount, enableStreak, streakBonusPerDay, streakBonusCap, enablePrediction,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        Object.assign(_wcConfig, { fairnessMode, exerciseCount, enableStreak, streakBonusPerDay, streakBonusCap, enablePrediction });
+        $('cfg-reform-result').textContent = '改革設定を保存しました';
+        $('cfg-reform-result').className = 'cfg-result';
+        renderWeight();
+        toast('改革設定を保存');
+    } catch (e) {
+        $('cfg-reform-result').textContent = '保存失敗: ' + e.message;
+        $('cfg-reform-result').className = 'cfg-result cfg-err';
+    }
+}
+
+// 作成者別の登録数と、2段階抽選での期待選出シェア（作成者数依存しない均等）を可視化
+function renderCreatorShare() {
+    const el = $('creator-share');
+    if (!el) return;
+    const entries = Object.entries(_exercises).filter(([, e]) => !e?.excludeFromWeekly);
+    const byCreator = {};
+    entries.forEach(([key, e]) => {
+        const cid = e.createdBy || ('__ex_' + key);
+        const name = e.createdByName || (e.createdBy ? e.createdBy.slice(0, 6) : '(不明)');
+        if (!byCreator[cid]) byCreator[cid] = { name, count: 0 };
+        byCreator[cid].count++;
+    });
+    const creators = Object.values(byCreator).sort((a, b) => b.count - a.count);
+    if (creators.length === 0) { el.innerHTML = ''; return; }
+    const totalEx = entries.length;
+    const nCreators = creators.length;
+    const mode = _wcConfig.fairnessMode || 'two_stage';
+    let html = `<div class="cfg-hint" style="margin-top:8px"><i class="fa-solid fa-users"></i> 作成者別シェア（${mode === 'two_stage' ? '2段階=作成者均等' : '従来=種目数比'}）</div>`;
+    creators.forEach(c => {
+        const legacyShare = totalEx > 0 ? (c.count / totalEx) : 0;      // 種目単位（近似）
+        const fairShare = nCreators > 0 ? (1 / nCreators) : 0;          // 作成者均等
+        const share = mode === 'two_stage' ? fairShare : legacyShare;
+        const barW = Math.round(share * 100);
+        html += `<div class="wt-item">
+            <span class="wt-name">${esc(c.name)}</span>
+            <span class="wt-count">${c.count}種目</span>
+            <div class="wt-bar-wrap"><div class="wt-bar" style="width:${barW}%;background:${mode === 'two_stage' ? '#7c3aed' : 'var(--pri)'}"></div></div>
+            <span class="wt-pct">${(share * 100).toFixed(1)}%</span>
+        </div>`;
+    });
+    el.innerHTML = html;
 }
 
 // ====================================================================

@@ -312,7 +312,10 @@ function calculateWeeklySimulatedScores(baseUsersScores, exerciseKeys) {
             userName: userData.userName,
             exercises,
             scores: {},
-            totalScore: 0
+            totalScore: 0,
+            // ストリークは投稿日数依存で種目値のシミュレーションに影響されないため base をそのまま持ち越す
+            streakDays: userData.streakDays || 0,
+            streakBonus: userData.streakBonus || 0
         };
     });
 
@@ -332,7 +335,6 @@ function calculateWeeklySimulatedScores(baseUsersScores, exerciseKeys) {
                 const value = user.exercises[key] || 0;
                 const pct = (value > 0 && minVal !== Infinity) ? (minVal / value) * 100 : 0;
                 user.scores[key] = pct;
-                user.totalScore += pct;
             });
             return;
         }
@@ -349,8 +351,12 @@ function calculateWeeklySimulatedScores(baseUsersScores, exerciseKeys) {
             const value = user.exercises[key] || 0;
             const pct = maxVal > 0 ? (value / maxVal) * 100 : 0;
             user.scores[key] = pct;
-            user.totalScore += pct;
         });
+    });
+
+    // 総合得点を集計（4種目以上のアクティブ時は下位3つ採用＝最高%を1つ切り捨て）＋ストリーク加点
+    Object.values(simulated).forEach((user) => {
+        user.totalScore = sumAdoptedScores(keys.map((k) => user.scores[k] || 0)) + (user.streakBonus || 0);
     });
 
     return simulated;
@@ -2804,7 +2810,7 @@ if (weeklySimulatorToggle) {
             weeklySimulatorBaseScores = await getAllUsersScoresWeekly(false);
         }
         if (!weeklySimulatorExerciseKeys || weeklySimulatorExerciseKeys.length === 0) {
-            weeklySimulatorExerciseKeys = weeklyChallenge ? weeklyChallenge.exercises.filter(k => freeExercises[k]) : [];
+            weeklySimulatorExerciseKeys = weeklyChallenge ? getActiveWeeklyKeys(weeklyChallenge.exercises).filter(k => freeExercises[k]) : [];
         }
 
         displayFreeScores(weeklySimulatorBaseScores, weeklySimulatorExerciseKeys);
@@ -5469,6 +5475,7 @@ function displayFreeScores(usersScores, exerciseKeys) {
                 <div class="score-header" ${headerClickAttr}>
                     <span class="score-rank">${medal}</span>
                     <span class="score-username">${escapeHtml(userData.userName)}</span>
+                    ${(userData.streakBonus > 0) ? `<span class="streak-badge" title="連続投稿ボーナス（${userData.streakDays}日連続）">🔥${userData.streakDays} +${userData.streakBonus}</span>` : ''}
                     <span class="score-value">${totalScore.toFixed(1)}%</span>
                 </div>
                 <div class="score-details" id="score-details-${escapeHtml(userId)}" style="display: ${detailDefaultDisplay};">
@@ -6006,19 +6013,185 @@ function isWeekdayJST(date) {
 }
 
 /**
+ * 指定日時が「その週の木曜以降(JST)」か判定する。
+ * 週は日曜17:00 JST 起点。木曜公開枠(4種目目)の解禁判定に使う。
+ * 月=1..土=6, 日=0 のうち、木(4)・金(5)・土(6) を「木曜以降」とみなす
+ * （週の平日は月〜金なので、実質 木・金 が対象。土曜は集計上 weekday 外だが解禁済み扱い）。
+ * @param {Date} [date=new Date()]
+ * @returns {boolean}
+ */
+function isThursdayOrLaterJST(date = new Date()) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const jstDate = new Date(date.getTime() + JST_OFFSET_MS);
+    const dow = jstDate.getUTCDay(); // 0=日, 1=月, ..., 6=土
+    // 週の起点は日曜17:00。木(4)・金(5)・土(6) を解禁とする（日〜水は未解禁）
+    return dow >= 4 && dow <= 6;
+}
+
+/**
+ * 週間チャレンジの「今アクティブな種目キー」を返す。
+ * - 3種目以下の週: 全種目。
+ * - 4種目以上の週: 先頭3種目は常時アクティブ。4種目目以降(末尾)は木曜(JST)まで非公開。
+ * @param {string[]} exercises - weeklyChallenge.exercises
+ * @param {Date} [now=new Date()]
+ * @returns {string[]}
+ */
+function getActiveWeeklyKeys(exercises, now = new Date()) {
+    const list = Array.isArray(exercises) ? exercises : [];
+    if (list.length <= 3) return list;
+    return isThursdayOrLaterJST(now) ? list : list.slice(0, 3);
+}
+
+// ====================================================================
+// チャンプ予想（Feature 4）
+// 締切: 火曜24:00 JST（=水曜0:00）。それまで自分の予想を提出/変更できる。
+// データ: settings_free/weekly_predictions { weeks: { [weekStartMs]: { [uid]: predictedUid } } }
+// ====================================================================
+
+/**
+ * 予想受付中か（週起点=日曜17:00 JST 〜 火曜24:00 JST）。
+ * @param {Date} [now=new Date()]
+ * @returns {boolean}
+ */
+function isPredictionOpenJST(now = new Date()) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const jst = new Date(now.getTime() + JST_OFFSET_MS);
+    const dow = jst.getUTCDay(); // 0=日..6=土
+    const hour = jst.getUTCHours();
+    if (dow === 0) return hour >= 17; // 日曜17:00以降
+    return dow === 1 || dow === 2;     // 月・火
+}
+
+/**
+ * 予想ドキュメントの weeks マップを取得する。
+ * @returns {Promise<Object>} { [weekStartMs]: { [uid]: predictedUid } }
+ */
+async function getWeeklyPredictionsMap() {
+    try {
+        const doc = await db.collection('settings_free').doc('weekly_predictions').get();
+        if (doc.exists) return doc.data().weeks || {};
+    } catch (e) {
+        console.warn('[チャンプ予想] 取得失敗:', e);
+    }
+    return {};
+}
+
+/**
+ * 自分の予想を保存（締切前のみ）。
+ * @param {number} weekStartMs
+ * @param {string} predictedUid
+ * @returns {Promise<boolean>} 成功可否
+ */
+async function saveMyPrediction(weekStartMs, predictedUid) {
+    if (!isPredictionOpenJST()) return false;
+    if (!currentUser) return false;
+    try {
+        await db.collection('settings_free').doc('weekly_predictions').set({
+            weeks: { [weekStartMs]: { [currentUser.uid]: predictedUid } }
+        }, { merge: true });
+        return true;
+    } catch (e) {
+        console.error('[チャンプ予想] 保存失敗:', e);
+        return false;
+    }
+}
+
+/**
+ * 指定週の予想と的中者を集計する。
+ * @param {number} weekStartMs
+ * @param {string} champUserId
+ * @returns {Promise<{predictions: Object, correctUserIds: string[]}>}
+ */
+async function computePredictionResults(weekStartMs, champUserId) {
+    const weeks = await getWeeklyPredictionsMap();
+    const predictions = weeks[weekStartMs] || {};
+    const correctUserIds = Object.entries(predictions)
+        .filter(([, predicted]) => predicted === champUserId)
+        .map(([uid]) => uid);
+    return { predictions, correctUserIds };
+}
+
+/**
+ * 週間総合得点の集計。4種目以上のアクティブ時は「下位3つ採用（自分の最高%を1つ切り捨て）」。
+ * 3種目以下は全件合計（従来と同一）。未実施種目は 0% として下位側に含まれる。
+ * @param {number[]} scoreValues - アクティブ各種目の% 配列
+ * @param {number} [keep=3] - 採用する下位件数
+ * @returns {number}
+ */
+function sumAdoptedScores(scoreValues, keep = 3) {
+    const vals = (scoreValues || []).map(v => (typeof v === 'number' && isFinite(v)) ? v : 0);
+    if (vals.length <= keep) return vals.reduce((s, v) => s + v, 0);
+    const asc = [...vals].sort((a, b) => a - b);
+    return asc.slice(0, keep).reduce((s, v) => s + v, 0); // 下位 keep 件だけ採用
+}
+
+/**
+ * 日時のJST平日インデックスを返す（月=0, 火=1, ..., 金=4）。土日は -1。
+ * @param {Date} date
+ * @returns {number}
+ */
+function weekdayIndexJST(date) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const dow = new Date(date.getTime() + JST_OFFSET_MS).getUTCDay(); // 0=日..6=土
+    return (dow >= 1 && dow <= 5) ? dow - 1 : -1;
+}
+
+/**
+ * 投稿した平日インデックス集合から「最長連続日数」を返す。
+ * 例: {0,1,2,4} → 3（月火水の連続）。
+ * @param {Set<number>|number[]} indices
+ * @returns {number}
+ */
+function longestConsecutiveDays(indices) {
+    const set = indices instanceof Set ? indices : new Set(indices || []);
+    let best = 0;
+    let run = 0;
+    for (let i = 0; i <= 4; i++) {
+        if (set.has(i)) { run += 1; best = Math.max(best, run); }
+        else run = 0;
+    }
+    return best;
+}
+
+/**
+ * ストリーク加点を算出。連続日数 × perDay を cap で頭打ち。
+ * @param {number} streakDays
+ * @param {{streakBonusPerDay?:number, streakBonusCap?:number}} cfg
+ * @returns {number}
+ */
+function computeStreakBonus(streakDays, cfg = {}) {
+    const perDay = cfg.streakBonusPerDay != null ? cfg.streakBonusPerDay : 3;
+    const cap = cfg.streakBonusCap != null ? cfg.streakBonusCap : 15;
+    return Math.min(streakDays * perDay, cap);
+}
+
+/**
  * 週間チャレンジの選出設定を取得
  * @returns {Promise<Object>} { weightExponent: number }
  */
 async function getWeeklyConfig() {
+    // 週間チャレンジ改革の各機能はここのデフォルトで OFF/従来動作にしておき、
+    // Firestore の weekly_config で明示的に有効化する（段階リリース＆即ロールバック用）。
+    const defaults = {
+        weightExponent: 2,
+        fairnessMode: 'two_stage', // 'two_stage'（作成者公平）| 'legacy'（旧・種目単位）
+        normalCount: 2,
+        barbarianCount: 1,
+        exerciseCount: 4,          // 3=従来 / 4=木曜に4種目目追加・下位3採用（4種目目は木曜まで？？？表示）
+        enableStreak: false,       // 連続投稿ストリーク加点
+        streakBonusPerDay: 3,      // 1連続日あたりの加点
+        streakBonusCap: 15,        // ストリーク加点の上限
+        enablePrediction: false,   // チャンプ予想
+    };
     try {
         const doc = await db.collection('settings_free').doc('weekly_config').get();
         if (doc.exists) {
-            return doc.data();
+            return { ...defaults, ...doc.data() };
         }
     } catch (e) {
         console.warn('[週間チャレンジ] weekly_config取得失敗、デフォルト使用:', e);
     }
-    return { weightExponent: 2 };
+    return defaults;
 }
 
 /**
@@ -6065,35 +6238,241 @@ function selectWeeklyExercises(allKeys, history, count = 3, weightExponent = 2, 
 }
 
 /**
- * 週間チャレンジを「通常2種目 + バーバリアン1種目」で選出
- * 既存の加重ランダムロジックをそのまま利用し、足りない枠は他プールで補完する
+ * 種目の作成者ID（擬似含む）を返す。createdBy が無いレガシー/復元種目は
+ * key 自体を擬似作成者IDにして「単独作成者」として公平に参加させる。
+ * @param {Object} allExercises
+ * @param {string} key
+ * @returns {string}
+ */
+function getExerciseCreatorId(allExercises, key) {
+    const ex = allExercises && allExercises[key];
+    return (ex && ex.createdBy) ? ex.createdBy : `__ex_${key}`;
+}
+
+/**
+ * 選ばれた種目の作成者選出回数を+1した新しいマップを返す（非破壊）。
+ * @param {Object} base - 既存 creatorSelectionHistory
+ * @param {string[]} selectedKeys
+ * @param {Object} allExercises
+ * @returns {Object}
+ */
+function incrementCreatorHistory(base, selectedKeys, allExercises) {
+    const next = { ...(base || {}) };
+    (selectedKeys || []).forEach(key => {
+        const cid = getExerciseCreatorId(allExercises, key);
+        next[cid] = (next[cid] || 0) + 1;
+    });
+    return next;
+}
+
+/**
+ * 重み配列から加重ランダムで1件のインデックスを返す（末尾フォールバック付き）。
+ * @param {number[]} weights
+ * @returns {number} index（weights が空なら -1）
+ */
+function weightedPickIndex(weights) {
+    if (!weights.length) return -1;
+    const total = weights.reduce((s, w) => s + w, 0);
+    if (total <= 0) return weights.length - 1;
+    let rand = Math.random() * total;
+    for (let j = 0; j < weights.length; j++) {
+        rand -= weights[j];
+        if (rand <= 0) return j;
+    }
+    return weights.length - 1;
+}
+
+/**
+ * 2段階抽選（作成者→種目）で count 個を選出。
+ * Stage1: 作成者を「1/(作成者選出回数+1)^e × 作成者評価」で抽選（種目数は重みに入れない＝公平化の核）。
+ * Stage2: その作成者の候補種目を「1/(種目選出回数+1)^e × 種目評価」で1つ抽選。
+ * usedCreators に入っている作成者は候補から除外（同一作成者の重複回避）。候補が尽きたら緩和する。
+ * @param {string[]} candidateKeys
+ * @param {Object} allExercises
+ * @param {Object} history - 種目選出回数
+ * @param {Object} creatorHistory - 作成者選出回数
+ * @param {number} count
+ * @param {number} weightExponent
+ * @param {Object} exerciseRatings
+ * @param {Object} creatorData
+ * @param {Set<string>} usedCreators - 破壊的に更新（選ばれた作成者を追加）
+ * @returns {string[]}
+ */
+function selectExercisesTwoStage(candidateKeys, allExercises, history, creatorHistory, count, weightExponent, exerciseRatings, creatorData, usedCreators) {
+    if (candidateKeys.length <= count) return [...candidateKeys];
+
+    // 作成者ごとに種目をグルーピング
+    const byCreator = {};
+    candidateKeys.forEach(key => {
+        const cid = getExerciseCreatorId(allExercises, key);
+        (byCreator[cid] = byCreator[cid] || []).push(key);
+    });
+
+    const selected = [];
+    for (let i = 0; i < count; i++) {
+        // 未使用作成者の候補。尽きたら usedCreators を無視して緩和
+        let creatorIds = Object.keys(byCreator).filter(cid => byCreator[cid].length > 0 && !usedCreators.has(cid));
+        if (creatorIds.length === 0) {
+            creatorIds = Object.keys(byCreator).filter(cid => byCreator[cid].length > 0);
+        }
+        if (creatorIds.length === 0) break;
+
+        // Stage1: 作成者抽選
+        const creatorWeights = creatorIds.map(cid => {
+            const base = 1 / Math.pow((creatorHistory[cid] || 0) + 1, weightExponent);
+            // 擬似作成者(__ex_*)は creatorData に無く 1.0 になる
+            const crRating = calcCreatorRatingModifier(creatorData[cid] || null);
+            return Math.max(base * crRating, 1e-9);
+        });
+        const cIdx = weightedPickIndex(creatorWeights);
+        const creatorId = creatorIds[cIdx];
+
+        // Stage2: その作成者の種目を抽選
+        const keys = byCreator[creatorId];
+        const keyWeights = keys.map(key => {
+            const base = 1 / Math.pow((history[key] || 0) + 1, weightExponent);
+            const exRating = calcExerciseRatingModifier(exerciseRatings[key] || null);
+            return Math.max(base * exRating, 1e-9);
+        });
+        const kIdx = weightedPickIndex(keyWeights);
+        const chosen = keys[kIdx];
+
+        selected.push(chosen);
+        usedCreators.add(creatorId);
+        byCreator[creatorId] = keys.filter((_, idx) => idx !== kIdx); // 選んだ種目を除去
+    }
+    return selected;
+}
+
+/**
+ * 週間チャレンジを「通常n種目 + バーバリアン1種目」で選出。
+ * fairnessMode='two_stage'（既定）は作成者→種目の2段階抽選で作成者間の公平性を担保する。
+ * 'legacy' は従来の種目単位加重ランダム。足りない枠は残りプールから補完する。
  * @param {Object} allExercises - freeExercises 全体
  * @param {Object} history - { [key]: 選出回数 }
  * @param {number} weightExponent - 重み指数
  * @param {Object} [exerciseRatings={}] - 種目評価集計
  * @param {Object} [creatorData={}] - 作成者データ
- * @returns {string[]}
+ * @param {Object} [options={}] - { fairnessMode, creatorHistory, normalCount, barbarianCount, revealCount }
+ * @returns {string[]} 並び順は [基本normal..., barbarian, 木曜公開の追加normal...]（公開枠は末尾）
  */
-function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExponent = 2, exerciseRatings = {}, creatorData = {}) {
+function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExponent = 2, exerciseRatings = {}, creatorData = {}, options = {}) {
+    const {
+        fairnessMode = 'two_stage',
+        creatorHistory = {},
+        normalCount = 2,
+        barbarianCount = 1,
+        revealCount = 0, // 木曜に追加公開する normal 種目数（末尾に付与）。0=従来3種目
+    } = options;
+    const targetCount = normalCount + barbarianCount + revealCount;
+
     const allKeys = Object.keys(allExercises || {}).filter(key => !allExercises[key]?.excludeFromWeekly);
     if (allKeys.length === 0) return [];
 
     const normalKeys = allKeys.filter(key => !(allExercises[key] && allExercises[key].barbarian));
     const barbarianKeys = allKeys.filter(key => allExercises[key] && allExercises[key].barbarian);
 
-    const selectedNormal = selectWeeklyExercises(normalKeys, history, 2, weightExponent, exerciseRatings, creatorData);
-    const selectedBarbarian = selectWeeklyExercises(barbarianKeys, history, 1, weightExponent, exerciseRatings, creatorData);
+    const usedCreators = new Set();
+    const pickNormal = (pool, n) => fairnessMode === 'legacy'
+        ? selectWeeklyExercises(pool, history, n, weightExponent, exerciseRatings, creatorData)
+        : selectExercisesTwoStage(pool, allExercises, history, creatorHistory, n, weightExponent, exerciseRatings, creatorData, usedCreators);
+    const pickBarbarian = (pool, n) => fairnessMode === 'legacy'
+        ? selectWeeklyExercises(pool, history, n, weightExponent, exerciseRatings, creatorData)
+        : selectExercisesTwoStage(pool, allExercises, history, creatorHistory, n, weightExponent, exerciseRatings, creatorData, usedCreators);
 
-    const selectedSet = new Set([...selectedNormal, ...selectedBarbarian]);
+    // 基本枠: normal × normalCount + barbarian × barbarianCount
+    const selectedNormal = pickNormal(normalKeys, normalCount);
+    const selectedBarbarian = pickBarbarian(barbarianKeys, barbarianCount);
 
-    // 総数3を維持するため、枠不足時は残り全種目から補完
-    if (selectedSet.size < 3) {
-        const remainingKeys = allKeys.filter(key => !selectedSet.has(key));
-        const fallback = selectWeeklyExercises(remainingKeys, history, 3 - selectedSet.size, weightExponent, exerciseRatings, creatorData);
-        fallback.forEach(key => selectedSet.add(key));
+    // 順序を保持しつつ重複排除
+    const ordered = [];
+    const seen = new Set();
+    const pushUnique = (k) => { if (k && !seen.has(k)) { seen.add(k); ordered.push(k); } };
+    selectedNormal.forEach(pushUnique);
+    selectedBarbarian.forEach(pushUnique);
+
+    // 木曜公開枠: 未選出の normal から revealCount 個を選び「末尾」に付与
+    if (revealCount > 0) {
+        const remainingNormals = normalKeys.filter(key => !seen.has(key));
+        const revealPicks = pickNormal(remainingNormals, revealCount);
+        revealPicks.forEach(pushUnique);
     }
 
-    return Array.from(selectedSet);
+    // 総数不足時は残り全種目から補完（従来ロジック）。補完は末尾に足す
+    if (ordered.length < targetCount) {
+        const remainingKeys = allKeys.filter(key => !seen.has(key));
+        const fallback = selectWeeklyExercises(remainingKeys, history, targetCount - ordered.length, weightExponent, exerciseRatings, creatorData);
+        fallback.forEach(pushUnique);
+    }
+
+    return ordered;
+}
+
+/**
+ * 進行中の週の種目数が config の exerciseCount に満たない場合、
+ * 「既存種目は一切変えず」に不足ぶんの normal 種目を末尾へ追記する。
+ * 追記ぶんは木曜まで ？？？ 表示になる 4種目目として機能する。
+ * 途中で exerciseCount を 3→4 に切り替えても現在の週に反映させるための処理。
+ * @param {Object} data - weekly_challenge ドキュメントのデータ（破壊的に更新される）
+ * @returns {Promise<string[]>} 追記後の exercises 配列
+ */
+async function maybeUpgradeCurrentWeekExercises(data) {
+    const existing = Array.isArray(data.exercises) ? data.exercises : [];
+    try {
+        if (existing.length === 0) return existing; // 種目未設定の週は対象外
+
+        const cfg = await getWeeklyConfig();
+        const target = cfg.exerciseCount || 3;
+        if (existing.length >= target) return existing; // 既に足りている
+
+        if (!freeExercisesLoaded) await loadFreeExercises();
+        const need = target - existing.length;
+
+        // 追記候補は「除外でない・バーバリアンでない・未選出」の normal 種目
+        const normalPool = Object.keys(freeExercises).filter(k =>
+            freeExercises[k] && !freeExercises[k].excludeFromWeekly &&
+            !freeExercises[k].barbarian && !existing.includes(k));
+        if (normalPool.length === 0) return existing; // 追記できる normal がない
+
+        const weightExponent = cfg.weightExponent || 2;
+        const history = data.selectionHistory || {};
+        const creatorHistory = data.creatorSelectionHistory || {};
+        const fairnessMode = cfg.fairnessMode || 'two_stage';
+
+        let picks;
+        if (fairnessMode === 'legacy') {
+            picks = selectWeeklyExercises(normalPool, history, need, weightExponent);
+        } else {
+            // 既存3種目の作成者を除外シードにして、同一作成者の重複を避けつつ追記
+            const usedCreators = new Set(existing.map(k => getExerciseCreatorId(freeExercises, k)));
+            picks = selectExercisesTwoStage(normalPool, freeExercises, history, creatorHistory, need, weightExponent, {}, {}, usedCreators);
+        }
+        if (!picks || picks.length === 0) return existing;
+
+        const newExercises = [...existing, ...picks]; // 既存を先頭のまま末尾へ追記
+        const newHistory = { ...history };
+        picks.forEach(k => { newHistory[k] = (newHistory[k] || 0) + 1; });
+        const newCreatorHistory = incrementCreatorHistory(creatorHistory, picks, freeExercises);
+
+        await db.collection('settings_free').doc('weekly_challenge').set({
+            exercises: newExercises,
+            selectionHistory: newHistory,
+            creatorSelectionHistory: newCreatorHistory,
+            upgradedToCountAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        // ローカルの data / キャッシュへ反映
+        data.exercises = newExercises;
+        data.selectionHistory = newHistory;
+        data.creatorSelectionHistory = newCreatorHistory;
+        rankingCache.weekly = null; rankingCacheTime.weekly = null;
+        scoreCache.weekly = null; scoreCacheTime.weekly = null;
+        console.log('[週間チャレンジ] 既存週に種目を追記（既存は不変・木曜まで？？？）:', picks);
+        return newExercises;
+    } catch (e) {
+        console.warn('[週間チャレンジ] 種目数アップグレード失敗（既存のまま継続）:', e);
+        return existing;
+    }
 }
 
 /**
@@ -6114,11 +6493,14 @@ async function getOrUpdateWeeklyChallenge() {
 
             // 同じ週かどうか確認（1分の誤差許容）
             if (savedWeekStart && Math.abs(savedWeekStart.getTime() - weekStart.getTime()) < 60 * 1000) {
+                // exerciseCount を途中で増やした場合、既存種目を変えずに不足ぶんを追記
+                const upgradedExercises = await maybeUpgradeCurrentWeekExercises(data);
                 weeklyChallenge = {
                     weekStart,
                     weekEnd,
-                    exercises: data.exercises || [],
+                    exercises: upgradedExercises,
                     selectionHistory: data.selectionHistory || {},
+                    creatorSelectionHistory: data.creatorSelectionHistory || {},
                     isManualOverride: data.isManualOverride || false,
                     overrideLabel: data.overrideLabel || null
                 };
@@ -6155,6 +6537,7 @@ async function getOrUpdateWeeklyChallenge() {
         }
 
         const existingHistory = (doc.exists && doc.data().selectionHistory) ? doc.data().selectionHistory : {};
+        const existingCreatorHistory = (doc.exists && doc.data().creatorSelectionHistory) ? doc.data().creatorSelectionHistory : {};
 
         // 手動上書き設定を確認（管理者が事前に来週の種目を指定している場合）
         const overrideDoc = await db.collection('settings_free').doc('weekly_override').get();
@@ -6179,11 +6562,13 @@ async function getOrUpdateWeeklyChallenge() {
                     const selectedExercises = overrideData.exercises || [];
                     const newHistory = { ...existingHistory };
                     selectedExercises.forEach(key => { newHistory[key] = (newHistory[key] || 0) + 1; });
+                    const newCreatorHistory = incrementCreatorHistory(existingCreatorHistory, selectedExercises, freeExercises);
                     await db.collection('settings_free').doc('weekly_challenge').set({
                         weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
                         weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
                         exercises: selectedExercises,
                         selectionHistory: newHistory,
+                        creatorSelectionHistory: newCreatorHistory,
                         isManualOverride: true,
                         overrideLabel: overrideData.label || '特別イベント',
                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -6193,6 +6578,7 @@ async function getOrUpdateWeeklyChallenge() {
                         weekStart, weekEnd,
                         exercises: selectedExercises,
                         selectionHistory: newHistory,
+                        creatorSelectionHistory: newCreatorHistory,
                         isManualOverride: true,
                         overrideLabel: overrideData.label || '特別イベント'
                     };
@@ -6209,11 +6595,13 @@ async function getOrUpdateWeeklyChallenge() {
                 const selectedExercises = overrideData.exercises || [];
                 const newHistory = { ...existingHistory };
                 selectedExercises.forEach(key => { newHistory[key] = (newHistory[key] || 0) + 1; });
+                const newCreatorHistory = incrementCreatorHistory(existingCreatorHistory, selectedExercises, freeExercises);
                 await db.collection('settings_free').doc('weekly_challenge').set({
                     weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
                     weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
                     exercises: selectedExercises,
                     selectionHistory: newHistory,
+                    creatorSelectionHistory: newCreatorHistory,
                     isManualOverride: true,
                     overrideLabel: overrideData.label || '特別イベント',
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -6223,6 +6611,7 @@ async function getOrUpdateWeeklyChallenge() {
                     weekStart, weekEnd,
                     exercises: selectedExercises,
                     selectionHistory: newHistory,
+                    creatorSelectionHistory: newCreatorHistory,
                     isManualOverride: true,
                     overrideLabel: overrideData.label || '特別イベント'
                 };
@@ -6259,20 +6648,30 @@ async function getOrUpdateWeeklyChallenge() {
             existingHistory,
             weightExponent,
             exerciseRatings,
-            creatorDataMap
+            creatorDataMap,
+            {
+                fairnessMode: weeklyConfig.fairnessMode || 'two_stage',
+                creatorHistory: existingCreatorHistory,
+                normalCount: weeklyConfig.normalCount || 2,
+                barbarianCount: weeklyConfig.barbarianCount || 1,
+                // exerciseCount>=4 で木曜公開の追加normalを1枠付与（末尾）
+                revealCount: Math.max(0, (weeklyConfig.exerciseCount || 3) - 3),
+            }
         );
 
-        // 選出履歴を更新
+        // 選出履歴を更新（種目単位 + 作成者単位）
         const newHistory = { ...existingHistory };
         selectedExercises.forEach(key => {
             newHistory[key] = (newHistory[key] || 0) + 1;
         });
+        const newCreatorHistory = incrementCreatorHistory(existingCreatorHistory, selectedExercises, freeExercises);
 
         await db.collection('settings_free').doc('weekly_challenge').set({
             weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
             weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
             exercises: selectedExercises,
             selectionHistory: newHistory,
+            creatorSelectionHistory: newCreatorHistory,
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
@@ -6280,7 +6679,8 @@ async function getOrUpdateWeeklyChallenge() {
             weekStart,
             weekEnd,
             exercises: selectedExercises,
-            selectionHistory: newHistory
+            selectionHistory: newHistory,
+            creatorSelectionHistory: newCreatorHistory
         };
         weeklyChallengeLoaded = true;
 
@@ -6356,11 +6756,24 @@ function renderWeeklyChallengeInfo() {
     const dayNames = ['日','月','火','水','木','金','土'];
     const formatDate = (d) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${dayNames[d.getUTCDay()]})`;
 
+    const activeKeys = getActiveWeeklyKeys(weeklyChallenge.exercises);
+    const hiddenCount = weeklyChallenge.exercises.length - activeKeys.length;
+
+    // 4枠すべて表示。未解禁（木曜公開枠）は種目名を ？？？ でマスク表示。
     const exercisesHtml = weeklyChallenge.exercises.map(key => {
+        const isHidden = !activeKeys.includes(key);
+        if (isHidden) {
+            return `<div class="weekly-challenge-exercise-item weekly-reveal-teaser">🔒 ？？？<span class="reveal-note">木曜解禁</span></div>`;
+        }
         const ex = freeExercises[key];
         if (!ex) return '';
         return `<div class="weekly-challenge-exercise-item">🏋️ ${escapeHtml(ex.name)}</div>`;
     }).join('');
+
+    // 未解禁枠がある場合の補足
+    const teaserHtml = hiddenCount > 0
+        ? `<div class="weekly-reveal-hint">木曜に ？？？ が解禁！ 得点は4種目中の下位3種目の合計で競います。</div>`
+        : '';
 
     const nextWeekEndJST = new Date(weeklyChallenge.weekEnd.getTime() + JST_OFFSET_MS);
 
@@ -6373,9 +6786,85 @@ function renderWeeklyChallengeInfo() {
     infoEl.innerHTML = `
         <h3><i class="fa-solid fa-trophy"></i> 今週のチャレンジ${overrideBadge}</h3>
         <div class="weekly-challenge-period"><i class="fa-solid fa-calendar"></i> 第${weekNumber}週：${formatDate(monJST)} 〜 ${formatDate(friJST)}</div>
-        <div class="weekly-challenge-exercises">${exercisesHtml}</div>
+        <div class="weekly-challenge-exercises">${exercisesHtml}${teaserHtml}</div>
         <div class="weekly-challenge-next">次回発表: ${formatDate(nextWeekEndJST)} 17:00</div>
     `;
+}
+
+/**
+ * チャンプ予想ウィジェットを #weekly-challenge-info の直後に描画（Feature 4）。
+ * enablePrediction が有効なときのみ表示。締切（火曜24:00 JST）前は選択・提出可、以降はロック表示。
+ */
+async function renderPredictionWidget() {
+    if (currentMode !== 'weekly') return;
+    const info = document.getElementById('weekly-challenge-info');
+    if (!info || !weeklyChallenge || !currentUser) return;
+
+    let container = document.getElementById('weekly-prediction-widget');
+
+    const cfg = await getWeeklyConfig();
+    if (!cfg.enablePrediction) {
+        if (container) container.remove();
+        return;
+    }
+
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'weekly-prediction-widget';
+        container.className = 'weekly-prediction-widget';
+        info.parentNode.insertBefore(container, info.nextSibling);
+    }
+
+    const weekStartMs = weeklyChallenge.weekStart.getTime();
+    const [weeks, usersMap] = await Promise.all([getWeeklyPredictionsMap(), getUsersMap()]);
+    const myPred = (weeks[weekStartMs] && weeks[weekStartMs][currentUser.uid]) || '';
+    const open = isPredictionOpenJST();
+
+    // 候補ユーザー（自分含む全員）
+    const userEntries = Object.entries(usersMap)
+        .map(([uid, u]) => ({ uid, name: u.userName || u.email || 'Unknown' }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+
+    if (open) {
+        const options = ['<option value="">-- 優勝者を予想 --</option>']
+            .concat(userEntries.map(u => `<option value="${escapeHtml(u.uid)}" ${u.uid === myPred ? 'selected' : ''}>${escapeHtml(u.name)}</option>`))
+            .join('');
+        container.innerHTML = `
+            <div class="prediction-title"><i class="fa-solid fa-crystal-ball"></i> 今週のチャンプ予想 <span class="prediction-deadline">〜火曜締切</span></div>
+            <div class="prediction-controls">
+                <select id="prediction-select" class="prediction-select">${options}</select>
+                <button id="prediction-submit" class="prediction-submit">予想を保存</button>
+            </div>
+            <div id="prediction-status" class="prediction-status">${myPred ? '現在の予想: ' + escapeHtml((usersMap[myPred] && (usersMap[myPred].userName || usersMap[myPred].email)) || myPred) : '未提出'}</div>
+        `;
+        const submitBtn = container.querySelector('#prediction-submit');
+        submitBtn.addEventListener('click', async () => {
+            const sel = container.querySelector('#prediction-select');
+            const val = sel.value;
+            const statusEl = container.querySelector('#prediction-status');
+            if (!val) { statusEl.textContent = '予想する相手を選んでください'; return; }
+            submitBtn.disabled = true;
+            const ok = await saveMyPrediction(weekStartMs, val);
+            submitBtn.disabled = false;
+            statusEl.textContent = ok
+                ? '予想を保存しました: ' + ((usersMap[val] && (usersMap[val].userName || usersMap[val].email)) || val)
+                : '保存に失敗しました（締切を過ぎている可能性があります）';
+        });
+    } else {
+        // 締切後: 自分の予想と、全員の予想を読み取り専用で表示
+        const weekPreds = weeks[weekStartMs] || {};
+        const listHtml = userEntries
+            .filter(u => weekPreds[u.uid])
+            .map(u => {
+                const predName = (usersMap[weekPreds[u.uid]] && (usersMap[weekPreds[u.uid]].userName || usersMap[weekPreds[u.uid]].email)) || weekPreds[u.uid];
+                return `<li>${escapeHtml(u.name)} → <strong>${escapeHtml(predName)}</strong></li>`;
+            }).join('');
+        container.innerHTML = `
+            <div class="prediction-title"><i class="fa-solid fa-lock"></i> チャンプ予想（締切済み）</div>
+            <div class="prediction-status">${myPred ? 'あなたの予想: ' + escapeHtml((usersMap[myPred] && (usersMap[myPred].userName || usersMap[myPred].email)) || myPred) : 'あなたは未提出でした'}</div>
+            ${listHtml ? `<ul class="prediction-list">${listHtml}</ul>` : ''}
+        `;
+    }
 }
 
 // 週間ランキングの前回値をローカル保存するキー（週が変わったら破棄）
@@ -6431,7 +6920,9 @@ async function loadWeeklyRanking(forceRefresh = false) {
         return;
     }
 
-    const { weekStart, weekEnd, exercises } = weeklyChallenge;
+    const { weekStart, weekEnd } = weeklyChallenge;
+    // 木曜公開枠は解禁までランキングに出さない
+    const exercises = getActiveWeeklyKeys(weeklyChallenge.exercises);
 
     // メモリキャッシュが有効ならそれを使用
     if (!forceRefresh && rankingCache.weekly && rankingCacheTime.weekly && (now - rankingCacheTime.weekly < CACHE_DURATION)) {
@@ -6536,15 +7027,17 @@ async function getAllUsersScoresWeekly(forceRefresh = false) {
         }
 
         const { weekStart, weekEnd, exercises } = weeklyChallenge;
-        const exerciseKeys = exercises.filter(k => freeExercises[k]);
+        // 木曜公開枠を考慮したアクティブ種目のみを集計対象にする（木曜前は先頭3種目）
+        const exerciseKeys = getActiveWeeklyKeys(exercises).filter(k => freeExercises[k]);
 
-        // posts（今週分のみ）と users を並列取得（直列ウォーターフォール＋全期間スキャンを解消）
-        const [postsSnapshot, usersMap] = await Promise.all([
+        // posts（今週分のみ）と users・設定を並列取得（直列ウォーターフォール＋全期間スキャンを解消）
+        const [postsSnapshot, usersMap, weeklyConfig] = await Promise.all([
             db.collection('posts_free')
                 .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(weekStart))
                 .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(weekEnd))
                 .get(),
-            getUsersMap()
+            getUsersMap(),
+            getWeeklyConfig()
         ]);
         countReads(postsSnapshot.size);
 
@@ -6574,9 +7067,14 @@ async function getAllUsersScoresWeekly(forceRefresh = false) {
                     userName: usersData[userId] || 'Unknown',
                     exercises: {},
                     scores: {},
-                    totalScore: 0
+                    totalScore: 0,
+                    postedDays: new Set() // ストリーク算出用の平日インデックス
                 };
             }
+
+            // ストリーク用: 投稿した平日インデックスを記録
+            const dIdx = weekdayIndexJST(postDate);
+            if (dIdx >= 0) userRecords[userId].postedDays.add(dIdx);
 
             // バーバリアン方式: 最小値をベストとする、通常: 最大値をベストとする
             const isBarbarian = freeExercises[exerciseType] && freeExercises[exerciseType].barbarian;
@@ -6609,7 +7107,6 @@ async function getAllUsersScoresWeekly(forceRefresh = false) {
                     const val = user.exercises[exercise];
                     const pct = (val !== undefined && val > 0 && minVal !== Infinity) ? (minVal / val) * 100 : 0;
                     user.scores[exercise] = pct;
-                    user.totalScore += pct;
                 });
             } else {
                 // 通常方式: selfValue / maxValue * 100
@@ -6623,9 +7120,18 @@ async function getAllUsersScoresWeekly(forceRefresh = false) {
                     const val = user.exercises[exercise] || 0;
                     const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
                     user.scores[exercise] = pct;
-                    user.totalScore += pct;
                 });
             }
+        });
+
+        // 総合得点を集計（4種目以上のアクティブ時は下位3つ採用＝自分の最高%を1つ切り捨て）
+        // ストリーク加点が有効なら連続投稿日数に応じたボーナスを分離集計し、合計に加える
+        const streakEnabled = !!weeklyConfig.enableStreak;
+        Object.values(userRecords).forEach(user => {
+            const baseTotal = sumAdoptedScores(exerciseKeys.map(k => user.scores[k] || 0));
+            user.streakDays = longestConsecutiveDays(user.postedDays);
+            user.streakBonus = streakEnabled ? computeStreakBonus(user.streakDays, weeklyConfig) : 0;
+            user.totalScore = baseTotal + user.streakBonus;
         });
 
         scoreCache.weekly = userRecords;
@@ -6646,7 +7152,7 @@ async function loadWeeklyUserCheckboxes(forceRefresh = false) {
     try {
         setWeeklySimulatorControlsVisible(true);
         const usersScores = await getAllUsersScoresWeekly(forceRefresh);
-        const exerciseKeys = weeklyChallenge ? weeklyChallenge.exercises.filter(k => freeExercises[k]) : [];
+        const exerciseKeys = weeklyChallenge ? getActiveWeeklyKeys(weeklyChallenge.exercises).filter(k => freeExercises[k]) : [];
         weeklySimulatorBaseScores = usersScores;
         weeklySimulatorExerciseKeys = exerciseKeys;
 
@@ -6690,7 +7196,7 @@ async function loadWeeklyScoreChart(selectedUserIds, exerciseKeys, usersScores) 
         usersScores = await getAllUsersScoresWeekly(false);
     }
     if (!exerciseKeys) {
-        exerciseKeys = weeklyChallenge ? weeklyChallenge.exercises.filter(k => freeExercises[k]) : [];
+        exerciseKeys = weeklyChallenge ? getActiveWeeklyKeys(weeklyChallenge.exercises).filter(k => freeExercises[k]) : [];
     }
     weeklySimulatorBaseScores = usersScores;
     weeklySimulatorExerciseKeys = exerciseKeys;
@@ -6826,6 +7332,7 @@ async function initWeeklyMode() {
     updateWeeklyRulesTab();
     updateWeeklyGraphDropdown();
     renderWeeklyChallengeInfo();
+    renderPredictionWidget().catch(() => { /* 予想UIは任意機能。失敗しても本体に影響させない */ });
 
     // 現在の週の履歴を保存（チャンプ集計用）
     if (weeklyChallenge && weeklyChallenge.exercises.length > 0) {
@@ -6862,11 +7369,49 @@ function updateWeeklyPostDropdown() {
         return;
     }
 
+    // 4枠すべて表示。未解禁の木曜公開枠は ？？？ のロックカード（投稿不可）で表示する
+    const activeKeys = getActiveWeeklyKeys(weeklyChallenge.exercises);
     weeklyChallenge.exercises.forEach(key => {
+        if (!activeKeys.includes(key)) {
+            appendLockedPostItem(exercisesGrid);
+            return;
+        }
         const ex = freeExercises[key];
         if (!ex) return;
         appendPostItem(exercisesGrid, key, ex);
     });
+}
+
+/**
+ * 投稿タブに「木曜まで未解禁」の ？？？ ロックカードを追加する（クリック・投稿不可）。
+ * @param {HTMLElement} container
+ */
+function appendLockedPostItem(container) {
+    const item = document.createElement('div');
+    item.className = 'rule-item post-exercise-entry weekly-locked-entry';
+    item.setAttribute('aria-disabled', 'true');
+    item.innerHTML = `
+        <div class="post-exercise-entry-info">
+            <h3 class="post-entry-title"><i class="fa-solid fa-lock"></i> ？？？ <span class="locked-note">木曜解禁</span></h3>
+            <div class="locked-desc">木曜になると4種目目が解禁され、投稿できるようになります。</div>
+        </div>
+    `;
+    container.appendChild(item);
+}
+
+/**
+ * ルールタブに「木曜まで未解禁」の ？？？ ロックカードを追加する（種目名・ルールをマスク）。
+ * @param {HTMLElement} container
+ */
+function appendLockedRuleItem(container) {
+    const item = document.createElement('div');
+    item.className = 'rule-item weekly-locked-entry';
+    item.setAttribute('aria-disabled', 'true');
+    item.innerHTML = `
+        <h3><i class="fa-solid fa-lock"></i> ？？？ <span class="locked-note">木曜解禁</span></h3>
+        <p class="rule-description locked-desc">木曜に解禁される4種目目です。ルールは解禁までのお楽しみ。</p>
+    `;
+    container.appendChild(item);
 }
 
 /**
@@ -6921,15 +7466,20 @@ async function updateWeeklyRulesTab() {
         if (weekendBanner) weekendBanner.remove();
     }
 
-    // 評価データ・投稿実績・自分の評価を取得
-    const exerciseKeys = weeklyChallenge.exercises;
+    // 評価データ・投稿実績・自分の評価を取得（未解禁の木曜公開枠は ？？？ 表示）
+    const activeKeys = getActiveWeeklyKeys(weeklyChallenge.exercises);
     const [ratingSummaries, userPostedKeys, userRatingMap] = await Promise.all([
-        getExerciseRatingSummaries(exerciseKeys),
+        getExerciseRatingSummaries(activeKeys),
         getUserPostedExerciseKeys('free'),
-        getUserExerciseRatings(exerciseKeys)
+        getUserExerciseRatings(activeKeys)
     ]);
 
-    exerciseKeys.forEach(key => {
+    // 4枠すべて表示。未解禁枠は名前・ルールを ？？？ でマスク（評価ボタンなし）
+    weeklyChallenge.exercises.forEach(key => {
+        if (!activeKeys.includes(key)) {
+            appendLockedRuleItem(rulesList);
+            return;
+        }
         const ex = freeExercises[key];
         if (!ex) return;
         const ratingData = ratingSummaries[key] || null;
@@ -6967,7 +7517,7 @@ function updateWeeklyGraphDropdown() {
 
     if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) return;
 
-    weeklyChallenge.exercises.forEach(key => {
+    getActiveWeeklyKeys(weeklyChallenge.exercises).forEach(key => {
         const ex = freeExercises[key];
         if (!ex) return;
         const option = document.createElement('option');
@@ -7059,6 +7609,9 @@ async function buildWeeklyChampionPayload(weeklyData, options = {}) {
     const exerciseKeys = (exercises || []).filter(k => freeExercises[k]);
     if (exerciseKeys.length === 0) return null;
 
+    const weeklyConfig = await getWeeklyConfig();
+    const streakEnabled = !!weeklyConfig.enableStreak;
+
     const postsSnapshot = externalPostsSnapshot || await db.collection('posts_free').get();
     const usersSnapshot = externalUsersSnapshot || await db.collection('users').get();
 
@@ -7088,9 +7641,13 @@ async function buildWeeklyChampionPayload(weeklyData, options = {}) {
                 userName: usersData[userId] || post.userEmail || 'Unknown',
                 exercises: {},
                 scores: {},
-                totalScore: 0
+                totalScore: 0,
+                postedDays: new Set()
             };
         }
+
+        const dIdx = weekdayIndexJST(postDate);
+        if (dIdx >= 0) userRecords[userId].postedDays.add(dIdx);
 
         // バーバリアン方式: 最小値をベストとする
         const isBarbarian = freeExercises[exerciseType] && freeExercises[exerciseType].barbarian;
@@ -7177,8 +7734,14 @@ async function buildWeeklyChampionPayload(weeklyData, options = {}) {
                 percent = bestValue > 0 ? (userValue / bestValue) * 100 : 0;
             }
             user.scores[exerciseKey] = percent;
-            user.totalScore += percent;
         });
+    });
+
+    // 総合得点を集計（確定週は全種目対象。4種目以上なら下位3つ採用＝最高%を1つ切り捨て）＋ストリーク加点
+    Object.values(userRecords).forEach(user => {
+        user.streakDays = longestConsecutiveDays(user.postedDays);
+        user.streakBonus = streakEnabled ? computeStreakBonus(user.streakDays, weeklyConfig) : 0;
+        user.totalScore = sumAdoptedScores(exerciseKeys.map(k => user.scores[k] || 0)) + user.streakBonus;
     });
 
     const championCandidates = Object.entries(userRecords)
@@ -7300,6 +7863,17 @@ async function finalizeWeeklyChampion(weeklyData, options = {}) {
         );
         if (!championPayload) return;
 
+        // チャンプ予想の的中集計（enablePrediction 有効時のみ意味を持つ。無効でも安全に空集計）
+        let predictionResults = null;
+        try {
+            const { predictions, correctUserIds } = await computePredictionResults(weekStart.getTime(), championPayload.champUserId);
+            if (Object.keys(predictions).length > 0) {
+                predictionResults = { predictions, correctUserIds };
+            }
+        } catch (e) {
+            console.warn('[チャンプ予想] 集計スキップ:', e);
+        }
+
         const baseData = {
             year,
             weekNumber,
@@ -7315,6 +7889,7 @@ async function finalizeWeeklyChampion(weeklyData, options = {}) {
             scoringBase: 'exercise_top_is_100',
             exerciseTop5: championPayload.exerciseTop5,
             championBreakdown: championPayload.championBreakdown,
+            predictionResults, // { predictions:{uid:predictedUid}, correctUserIds:[] } | null
             detailGeneratedAt: firebase.firestore.FieldValue.serverTimestamp(),
             detailSource
         };

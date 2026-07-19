@@ -2269,6 +2269,126 @@ body.mode-interval header h1::after {
     text-align: right;
 }
 
+/* 木曜公開枠のティザー（4種目目未解禁） */
+.weekly-challenge-exercise-item.weekly-reveal-teaser {
+    border-left-color: #9b59b6;
+    background: repeating-linear-gradient(45deg, #faf5ff, #faf5ff 8px, #f3e8ff 8px, #f3e8ff 16px);
+    color: #6b3fa0;
+    font-size: 0.9em;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.weekly-reveal-teaser .reveal-note,
+.locked-note {
+    font-size: 0.72em;
+    font-weight: 700;
+    color: #fff;
+    background: #9b59b6;
+    border-radius: 999px;
+    padding: 1px 8px;
+    margin-left: 8px;
+    white-space: nowrap;
+}
+.weekly-reveal-hint {
+    margin-top: 6px;
+    font-size: 0.8em;
+    color: #6b3fa0;
+    background: #faf5ff;
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+/* 投稿タブ／ルールタブの ？？？ ロックカード（木曜まで未解禁） */
+.weekly-locked-entry {
+    background: repeating-linear-gradient(45deg, #f8f9fb, #f8f9fb 10px, #eef1f6 10px, #eef1f6 20px);
+    border-left: 4px solid #9b59b6;
+    color: #7a6b93;
+    cursor: not-allowed;
+    opacity: 0.9;
+}
+.weekly-locked-entry h3,
+.weekly-locked-entry .post-entry-title {
+    color: #6b3fa0;
+    letter-spacing: 0.05em;
+}
+.weekly-locked-entry .locked-desc {
+    font-size: 0.82em;
+    color: #8a7ba6;
+    margin-top: 4px;
+}
+
+/* 連続投稿ストリークのバッジ（得点タブ） */
+.streak-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: linear-gradient(135deg, #ff9a44, #ff5e62);
+    color: #fff;
+    font-size: 0.72em;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 999px;
+    margin-left: 6px;
+    white-space: nowrap;
+}
+
+/* チャンプ予想ウィジェット */
+.weekly-prediction-widget {
+    background: linear-gradient(135deg, #f5f3ff, #eef2ff);
+    border: 1px solid #ddd6fe;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 10px 0;
+}
+.prediction-title {
+    font-weight: 700;
+    color: #5b21b6;
+    margin-bottom: 8px;
+    font-size: 0.95em;
+}
+.prediction-deadline {
+    font-size: 0.78em;
+    color: #9b8cc4;
+    font-weight: 600;
+    margin-left: 4px;
+}
+.prediction-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.prediction-select {
+    flex: 1 1 160px;
+    padding: 7px 10px;
+    border: 1px solid #cbc3e6;
+    border-radius: 8px;
+    font-size: 0.9em;
+    background: #fff;
+}
+.prediction-submit {
+    padding: 7px 16px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+}
+.prediction-submit:disabled { opacity: 0.6; cursor: default; }
+.prediction-status {
+    margin-top: 8px;
+    font-size: 0.85em;
+    color: #6b5b95;
+}
+.prediction-list {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    font-size: 0.85em;
+    color: #4c3f6b;
+}
+.prediction-list li { margin: 2px 0; }
+
 /* 週間チャレンジのランキング種目ヘッダー強調 */
 body.mode-weekly .ranking-category h3 {
     color: #e67e00;
