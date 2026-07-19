@@ -112,21 +112,99 @@ function selectWeeklyExercises(allKeys, ctx, count, weightExponent) {
   return selected;
 }
 
-function selectWithBarbarianSlot(ctx, weightExponent) {
+// ---- 2段階抽選（作成者→種目） app.js と同一ロジック ----------------------
+function getExerciseCreatorId(exercises, key) {
+  const ex = exercises && exercises[key];
+  return ex && ex.createdBy ? ex.createdBy : `__ex_${key}`;
+}
+
+function weightedPickIndex(weights) {
+  if (!weights.length) return -1;
+  const total = weights.reduce((s, w) => s + w, 0);
+  if (total <= 0) return weights.length - 1;
+  let rand = Math.random() * total;
+  for (let j = 0; j < weights.length; j++) {
+    rand -= weights[j];
+    if (rand <= 0) return j;
+  }
+  return weights.length - 1;
+}
+
+function selectExercisesTwoStage(candidateKeys, ctx, count, weightExponent, usedCreators) {
+  const { exercises, history, creatorHistory, exerciseRatings, creatorData } = ctx;
+  if (candidateKeys.length <= count) return [...candidateKeys];
+
+  const byCreator = {};
+  candidateKeys.forEach((key) => {
+    const cid = getExerciseCreatorId(exercises, key);
+    (byCreator[cid] = byCreator[cid] || []).push(key);
+  });
+
+  const selected = [];
+  for (let i = 0; i < count; i++) {
+    let creatorIds = Object.keys(byCreator).filter((cid) => byCreator[cid].length > 0 && !usedCreators.has(cid));
+    if (creatorIds.length === 0) {
+      creatorIds = Object.keys(byCreator).filter((cid) => byCreator[cid].length > 0);
+    }
+    if (creatorIds.length === 0) break;
+
+    const creatorWeights = creatorIds.map((cid) => {
+      const base = 1 / Math.pow((creatorHistory[cid] || 0) + 1, weightExponent);
+      const crRating = calcCreatorRatingModifier(creatorData[cid] || null);
+      return Math.max(base * crRating, 1e-9);
+    });
+    const creatorId = creatorIds[weightedPickIndex(creatorWeights)];
+
+    const keys = byCreator[creatorId];
+    const keyWeights = keys.map((key) => {
+      const base = 1 / Math.pow((history[key] || 0) + 1, weightExponent);
+      const exRating = calcExerciseRatingModifier(exerciseRatings[key] || null);
+      return Math.max(base * exRating, 1e-9);
+    });
+    const kIdx = weightedPickIndex(keyWeights);
+    selected.push(keys[kIdx]);
+    usedCreators.add(creatorId);
+    byCreator[creatorId] = keys.filter((_, idx) => idx !== kIdx);
+  }
+  return selected;
+}
+
+function selectWithBarbarianSlot(ctx, weightExponent, options = {}) {
   const { exercises } = ctx;
+  const { fairnessMode = 'two_stage', normalCount = 2, barbarianCount = 1, revealCount = 0 } = options;
+  const targetCount = normalCount + barbarianCount + revealCount;
+
   const allKeys = Object.keys(exercises).filter((k) => !exercises[k]?.excludeFromWeekly);
   if (allKeys.length === 0) return [];
   const normalKeys = allKeys.filter((k) => !exercises[k]?.barbarian);
   const barbarianKeys = allKeys.filter((k) => exercises[k]?.barbarian);
 
-  const selectedNormal = selectWeeklyExercises(normalKeys, ctx, 2, weightExponent);
-  const selectedBarbarian = selectWeeklyExercises(barbarianKeys, ctx, 1, weightExponent);
-  const set = new Set([...selectedNormal, ...selectedBarbarian]);
-  if (set.size < 3) {
-    const rest = allKeys.filter((k) => !set.has(k));
-    selectWeeklyExercises(rest, ctx, 3 - set.size, weightExponent).forEach((k) => set.add(k));
+  const usedCreators = new Set();
+  const pick = (pool, n) =>
+    fairnessMode === 'legacy'
+      ? selectWeeklyExercises(pool, ctx, n, weightExponent)
+      : selectExercisesTwoStage(pool, ctx, n, weightExponent, usedCreators);
+
+  const selectedNormal = pick(normalKeys, normalCount);
+  const selectedBarbarian = pick(barbarianKeys, barbarianCount);
+
+  const ordered = [];
+  const seen = new Set();
+  const pushUnique = (k) => { if (k && !seen.has(k)) { seen.add(k); ordered.push(k); } };
+  selectedNormal.forEach(pushUnique);
+  selectedBarbarian.forEach(pushUnique);
+
+  // 木曜公開枠: 未選出の normal から revealCount 個を末尾に付与
+  if (revealCount > 0) {
+    const remainingNormals = normalKeys.filter((k) => !seen.has(k));
+    pick(remainingNormals, revealCount).forEach(pushUnique);
   }
-  return Array.from(set);
+
+  if (ordered.length < targetCount) {
+    const rest = allKeys.filter((k) => !seen.has(k));
+    selectWeeklyExercises(rest, ctx, targetCount - ordered.length, weightExponent).forEach(pushUnique);
+  }
+  return ordered;
 }
 
 // ---- メイン --------------------------------------------------------------
@@ -158,7 +236,16 @@ async function main() {
     process.exit(1);
   }
   const history = (wcDoc.exists && wcDoc.data().selectionHistory) || {};
-  const weightExponent = (cfgDoc.exists && cfgDoc.data().weightExponent) || 2;
+  const creatorHistory = (wcDoc.exists && wcDoc.data().creatorSelectionHistory) || {};
+  const cfg = (cfgDoc.exists && cfgDoc.data()) || {};
+  const weightExponent = cfg.weightExponent || 2;
+  const selectOptions = {
+    fairnessMode: cfg.fairnessMode || 'two_stage',
+    normalCount: cfg.normalCount || 2,
+    barbarianCount: cfg.barbarianCount || 1,
+    // exerciseCount>=4 で木曜公開の追加normalを末尾に付与
+    revealCount: Math.max(0, (cfg.exerciseCount || 3) - 3),
+  };
 
   const exerciseRatings = {};
   ratingsSnap.forEach((d) => {
@@ -174,8 +261,8 @@ async function main() {
     };
   });
 
-  const ctx = { exercises, history, exerciseRatings, creatorData };
-  const selected = selectWithBarbarianSlot(ctx, weightExponent);
+  const ctx = { exercises, history, creatorHistory, exerciseRatings, creatorData };
+  const selected = selectWithBarbarianSlot(ctx, weightExponent, selectOptions);
   const targetWeekStart = upcomingWeekStartUTC();
 
   const dn = ['日', '月', '火', '水', '木', '金', '土'];

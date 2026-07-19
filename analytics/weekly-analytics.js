@@ -124,6 +124,24 @@ function applyCompetitionRank(arr, scoreKey = 'totalScore') {
 }
 
 /**
+ * 週間総合得点の集計。4種目以上なら「下位3つ採用（最高%を1つ切り捨て）」。
+ * app.js の sumAdoptedScores と同一ロジック。
+ */
+function sumAdoptedScores(scoreValues, keep = 3) {
+  const vals = (scoreValues || []).map((v) => (typeof v === 'number' && isFinite(v) ? v : 0));
+  if (vals.length <= keep) return vals.reduce((s, v) => s + v, 0);
+  const asc = [...vals].sort((a, b) => a - b);
+  return asc.slice(0, keep).reduce((s, v) => s + v, 0);
+}
+
+/**
+ * 採用される種目数（下位3つ採用の上限）。perfect 判定などに使う。
+ */
+function adoptedKeyCount(totalKeys, keep = 3) {
+  return Math.min(totalKeys, keep);
+}
+
+/**
  * 1週分の週間チャレンジ得点を計算する（app.js の getAllUsersScoresWeekly / buildWeeklyChampionPayload と同等）
  * @returns Map<uid, { ex:{key:bestValue}, scores:{key:pct}, totalScore }>
  */
@@ -165,7 +183,6 @@ function computeWeekRecords(posts, exByKey, weekStartMs, weekEndMs, exerciseKeys
         const v = r.ex[key];
         const pct = v !== undefined && v > 0 && minVal !== Infinity ? (minVal / v) * 100 : 0;
         r.scores[key] = pct;
-        r.totalScore += pct;
       }
       exerciseLeader[key] = leaderUid;
     } else {
@@ -182,10 +199,13 @@ function computeWeekRecords(posts, exByKey, weekStartMs, weekEndMs, exerciseKeys
         const v = r.ex[key] || 0;
         const pct = maxVal > 0 ? (v / maxVal) * 100 : 0;
         r.scores[key] = pct;
-        r.totalScore += pct;
       }
       exerciseLeader[key] = leaderUid;
     }
+  }
+  // 総合得点を集計（4種目以上は下位3つ採用＝最高%を1つ切り捨て）
+  for (const r of rec.values()) {
+    r.totalScore = sumAdoptedScores(keys.map((k) => r.scores[k] || 0));
   }
   return { rec, exerciseLeader, keys };
 }
@@ -333,7 +353,7 @@ function buildWeeklyChallenge(ds, exByKey, nameOf) {
       totalScore: round(r.totalScore, 1),
       doneCount: Object.keys(r.ex).length,
       exerciseCount: keys.length,
-      perfect: keys.length > 0 && Math.abs(r.totalScore - keys.length * 100) < 0.5,
+      perfect: keys.length > 0 && Math.abs(r.totalScore - adoptedKeyCount(keys.length) * 100) < 0.5,
       perExercise,
     });
   }
@@ -377,7 +397,7 @@ function buildWeeklyChallenge(ds, exByKey, nameOf) {
     isFinishedWeek: !!target.decided, // 金曜終了済みの「総決算」週か（進行中の今週なら false）
     isManualOverride: !!target.isManualOverride,
     overrideLabel: target.overrideLabel || null,
-    maxScore: keys.length * 100,
+    maxScore: adoptedKeyCount(keys.length) * 100,
     exercises,
     champion: leader
       ? { userName: leader.userName, totalScore: leader.totalScore, perfect: leader.perfect, doneCount: leader.doneCount }
