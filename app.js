@@ -6012,26 +6012,36 @@ function isWeekdayJST(date) {
     return jstDayOfWeek >= 1 && jstDayOfWeek <= 5;
 }
 
+// 4種目目（？？？ 枠）の解禁タイミング: 水曜 13:00 JST
+const REVEAL_DOW_JST = 3;   // 0=日, 1=月, 2=火, 3=水, ...
+const REVEAL_HOUR_JST = 13; // 13時（JST）
+
 /**
- * 指定日時が「その週の木曜以降(JST)」か判定する。
- * 週は日曜17:00 JST 起点。木曜公開枠(4種目目)の解禁判定に使う。
- * 月=1..土=6, 日=0 のうち、木(4)・金(5)・土(6) を「木曜以降」とみなす
- * （週の平日は月〜金なので、実質 木・金 が対象。土曜は集計上 weekday 外だが解禁済み扱い）。
+ * 4種目目（？？？ 枠）の解禁時刻に達しているかを判定する。
+ * 解禁は「水曜 13:00 JST」。週は日曜17:00 JST 起点なので、
+ * 解禁区間は 水13:00 〜 次の日曜17:00（＝そのまま週末まで解禁状態）。
+ *  - 日(0): 17:00より前はまだ前の週の続き＝解禁済み / 17:00以降は新しい週の開始＝未解禁
+ *  - 月(1)・火(2): 未解禁
+ *  - 水(3): 13:00以降で解禁
+ *  - 木(4)・金(5)・土(6): 解禁済み
  * @param {Date} [date=new Date()]
  * @returns {boolean}
  */
-function isThursdayOrLaterJST(date = new Date()) {
+function isRevealUnlockedJST(date = new Date()) {
     const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
     const jstDate = new Date(date.getTime() + JST_OFFSET_MS);
-    const dow = jstDate.getUTCDay(); // 0=日, 1=月, ..., 6=土
-    // 週の起点は日曜17:00。木(4)・金(5)・土(6) を解禁とする（日〜水は未解禁）
-    return dow >= 4 && dow <= 6;
+    const dow = jstDate.getUTCDay();   // 0=日, 1=月, ..., 6=土
+    const hour = jstDate.getUTCHours();
+    if (dow === 0) return hour < 17;   // 日曜17:00で週が切り替わる（それ以前は前週の解禁済み状態）
+    if (dow < REVEAL_DOW_JST) return false;                       // 月・火
+    if (dow === REVEAL_DOW_JST) return hour >= REVEAL_HOUR_JST;   // 水は13時以降
+    return true;                                                   // 木・金・土
 }
 
 /**
  * 週間チャレンジの「今アクティブな種目キー」を返す。
  * - 3種目以下の週: 全種目。
- * - 4種目以上の週: 先頭3種目は常時アクティブ。4種目目以降(末尾)は木曜(JST)まで非公開。
+ * - 4種目以上の週: 先頭3種目は常時アクティブ。4種目目以降(末尾)は水曜13:00 JST まで非公開。
  * @param {string[]} exercises - weeklyChallenge.exercises
  * @param {Date} [now=new Date()]
  * @returns {string[]}
@@ -6039,7 +6049,7 @@ function isThursdayOrLaterJST(date = new Date()) {
 function getActiveWeeklyKeys(exercises, now = new Date()) {
     const list = Array.isArray(exercises) ? exercises : [];
     if (list.length <= 3) return list;
-    return isThursdayOrLaterJST(now) ? list : list.slice(0, 3);
+    return isRevealUnlockedJST(now) ? list : list.slice(0, 3);
 }
 
 // ====================================================================
@@ -6177,7 +6187,7 @@ async function getWeeklyConfig() {
         fairnessMode: 'two_stage', // 'two_stage'（作成者公平）| 'legacy'（旧・種目単位）
         normalCount: 2,
         barbarianCount: 1,
-        exerciseCount: 4,          // 3=従来 / 4=木曜に4種目目追加・下位3採用（4種目目は木曜まで？？？表示）
+        exerciseCount: 4,          // 3=従来 / 4=水曜13時に4種目目追加・下位3採用（それまで？？？表示）
         enableStreak: false,       // 連続投稿ストリーク加点
         streakBonusPerDay: 3,      // 1連続日あたりの加点
         streakBonusCap: 15,        // ストリーク加点の上限
@@ -6354,7 +6364,7 @@ function selectExercisesTwoStage(candidateKeys, allExercises, history, creatorHi
  * @param {Object} [exerciseRatings={}] - 種目評価集計
  * @param {Object} [creatorData={}] - 作成者データ
  * @param {Object} [options={}] - { fairnessMode, creatorHistory, normalCount, barbarianCount, revealCount }
- * @returns {string[]} 並び順は [基本normal..., barbarian, 木曜公開の追加normal...]（公開枠は末尾）
+ * @returns {string[]} 並び順は [基本normal..., barbarian, 水曜公開の追加normal...]（公開枠は末尾）
  */
 function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExponent = 2, exerciseRatings = {}, creatorData = {}, options = {}) {
     const {
@@ -6362,7 +6372,7 @@ function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExp
         creatorHistory = {},
         normalCount = 2,
         barbarianCount = 1,
-        revealCount = 0, // 木曜に追加公開する normal 種目数（末尾に付与）。0=従来3種目
+        revealCount = 0, // 水曜13時に追加公開する normal 種目数（末尾に付与）。0=従来3種目
     } = options;
     const targetCount = normalCount + barbarianCount + revealCount;
 
@@ -6391,7 +6401,7 @@ function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExp
     selectedNormal.forEach(pushUnique);
     selectedBarbarian.forEach(pushUnique);
 
-    // 木曜公開枠: 未選出の normal から revealCount 個を選び「末尾」に付与
+    // 水曜公開枠: 未選出の normal から revealCount 個を選び「末尾」に付与
     if (revealCount > 0) {
         const remainingNormals = normalKeys.filter(key => !seen.has(key));
         const revealPicks = pickNormal(remainingNormals, revealCount);
@@ -6411,7 +6421,7 @@ function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExp
 /**
  * 進行中の週の種目数が config の exerciseCount に満たない場合、
  * 「既存種目は一切変えず」に不足ぶんの normal 種目を末尾へ追記する。
- * 追記ぶんは木曜まで ？？？ 表示になる 4種目目として機能する。
+ * 追記ぶんは水曜13時まで ？？？ 表示になる 4種目目として機能する。
  * 途中で exerciseCount を 3→4 に切り替えても現在の週に反映させるための処理。
  * @param {Object} data - weekly_challenge ドキュメントのデータ（破壊的に更新される）
  * @returns {Promise<string[]>} 追記後の exercises 配列
@@ -6467,7 +6477,7 @@ async function maybeUpgradeCurrentWeekExercises(data) {
         data.creatorSelectionHistory = newCreatorHistory;
         rankingCache.weekly = null; rankingCacheTime.weekly = null;
         scoreCache.weekly = null; scoreCacheTime.weekly = null;
-        console.log('[週間チャレンジ] 既存週に種目を追記（既存は不変・木曜まで？？？）:', picks);
+        console.log('[週間チャレンジ] 既存週に種目を追記（既存は不変・水曜13時まで？？？）:', picks);
         return newExercises;
     } catch (e) {
         console.warn('[週間チャレンジ] 種目数アップグレード失敗（既存のまま継続）:', e);
@@ -6654,7 +6664,7 @@ async function getOrUpdateWeeklyChallenge() {
                 creatorHistory: existingCreatorHistory,
                 normalCount: weeklyConfig.normalCount || 2,
                 barbarianCount: weeklyConfig.barbarianCount || 1,
-                // exerciseCount>=4 で木曜公開の追加normalを1枠付与（末尾）
+                // exerciseCount>=4 で水曜公開の追加normalを1枠付与（末尾）
                 revealCount: Math.max(0, (weeklyConfig.exerciseCount || 3) - 3),
             }
         );
@@ -6759,11 +6769,11 @@ function renderWeeklyChallengeInfo() {
     const activeKeys = getActiveWeeklyKeys(weeklyChallenge.exercises);
     const hiddenCount = weeklyChallenge.exercises.length - activeKeys.length;
 
-    // 4枠すべて表示。未解禁（木曜公開枠）は種目名を ？？？ でマスク表示。
+    // 4枠すべて表示。未解禁（水曜公開枠）は種目名を ？？？ でマスク表示。
     const exercisesHtml = weeklyChallenge.exercises.map(key => {
         const isHidden = !activeKeys.includes(key);
         if (isHidden) {
-            return `<div class="weekly-challenge-exercise-item weekly-reveal-teaser">🔒 ？？？<span class="reveal-note">木曜解禁</span></div>`;
+            return `<div class="weekly-challenge-exercise-item weekly-reveal-teaser">🔒 ？？？<span class="reveal-note">水曜13時解禁</span></div>`;
         }
         const ex = freeExercises[key];
         if (!ex) return '';
@@ -6772,7 +6782,7 @@ function renderWeeklyChallengeInfo() {
 
     // 未解禁枠がある場合の補足
     const teaserHtml = hiddenCount > 0
-        ? `<div class="weekly-reveal-hint">木曜に ？？？ が解禁！ 得点は4種目中の下位3種目の合計で競います。</div>`
+        ? `<div class="weekly-reveal-hint">水曜13時に ？？？ が解禁！ 得点は4種目中の下位3種目の合計で競います。</div>`
         : '';
 
     const nextWeekEndJST = new Date(weeklyChallenge.weekEnd.getTime() + JST_OFFSET_MS);
@@ -6921,7 +6931,7 @@ async function loadWeeklyRanking(forceRefresh = false) {
     }
 
     const { weekStart, weekEnd } = weeklyChallenge;
-    // 木曜公開枠は解禁までランキングに出さない
+    // 水曜公開枠は解禁までランキングに出さない
     const exercises = getActiveWeeklyKeys(weeklyChallenge.exercises);
 
     // メモリキャッシュが有効ならそれを使用
@@ -7027,7 +7037,7 @@ async function getAllUsersScoresWeekly(forceRefresh = false) {
         }
 
         const { weekStart, weekEnd, exercises } = weeklyChallenge;
-        // 木曜公開枠を考慮したアクティブ種目のみを集計対象にする（木曜前は先頭3種目）
+        // 水曜公開枠を考慮したアクティブ種目のみを集計対象にする（解禁前は先頭3種目）
         const exerciseKeys = getActiveWeeklyKeys(exercises).filter(k => freeExercises[k]);
 
         // posts（今週分のみ）と users・設定を並列取得（直列ウォーターフォール＋全期間スキャンを解消）
@@ -7369,7 +7379,7 @@ function updateWeeklyPostDropdown() {
         return;
     }
 
-    // 4枠すべて表示。未解禁の木曜公開枠は ？？？ のロックカード（投稿不可）で表示する
+    // 4枠すべて表示。未解禁の水曜公開枠は ？？？ のロックカード（投稿不可）で表示する
     const activeKeys = getActiveWeeklyKeys(weeklyChallenge.exercises);
     weeklyChallenge.exercises.forEach(key => {
         if (!activeKeys.includes(key)) {
@@ -7383,7 +7393,7 @@ function updateWeeklyPostDropdown() {
 }
 
 /**
- * 投稿タブに「木曜まで未解禁」の ？？？ ロックカードを追加する（クリック・投稿不可）。
+ * 投稿タブに「水曜13:00 JST まで未解禁」の ？？？ ロックカードを追加する（クリック・投稿不可）。
  * @param {HTMLElement} container
  */
 function appendLockedPostItem(container) {
@@ -7392,15 +7402,15 @@ function appendLockedPostItem(container) {
     item.setAttribute('aria-disabled', 'true');
     item.innerHTML = `
         <div class="post-exercise-entry-info">
-            <h3 class="post-entry-title"><i class="fa-solid fa-lock"></i> ？？？ <span class="locked-note">木曜解禁</span></h3>
-            <div class="locked-desc">木曜になると4種目目が解禁され、投稿できるようになります。</div>
+            <h3 class="post-entry-title"><i class="fa-solid fa-lock"></i> ？？？ <span class="locked-note">水曜13時解禁</span></h3>
+            <div class="locked-desc">水曜13時になると4種目目が解禁され、投稿できるようになります。</div>
         </div>
     `;
     container.appendChild(item);
 }
 
 /**
- * ルールタブに「木曜まで未解禁」の ？？？ ロックカードを追加する（種目名・ルールをマスク）。
+ * ルールタブに「水曜13:00 JST まで未解禁」の ？？？ ロックカードを追加する（種目名・ルールをマスク）。
  * @param {HTMLElement} container
  */
 function appendLockedRuleItem(container) {
@@ -7408,8 +7418,8 @@ function appendLockedRuleItem(container) {
     item.className = 'rule-item weekly-locked-entry';
     item.setAttribute('aria-disabled', 'true');
     item.innerHTML = `
-        <h3><i class="fa-solid fa-lock"></i> ？？？ <span class="locked-note">木曜解禁</span></h3>
-        <p class="rule-description locked-desc">木曜に解禁される4種目目です。ルールは解禁までのお楽しみ。</p>
+        <h3><i class="fa-solid fa-lock"></i> ？？？ <span class="locked-note">水曜13時解禁</span></h3>
+        <p class="rule-description locked-desc">水曜13時に解禁される4種目目です。ルールは解禁までのお楽しみ。</p>
     `;
     container.appendChild(item);
 }
@@ -7466,7 +7476,7 @@ async function updateWeeklyRulesTab() {
         if (weekendBanner) weekendBanner.remove();
     }
 
-    // 評価データ・投稿実績・自分の評価を取得（未解禁の木曜公開枠は ？？？ 表示）
+    // 評価データ・投稿実績・自分の評価を取得（未解禁の水曜公開枠は ？？？ 表示）
     const activeKeys = getActiveWeeklyKeys(weeklyChallenge.exercises);
     const [ratingSummaries, userPostedKeys, userRatingMap] = await Promise.all([
         getExerciseRatingSummaries(activeKeys),
