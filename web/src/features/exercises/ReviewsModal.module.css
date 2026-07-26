@@ -1,0 +1,36 @@
+.exName {
+  font-weight: 700;
+  font-size: 16px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.item {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.user {
+  font-weight: 700;
+  font-size: 14px;
+}
+.stars {
+  color: var(--gold);
+  font-size: 13px;
+}
+.comment {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.5;
+}

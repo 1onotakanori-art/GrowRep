@@ -1,0 +1,110 @@
+/* =====================================================================
+   デザイントークン — ミニマル＋カード＋ゲーミフィケーション
+   ライト/ダーク両対応。既存の紫アクセントを継承しつつ面はニュートラル。
+   ===================================================================== */
+:root {
+  /* アクセント（紫系グラデ） */
+  --accent: #6c5ce7;
+  --accent-600: #5b4bd6;
+  --accent-700: #4c3fc0;
+  --accent-soft: rgba(108, 92, 231, 0.12);
+  --accent-grad: linear-gradient(135deg, #6c5ce7, #8e7bff);
+
+  /* ゲーミフィケーション用 */
+  --gold: #f5b301;
+  --gold-soft: rgba(245, 179, 1, 0.14);
+  --silver: #9aa7b4;
+  --bronze: #cd7f45;
+  --flame: #ff6b3d;
+  --success: #22b07d;
+  --danger: #ef5350;
+  --info: #3d9bff;
+
+  /* ライトテーマ面 */
+  --bg: #f4f5fb;
+  --bg-elev: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f7f8fc;
+  --surface-3: #eef0f7;
+  --border: #e6e8f0;
+  --border-strong: #d3d7e4;
+
+  /* テキスト */
+  --text: #1c2130;
+  --text-2: #5a6274;
+  --text-3: #8b93a7;
+  --text-on-accent: #ffffff;
+
+  /* 形状 */
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  /* 影 */
+  --shadow-sm: 0 1px 2px rgba(20, 24, 40, 0.06), 0 1px 3px rgba(20, 24, 40, 0.05);
+  --shadow: 0 6px 18px rgba(20, 24, 40, 0.08);
+  --shadow-lg: 0 16px 40px rgba(20, 24, 40, 0.16);
+  --shadow-accent: 0 8px 22px rgba(108, 92, 231, 0.32);
+
+  /* 間隔 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* レイアウト */
+  --app-max: 560px;
+  --nav-h: 64px;
+  --header-h: 56px;
+
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Kaku Gothic ProN',
+    'Noto Sans JP', Meiryo, sans-serif;
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg: #0f1220;
+  --bg-elev: #171a2b;
+  --surface: #191d30;
+  --surface-2: #1f2438;
+  --surface-3: #262c44;
+  --border: #2a3050;
+  --border-strong: #363d61;
+
+  --text: #eef1fb;
+  --text-2: #a9b1c9;
+  --text-3: #737b96;
+
+  --accent-soft: rgba(142, 123, 255, 0.18);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
+/* OS 設定がダークで、かつユーザーが明示切替していない場合 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0f1220;
+    --bg-elev: #171a2b;
+    --surface: #191d30;
+    --surface-2: #1f2438;
+    --surface-3: #262c44;
+    --border: #2a3050;
+    --border-strong: #363d61;
+    --text: #eef1fb;
+    --text-2: #a9b1c9;
+    --text-3: #737b96;
+    --accent-soft: rgba(142, 123, 255, 0.18);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+}

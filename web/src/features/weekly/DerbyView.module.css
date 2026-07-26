@@ -1,0 +1,142 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.monthSel {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  font-weight: 700;
+}
+
+.champBanner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--gold-soft), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+}
+.trophy {
+  font-size: 30px;
+}
+.champLabel {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+  font-weight: 700;
+}
+.champName {
+  font-size: 18px;
+  font-weight: 800;
+}
+.champTotal {
+  margin-left: auto;
+  font-weight: 800;
+  font-size: 18px;
+  color: color-mix(in srgb, var(--gold) 80%, var(--text));
+}
+
+.table {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 8px;
+  overflow-x: auto;
+}
+.tRowHead,
+.tRow {
+  display: grid;
+  grid-template-columns: 28px minmax(60px, 1fr) repeat(var(--weeks, 4), 40px) 48px;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.tRowHead {
+  font-size: 11px;
+  color: var(--text-3);
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+.tRow.me {
+  background: var(--accent-soft);
+  border-radius: 8px;
+}
+.tRank {
+  text-align: center;
+  font-weight: 800;
+}
+.tName {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tWeek {
+  text-align: center;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.tTotal {
+  text-align: right;
+  font-weight: 800;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.weekCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-4);
+}
+.weekHead {
+  margin-bottom: 10px;
+}
+.weekHead > span {
+  font-weight: 700;
+  font-size: 14px;
+}
+.weekExs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.weekEx {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--surface-2);
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+}
+.weekRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+}
+.weekRank {
+  min-width: 24px;
+  text-align: center;
+  font-weight: 800;
+}
+.weekName {
+  flex: 1;
+  font-weight: 600;
+}
+.weekScore {
+  font-weight: 800;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}

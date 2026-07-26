@@ -1,0 +1,194 @@
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+.podium {
+  border-color: color-mix(in srgb, var(--gold) 35%, var(--border));
+}
+.me {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.rowHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+}
+.rank {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  font-weight: 800;
+  font-size: 15px;
+  border-radius: 8px;
+  color: var(--text-2);
+}
+.r1 {
+  font-size: 20px;
+}
+.r2,
+.r3 {
+  font-size: 18px;
+}
+.name {
+  flex: 1;
+  font-weight: 700;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.youTag {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+}
+.streak {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--flame);
+}
+.score {
+  font-weight: 800;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.pct {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-left: 1px;
+}
+.chev {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.breakdown {
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--border);
+  animation: fadeIn 0.2s ease both;
+}
+.bItem {
+  display: grid;
+  grid-template-columns: 84px 48px 1fr 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 12px;
+}
+.bName {
+  color: var(--text-2);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bVal {
+  color: var(--text);
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.bBarWrap {
+  height: 7px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.bBar {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent-grad);
+  transition: width 0.4s ease;
+}
+.bPct {
+  text-align: right;
+  color: var(--text-3);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.streakRow {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--flame);
+  font-weight: 700;
+}
+
+/* 種目別 */
+.exList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.exBlock {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-4);
+}
+.exBlockHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 10px;
+}
+.exBlockHead i {
+  color: var(--accent);
+}
+.taBadge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--flame);
+  background: color-mix(in srgb, var(--flame) 14%, transparent);
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+}
+.noRec {
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 4px 0;
+}
+.exRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+}
+.exRow.me {
+  background: var(--accent-soft);
+}
+.exRank {
+  min-width: 24px;
+  font-weight: 800;
+  text-align: center;
+}
+.exName {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+}
+.exVal {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
