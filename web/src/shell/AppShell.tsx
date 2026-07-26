@@ -6,6 +6,7 @@ import BottomNav, { type NavKey } from './BottomNav';
 import ProfileModal from '../features/profile/ProfileModal';
 import HomeView from '../views/HomeView';
 import DailyMissionView from '../views/DailyMissionView';
+import TimerView from '../views/TimerView';
 import PostView from '../views/PostView';
 import RankingView from '../views/RankingView';
 import MyPageView from '../views/MyPageView';
@@ -35,6 +36,7 @@ function ShellInner() {
       <main className={styles.main}>
         {nav === 'home' && <HomeView onNavigate={setNav} />}
         {nav === 'daily' && <DailyMissionView />}
+        {nav === 'timer' && <TimerView />}
         {nav === 'post' && <PostView />}
         {nav === 'ranking' && <RankingView />}
         {nav === 'center' &&

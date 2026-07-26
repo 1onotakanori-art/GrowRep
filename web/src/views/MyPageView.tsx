@@ -1,12 +1,8 @@
-import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { ViewHeader, Segmented } from '../components/ui';
 import ProgressChart from '../features/progress/ProgressChart';
-import IntervalTimer from '../features/timer/IntervalTimer';
 import styles from './MyPageView.module.css';
-
-type Tab = 'progress' | 'timer';
 
 export default function MyPageView({
   onOpenProfile,
@@ -15,7 +11,6 @@ export default function MyPageView({
 }) {
   const { user, userData, isGuest } = useAuth();
   const { theme, setTheme } = useTheme();
-  const [tab, setTab] = useState<Tab>('progress');
   const displayName = userData?.userName || (isGuest ? 'ゲスト' : 'ユーザー');
 
   return (
@@ -46,16 +41,8 @@ export default function MyPageView({
         />
       </div>
 
-      <Segmented<Tab>
-        options={[
-          { value: 'progress', label: '成長グラフ' },
-          { value: 'timer', label: 'タイマー' },
-        ]}
-        value={tab}
-        onChange={setTab}
-      />
-
-      {tab === 'progress' ? <ProgressChart /> : <IntervalTimer />}
+      {/* タイマーは専用タブへ移動（ボトムナビ）。ここは成長グラフのみ。 */}
+      <ProgressChart />
     </div>
   );
 }
