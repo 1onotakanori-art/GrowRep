@@ -1,0 +1,50 @@
+.exName {
+  font-weight: 700;
+  font-size: 16px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+.stars {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.star,
+.starOn {
+  font-size: 30px;
+  color: var(--surface-3);
+  transition: transform 0.12s ease, color 0.12s ease;
+}
+.starOn {
+  color: var(--gold);
+}
+.star:active,
+.starOn:active {
+  transform: scale(1.2);
+}
+.label {
+  text-align: center;
+  font-weight: 700;
+  color: var(--text-2);
+  margin: 8px 0 16px;
+}
+.commentLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+  display: block;
+  margin-bottom: 6px;
+}
+.count {
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-3);
+  margin: 4px 0 14px;
+}
+.deleteBtn {
+  margin-top: 8px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px;
+}

@@ -1,0 +1,169 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.periodCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.periodLabel {
+  font-weight: 700;
+  color: var(--text-2);
+  font-size: 14px;
+}
+.periodLabel i {
+  color: var(--accent);
+  margin-right: 4px;
+}
+.eventBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: var(--radius-pill);
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.exList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.exCard,
+.lockedCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.lockedCard {
+  border-style: dashed;
+  background: var(--surface-2);
+}
+.exNum {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.exIcon,
+.lockIcon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 17px;
+  flex-shrink: 0;
+}
+.lockIcon {
+  background: var(--surface-3);
+  color: var(--text-3);
+}
+.exBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.exName {
+  font-weight: 700;
+  font-size: 15px;
+}
+.lockName {
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--text-2);
+}
+.exRule {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.streakNote {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--flame) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--flame) 25%, transparent);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+.streakNote i {
+  color: var(--flame);
+  margin-right: 4px;
+}
+
+.predCard {
+  padding: var(--sp-4);
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.predHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 15px;
+}
+.predHead i {
+  color: var(--accent);
+}
+.predClosed {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-3);
+  font-weight: 700;
+}
+.predNote {
+  font-size: 12px;
+  color: var(--text-3);
+  margin: 6px 0 10px;
+}
+.predUsers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.predBtn,
+.predOn {
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.predOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.predBtn:disabled {
+  opacity: 0.5;
+}

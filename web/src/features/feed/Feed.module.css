@@ -1,0 +1,168 @@
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.post {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-4);
+  animation: fadeIn 0.24s ease both;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.exIcon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 17px;
+  flex-shrink: 0;
+}
+.headMain {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.user {
+  font-weight: 700;
+  font-size: 14px;
+}
+.date {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.del {
+  color: var(--text-3);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.del:hover {
+  color: var(--danger);
+  background: var(--surface-2);
+}
+
+.body {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 12px 2px 6px;
+}
+.exName {
+  font-size: 14px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.value {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.unit {
+  font-size: 14px;
+  color: var(--text-3);
+  margin-left: 2px;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-top: 8px;
+}
+.actBtn,
+.likedBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.actBtn:hover {
+  background: var(--surface-2);
+}
+.likedBtn {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.comments {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.comment {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.cUser {
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.cText {
+  flex: 1;
+  word-break: break-word;
+}
+.cDel {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.cDel:hover {
+  color: var(--danger);
+}
+
+.commentForm {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.commentForm .field {
+  flex: 1;
+  padding: 9px 12px;
+}
+.sendBtn {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-grad);
+  color: #fff;
+}
+
+.more {
+  align-self: center;
+  padding: 10px 20px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-weight: 600;
+  font-size: 13px;
+}

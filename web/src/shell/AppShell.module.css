@@ -1,0 +1,13 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--bg);
+}
+
+.main {
+  flex: 1;
+  padding: var(--sp-4) var(--sp-4);
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--sp-6));
+  animation: fadeIn 0.24s ease both;
+}

@@ -1,0 +1,51 @@
+.section {
+  padding: var(--sp-4) 0;
+  border-bottom: 1px solid var(--border);
+}
+.section:last-child {
+  border-bottom: none;
+}
+.section h3 {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.email {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.inlineForm {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.inlineForm .field {
+  flex: 1;
+}
+
+.guestBox {
+  background: var(--gold-soft);
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: var(--sp-4);
+  font-size: 13px;
+}
+.guestBox strong {
+  color: var(--gold);
+}
+.guestBox p {
+  margin-top: 4px;
+}
+
+.ok {
+  color: var(--success);
+  font-size: 13px;
+  margin-top: 8px;
+}
+.err {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 8px;
+}
