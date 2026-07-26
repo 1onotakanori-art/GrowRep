@@ -7,7 +7,7 @@
   max-width: var(--app-max);
   z-index: 40;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   height: calc(var(--nav-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background: color-mix(in srgb, var(--bg-elev) 90%, transparent);
@@ -22,10 +22,24 @@
   align-items: center;
   justify-content: center;
   gap: 3px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   color: var(--text-3);
   transition: color 0.15s ease, transform 0.15s ease;
+}
+.iconWrap {
+  position: relative;
+  display: inline-flex;
+}
+.dot {
+  position: absolute;
+  top: -2px;
+  right: -5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--bg-elev);
 }
 .item i,
 .itemOn i {

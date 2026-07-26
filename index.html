@@ -78,6 +78,8 @@
         </a>
 
         <nav class="tab-nav">
+            <button class="tab-btn" data-tab="daily" data-mode="free" style="display: none;"><i class="fa-solid fa-bullseye"></i> デイリー<span class="daily-mission-dot" style="display:none;"></span></button>
+            <button class="tab-btn" data-tab="daily" data-mode="weekly" style="display: none;"><i class="fa-solid fa-bullseye"></i> デイリー<span class="daily-mission-dot" style="display:none;"></span></button>
             <button class="tab-btn active" data-tab="post"><i class="fa-solid fa-pen-to-square"></i> 投稿</button>
             <button class="tab-btn" data-tab="board"><i class="fa-solid fa-comments"></i> 掲示板</button>
             <button class="tab-btn" data-tab="ranking"><i class="fa-solid fa-trophy"></i> ランキング</button>
@@ -90,6 +92,13 @@
             <button class="tab-btn" data-tab="champions" data-mode="weekly" style="display: none;"><i class="fa-solid fa-crown"></i> 歴代チャンプ</button>
             <button class="tab-btn" data-tab="derby" data-mode="weekly" style="display: none;"><i class="fa-solid fa-calendar-days"></i> 月間ダービー</button>
         </nav>
+
+        <!-- デイリーミッションタブ（フリー／週間チャレンジ共通） -->
+        <div id="daily-tab" class="tab-content">
+            <h2><i class="fa-solid fa-bullseye"></i> デイリーミッション</h2>
+            <div id="daily-mode-info" class="mode-info"></div>
+            <div id="daily-mission-content"></div>
+        </div>
 
         <!-- 投稿タブ -->
         <div id="post-tab" class="tab-content active">

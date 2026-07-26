@@ -118,6 +118,28 @@
 .exChip i {
   color: var(--accent);
 }
+.exChip strong {
+  font-weight: 800;
+  color: var(--accent);
+}
+.doneChip,
+.todoChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+}
+.doneChip {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+}
+.todoChip {
+  background: color-mix(in srgb, var(--flame) 15%, transparent);
+  color: var(--flame);
+}
 .lockChip {
   display: inline-flex;
   align-items: center;
