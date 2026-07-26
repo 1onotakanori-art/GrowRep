@@ -5,6 +5,7 @@ import { useMode } from '../context/ModeContext';
 import { useScores } from '../hooks/useScores';
 import { rankUsers } from '../lib/scoring';
 import { getActiveWeeklyKeys } from '../lib/time-jst';
+import { guessExerciseUnit } from '../lib/daily-mission';
 import type { NavKey } from '../shell/BottomNav';
 import { Skeleton } from '../components/ui';
 import styles from './HomeView.module.css';
@@ -16,7 +17,7 @@ export default function HomeView({
 }) {
   const { user, userData, isGuest } = useAuth();
   const { mode } = useMode();
-  const { freeExercises, weeklyChallenge } = useData();
+  const { freeExercises, weeklyChallenge, dailyMission } = useData();
   const { records, loading } = useScores();
 
   const name = userData?.userName || (isGuest ? 'ゲスト' : 'ユーザー');
@@ -90,6 +91,47 @@ export default function HomeView({
               </span>
             </div>
           </div>
+
+          {dailyMission && (
+            <div className={styles.card}>
+              <div className={styles.cardHead}>
+                <span>
+                  <i className="fa-solid fa-bullseye" /> 今日のミッション
+                </span>
+                <button
+                  className={styles.link}
+                  onClick={() => onNavigate('daily')}
+                >
+                  挑戦 <i className="fa-solid fa-chevron-right" />
+                </button>
+              </div>
+              <div className={styles.chips}>
+                <span className={styles.exChip}>
+                  <i
+                    className={`fa-solid ${freeExercises[dailyMission.exerciseKey]?.icon || 'fa-dumbbell'}`}
+                  />
+                  {freeExercises[dailyMission.exerciseKey]?.name ||
+                    dailyMission.exerciseKey}
+                  <strong>
+                    {dailyMission.target}
+                    {guessExerciseUnit(
+                      freeExercises[dailyMission.exerciseKey]?.name || '',
+                    )}
+                  </strong>
+                </span>
+                <span
+                  className={
+                    dailyMission.cleared ? styles.doneChip : styles.todoChip
+                  }
+                >
+                  <i
+                    className={`fa-solid ${dailyMission.cleared ? 'fa-circle-check' : 'fa-hourglass-half'}`}
+                  />
+                  {dailyMission.cleared ? 'クリア' : '未クリア'}
+                </span>
+              </div>
+            </div>
+          )}
 
           {mode === 'weekly' && weeklyChallenge && (
             <div className={styles.card}>

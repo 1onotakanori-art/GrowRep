@@ -3782,3 +3782,246 @@ body.dark-mode .skeleton-item {
     background: linear-gradient(90deg, #2a2f33 25%, #353b40 37%, #2a2f33 63%);
     background-size: 400% 100%;
 }
+
+/* ====================================================================
+   デイリーミッション
+   全員共通の1種目に、各自バラバラの目標回数で挑戦するタブ。
+   ==================================================================== */
+
+/* タブボタンの未クリア通知ドット */
+.daily-mission-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e74c3c;
+    flex-shrink: 0;
+}
+
+.daily-mission-card {
+    position: relative;
+    background: white;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 24px 18px 18px;
+    margin-bottom: 16px;
+    transition: border-color 0.25s;
+}
+.daily-mission-card.cleared {
+    border-color: #43e97b;
+}
+
+.daily-mission-badge {
+    position: absolute;
+    top: -11px;
+    left: 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #f7971e, #e74c3c);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.daily-mission-card.cleared .daily-mission-badge {
+    background: linear-gradient(135deg, #43e97b, #38c172);
+}
+
+.daily-mission-date {
+    position: absolute;
+    top: -10px;
+    right: 18px;
+    padding: 3px 11px;
+    border-radius: 999px;
+    background: #f0f3ff;
+    border: 1px solid #c8d0ff;
+    color: #5b6bd6;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.daily-mission-exercise {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.daily-mission-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: #f0f3ff;
+    color: #667eea;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+.daily-mission-name {
+    font-size: 19px;
+    font-weight: 800;
+    line-height: 1.25;
+    color: #333;
+}
+
+.daily-mission-target {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 16px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #667eea, #5568d3);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
+    margin-bottom: 16px;
+}
+.daily-mission-target-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.85);
+}
+.daily-mission-target-value {
+    font-size: 44px;
+    font-weight: 900;
+    line-height: 1.05;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+}
+.daily-mission-target-unit {
+    font-size: 15px;
+    font-weight: 700;
+    margin-left: 4px;
+}
+
+.daily-mission-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.daily-mission-bar {
+    height: 9px;
+    border-radius: 999px;
+    background: #eceff1;
+    overflow: hidden;
+}
+.daily-mission-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: #667eea;
+    transition: width 0.4s ease;
+}
+.daily-mission-card.cleared .daily-mission-bar-fill {
+    background: #43e97b;
+}
+.daily-mission-progress-text {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #888;
+}
+.daily-mission-card.cleared .daily-mission-progress-text {
+    color: #38c172;
+}
+
+.daily-mission-rule {
+    margin-top: 16px;
+    padding: 9px 11px;
+    border-radius: 8px;
+    background: #f7f8fa;
+    font-size: 12px;
+    color: #666;
+    line-height: 1.5;
+}
+
+.daily-mission-post {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 18px;
+}
+.daily-mission-post h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 12px;
+}
+.daily-mission-post h3 i {
+    color: #667eea;
+    margin-right: 5px;
+}
+.daily-mission-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.daily-mission-input-row input {
+    flex: 1;
+    min-width: 0;
+    padding: 9px 12px;
+    border: 1.5px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+}
+.daily-mission-input-row input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+.daily-mission-input-row .btn-primary {
+    width: auto;
+    margin-bottom: 0;
+    white-space: nowrap;
+}
+.daily-mission-unit {
+    font-size: 14px;
+    font-weight: 600;
+    color: #666;
+}
+.daily-mission-note {
+    margin-top: 10px;
+    font-size: 11px;
+    color: #999;
+}
+
+/* ダークモード */
+body.dark-mode .daily-mission-card,
+body.dark-mode .daily-mission-post {
+    background: #2a2a2a;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+body.dark-mode .daily-mission-name,
+body.dark-mode .daily-mission-post h3 {
+    color: #e8e8e8;
+}
+body.dark-mode .daily-mission-icon {
+    background: #1f2937;
+    color: #8fa3ff;
+}
+body.dark-mode .daily-mission-date {
+    background: #1f2937;
+    border-color: #3a4a6b;
+    color: #8fa3ff;
+}
+body.dark-mode .daily-mission-bar {
+    background: #3a3f44;
+}
+body.dark-mode .daily-mission-rule {
+    background: #333;
+    color: #bbb;
+}
+body.dark-mode .daily-mission-input-row input {
+    background: #333;
+    border-color: #4a4a4a;
+    color: #e8e8e8;
+}
+body.dark-mode .daily-mission-input-row input:focus {
+    border-color: #8fa3ff;
+}
+body.dark-mode .daily-mission-unit {
+    color: #bbb;
+}

@@ -1,7 +1,13 @@
 import type { Mode } from '../lib/types';
 import styles from './BottomNav.module.css';
 
-export type NavKey = 'home' | 'post' | 'ranking' | 'center' | 'mypage';
+export type NavKey =
+  | 'home'
+  | 'daily'
+  | 'post'
+  | 'ranking'
+  | 'center'
+  | 'mypage';
 
 interface Item {
   key: NavKey;
@@ -11,6 +17,7 @@ interface Item {
 
 const BASE: Item[] = [
   { key: 'home', label: 'ホーム', icon: 'fa-house' },
+  { key: 'daily', label: 'デイリー', icon: 'fa-bullseye' },
   { key: 'post', label: '投稿', icon: 'fa-pen-to-square' },
   { key: 'ranking', label: 'ランキング', icon: 'fa-ranking-star' },
 ];
@@ -19,10 +26,13 @@ export default function BottomNav({
   active,
   onChange,
   mode,
+  dailyPending = false,
 }: {
   active: NavKey;
   onChange: (k: NavKey) => void;
   mode: Mode;
+  /** 今日のデイリーミッションが未クリアなら赤ドットを出す。 */
+  dailyPending?: boolean;
 }) {
   const center: Item =
     mode === 'weekly'
@@ -46,7 +56,12 @@ export default function BottomNav({
             onClick={() => onChange(it.key)}
             aria-current={on ? 'page' : undefined}
           >
-            <i className={`fa-solid ${it.icon}`} />
+            <span className={styles.iconWrap}>
+              <i className={`fa-solid ${it.icon}`} />
+              {it.key === 'daily' && dailyPending && (
+                <span className={styles.dot} />
+              )}
+            </span>
             <span>{it.label}</span>
           </button>
         );

@@ -1291,6 +1291,9 @@ auth.onAuthStateChanged(async (user) => {
             restoreStandardExerciseUI();
         }
 
+        // 今日のデイリーミッションが未クリアなら、まずその画面を開く（起動時1回のみ）
+        maybeOpenDailyMissionOnStart();
+
         // 初期表示は投稿タブのみ。掲示板の投稿一覧を読み込む。
         loadPosts();
         // ランキングは表示中でないため初期ロードしない（ランキングタブを開いた時に読み込む）。
@@ -1663,19 +1666,30 @@ function updateTabsForMode() {
         }
     });
     
+    // 投稿タブに戻す（モード専用タブが表示できなくなった場合）
+    const fallbackToPostTab = () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector('.tab-btn[data-tab="post"]').classList.add('active');
+        document.getElementById('post-tab').classList.add('active');
+    };
+
     // 現在表示中のタブがモード専用かつ表示できない場合、投稿タブに戻る
     const activeTab = document.querySelector('.tab-content.active');
     if (activeTab) {
         const activeMode = activeTab.dataset.mode;
         if (activeMode && activeMode !== currentMode) {
-            // 投稿タブをアクティブに
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            document.querySelector('.tab-btn[data-tab="post"]').classList.add('active');
-            document.getElementById('post-tab').classList.add('active');
+            fallbackToPostTab();
         }
     }
-    
+
+    // デイリーミッションタブは free / weekly で共有（data-mode を持たないため個別に判定）。
+    // 対応外のモードに切り替えたら投稿タブに戻す。
+    const dailyTab = document.getElementById('daily-tab');
+    if (dailyTab && dailyTab.classList.contains('active') && currentMode !== 'free' && currentMode !== 'weekly') {
+        fallbackToPostTab();
+    }
+
     // モード情報を更新
     updateModeInfo();
 }
@@ -1710,7 +1724,8 @@ function updateModeInfo() {
             progress: 'フリーモードの成長記録',
             rules: 'フリーモードの種目管理（種目の追加・削除が可能）',
             score: 'フリーモードの総合得点',
-            timer: '指定した秒数ごとに音が鳴り、カウントアップされます'
+            timer: '指定した秒数ごとに音が鳴り、カウントアップされます',
+            daily: '毎日入れ替わる共通種目のミッション（目標回数は人それぞれ）'
         },
         'weekly': {
             post: '週間チャレンジの記録を投稿（今週の3種目のみ）',
@@ -1721,7 +1736,8 @@ function updateModeInfo() {
             score: '今週の週間チャレンジ得点',
             champions: '毎週の総合得点チャンピオンの記録',
             derby: '週間チャレンジの得点を1ヶ月合計した月間ランキング',
-            timer: '指定した秒数ごとに音が鳴り、カウントアップされます'
+            timer: '指定した秒数ごとに音が鳴り、カウントアップされます',
+            daily: '毎日入れ替わる共通種目のミッション（目標回数は人それぞれ）'
         }
     };
 
@@ -1741,13 +1757,15 @@ function updateModeInfo() {
         'score-mode-info': currentTexts.score,
         'timer-mode-info': currentTexts.timer,
         'champions-mode-info': currentTexts.champions,
-        'derby-mode-info': currentTexts.derby
+        'derby-mode-info': currentTexts.derby,
+        'daily-mode-info': currentTexts.daily
     };
     
     Object.entries(modeInfoElements).forEach(([id, text]) => {
         const element = document.getElementById(id);
         if (element) {
-            element.textContent = text;
+            // モードによっては未定義（そのモードに無いタブ）。'undefined' の表示を避ける。
+            element.textContent = text || '';
             element.className = `mode-info ${modeClass}`;
         }
     });
@@ -1820,6 +1838,8 @@ async function changeMode(newMode) {
                 }
             } else if (activeTab && activeTab.id === 'progress-tab') {
                 loadProgressChart();
+            } else if (activeTab && activeTab.id === 'daily-tab') {
+                renderDailyMissionTab(false);
             }
 
             console.log(`${newMode}モードへの切り替え完了`);
@@ -1899,6 +1919,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
             }
         }
         
+        // デイリーミッションタブの場合は描画（キャッシュ済みなら再取得しない）
+        if (tabName === 'daily') {
+            renderDailyMissionTab(false);
+        }
+
         // 歴代チャンプタブの場合はデータ読み込み
         if (tabName === 'champions') {
             loadChampionsHistory();
@@ -1954,6 +1979,9 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
                 break;
             case 'derby-tab':
                 await loadMonthlyDerby();
+                break;
+            case 'daily-tab':
+                await renderDailyMissionTab(true);
                 break;
         }
     } catch (error) {
@@ -2023,6 +2051,13 @@ async function submitPost(exerciseKey) {
             try { localStorage.removeItem(WEEKLY_RANKING_LS_KEY); } catch (e) { /* 無視 */ }
         }
         
+        // デイリーミッションの種目を投稿した場合は達成状況が変わるため作り直す
+        if (dailyMissionState && dailyMissionState.exerciseKey === exerciseKey) {
+            loadDailyMissionState()
+                .then(updateDailyMissionBadge)
+                .catch(e => console.warn('[デイリーミッション] 更新失敗:', e));
+        }
+
         // 選択をクリア
         selectedPostExerciseKey = null;
         // カード内の入力エリアを閉じる
@@ -7535,6 +7570,456 @@ function updateWeeklyGraphDropdown() {
         option.textContent = ex.name;
         select.appendChild(option);
     });
+}
+
+// ====================================================================
+// デイリーミッション機能
+// ⚠️ web/src/lib/daily-mission.ts / daily-mission-engine.ts の「ミラー」。
+//    両アプリが同じ settings_free/daily_mission と posts_free を共有し、
+//    目標回数はシードから各自で再計算する。日付キー・シード文字列・
+//    分布定数を変更する場合は必ず web 側も同じに更新すること。
+// ====================================================================
+
+// 直近何日分の種目を再選出から避けるか
+const DAILY_RECENT_AVOID = 5;
+
+// 対数正規分布のパラメータ。最頻値（ピーク）= exp(MU - SIGMA^2) = 30 回。
+const DAILY_REPS_SIGMA = 0.45;
+const DAILY_REPS_PEAK = 30;
+const DAILY_REPS_MU = Math.log(DAILY_REPS_PEAK) + DAILY_REPS_SIGMA * DAILY_REPS_SIGMA;
+const DAILY_REPS_MIN = 8;
+const DAILY_REPS_MAX = 150;
+
+// 今日のミッション状態 { dateKey, exerciseKey, target, bestValue, cleared }
+let dailyMissionState = null;
+// 起動時の自動遷移を一度だけ行うためのフラグ
+let dailyMissionAutoNavDone = false;
+
+/**
+ * JSTの暦日を YYYY-MM-DD で返す
+ * @param {Date} now
+ * @returns {string}
+ */
+function getDailyDateKeyJST(now = new Date()) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const jst = new Date(now.getTime() + JST_OFFSET_MS);
+    const y = jst.getUTCFullYear();
+    const m = String(jst.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(jst.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+/**
+ * 日付キーに対応するUTCの1日境界を返す
+ * @param {string} dateKey - 'YYYY-MM-DD'
+ * @returns {{ start: Date, end: Date }}
+ */
+function getDailyBoundariesJST(dateKey) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const startJstMs = Date.UTC(y, m - 1, d, 0, 0, 0, 0);
+    const start = new Date(startJstMs - JST_OFFSET_MS);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    return { start, end };
+}
+
+/**
+ * FNV-1a 32bit ハッシュ
+ * @param {string} str
+ * @returns {number} uint32
+ */
+function hashStringToSeed(str) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+}
+
+/**
+ * mulberry32 PRNG（同じシードなら常に同じ列）
+ * @param {number} seed
+ * @returns {() => number} [0,1) を返す関数
+ */
+function createSeededRandom(seed) {
+    let a = seed >>> 0;
+    return function next() {
+        a = (a + 0x6d2b79f5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/**
+ * Box-Muller法で標準正規乱数
+ * @param {() => number} rand
+ * @returns {number}
+ */
+function seededNormal(rand) {
+    // u1 = 0 だと log が -Infinity になるため下限を入れる
+    const u1 = Math.max(rand(), 1e-12);
+    const u2 = rand();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+/**
+ * ユーザー×日付×種目で決まる目標回数。ピーク30回で右に裾を引く対数正規分布。
+ * シードから毎回同じ値を再計算できるため保存不要（リロードしても変わらない）。
+ * @param {string} userId
+ * @param {string} dateKey
+ * @param {string} exerciseKey
+ * @returns {number}
+ */
+function generateDailyMissionTarget(userId, dateKey, exerciseKey) {
+    const rand = createSeededRandom(hashStringToSeed(`daily-reps|${userId}|${dateKey}|${exerciseKey}`));
+    const z = seededNormal(rand);
+    const raw = Math.exp(DAILY_REPS_MU + DAILY_REPS_SIGMA * z);
+    return Math.min(DAILY_REPS_MAX, Math.max(DAILY_REPS_MIN, Math.round(raw)));
+}
+
+/**
+ * バーバリアン以外のフリー種目キー（安定ソート済み）
+ * @param {Object} exercises
+ * @returns {string[]}
+ */
+function getDailyMissionCandidates(exercises) {
+    return Object.keys(exercises || {})
+        .filter(key => exercises[key] && !exercises[key].barbarian)
+        .sort();
+}
+
+/**
+ * その日の種目を決定。日付キーのみをシードにするので、複数クライアントが
+ * 同時に生成しても（候補が同じなら）同じ種目になる。
+ * @param {string} dateKey
+ * @param {Object} exercises
+ * @param {string[]} recentKeys - 直近で出題済みのキー（避ける）
+ * @returns {string|null}
+ */
+function pickDailyMissionExercise(dateKey, exercises, recentKeys = []) {
+    const candidates = getDailyMissionCandidates(exercises);
+    if (candidates.length === 0) return null;
+
+    const avoid = new Set(recentKeys);
+    let pool = candidates.filter(key => !avoid.has(key));
+    if (pool.length === 0) pool = candidates;
+
+    const rand = createSeededRandom(hashStringToSeed(`daily-mission|${dateKey}`));
+    const idx = Math.min(pool.length - 1, Math.floor(rand() * pool.length));
+    return pool[idx];
+}
+
+/**
+ * 直近履歴の更新（非破壊・先頭が最新）
+ * @param {string[]} recentKeys
+ * @param {string} exerciseKey
+ * @returns {string[]}
+ */
+function pushRecentMissionKeys(recentKeys, exerciseKey) {
+    return [exerciseKey, ...(recentKeys || []).filter(k => k !== exerciseKey)].slice(0, DAILY_RECENT_AVOID);
+}
+
+/**
+ * 種目名から単位を推測（種目データに単位情報がないため）
+ * @param {string} exerciseName
+ * @returns {string}
+ */
+function guessExerciseUnit(exerciseName) {
+    const name = exerciseName || '';
+    if (name.includes('秒')) return '秒';
+    if (name.includes('セット')) return 'セット';
+    if (name.includes('分')) return '分';
+    return '回';
+}
+
+/**
+ * 日付キーを「7/26(日)」形式に
+ * @param {string} dateKey
+ * @returns {string}
+ */
+function formatDailyDateLabel(dateKey) {
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    return `${m}/${d}(${dayNames[dow]})`;
+}
+
+/**
+ * 今日のミッションを取得。未生成なら生成して保存する（冪等）。
+ * 選出は日付キーだけをシードにする決定的処理なので、保存に失敗しても
+ * 全ユーザーで同じ種目になり表示は破綻しない。
+ * @param {Object} exercises
+ * @param {Date} now
+ * @returns {Promise<{dateKey: string, exerciseKey: string}|null>}
+ */
+async function getOrCreateDailyMission(exercises, now = new Date()) {
+    const dateKey = getDailyDateKeyJST(now);
+    const ref = db.collection('settings_free').doc('daily_mission');
+
+    let saved = {};
+    try {
+        const snap = await ref.get();
+        if (snap.exists) saved = snap.data() || {};
+    } catch (e) {
+        console.warn('[デイリーミッション] 取得失敗、ローカル生成にフォールバック:', e);
+    }
+
+    // 当日分が既にあり、その種目が今も存在すればそれを使う
+    if (saved.dateKey === dateKey && saved.exerciseKey && exercises[saved.exerciseKey]) {
+        return { dateKey, exerciseKey: saved.exerciseKey };
+    }
+
+    const recentKeys = Array.isArray(saved.recentKeys) ? saved.recentKeys : [];
+    const exerciseKey = pickDailyMissionExercise(dateKey, exercises, recentKeys);
+    if (!exerciseKey) return null;
+
+    try {
+        await ref.set({
+            dateKey: dateKey,
+            exerciseKey: exerciseKey,
+            recentKeys: pushRecentMissionKeys(recentKeys, exerciseKey),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+    } catch (e) {
+        console.warn('[デイリーミッション] 保存失敗（表示は続行）:', e);
+    }
+
+    return { dateKey, exerciseKey };
+}
+
+/**
+ * その日の自分の最高記録を取得。timestampの単一フィールド範囲検索だけで
+ * 済ませ（複合インデックス不要）、userId / exerciseType はクライアント側で絞る。
+ * @param {string} userId
+ * @param {string} dateKey
+ * @param {string} exerciseKey
+ * @returns {Promise<number>}
+ */
+async function getDailyMissionBestValue(userId, dateKey, exerciseKey) {
+    const { start, end } = getDailyBoundariesJST(dateKey);
+    const snap = await db.collection('posts_free')
+        .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(start))
+        .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(end))
+        .get();
+    let best = 0;
+    snap.docs.forEach(d => {
+        const post = d.data();
+        if (post.userId !== userId) return;
+        if (post.exerciseType !== exerciseKey) return;
+        const v = Number(post.value) || 0;
+        if (v > best) best = v;
+    });
+    return best;
+}
+
+/**
+ * ミッション本体＋自分の達成状況を解決し、dailyMissionState に格納する
+ * @returns {Promise<Object|null>}
+ */
+async function loadDailyMissionState() {
+    if (!currentUser) return null;
+    if (!freeExercisesLoaded) {
+        await loadFreeExercises();
+    }
+
+    const mission = await getOrCreateDailyMission(freeExercises);
+    if (!mission) {
+        dailyMissionState = null;
+        return null;
+    }
+
+    const target = generateDailyMissionTarget(currentUser.uid, mission.dateKey, mission.exerciseKey);
+    let bestValue = 0;
+    try {
+        bestValue = await getDailyMissionBestValue(currentUser.uid, mission.dateKey, mission.exerciseKey);
+    } catch (e) {
+        console.warn('[デイリーミッション] クリア判定に失敗:', e);
+    }
+
+    dailyMissionState = {
+        dateKey: mission.dateKey,
+        exerciseKey: mission.exerciseKey,
+        target: target,
+        bestValue: bestValue,
+        cleared: bestValue >= target
+    };
+    return dailyMissionState;
+}
+
+/**
+ * デイリーミッションタブを描画する
+ * @param {boolean} forceRefresh - Firestoreから再取得する
+ */
+async function renderDailyMissionTab(forceRefresh = false) {
+    const container = document.getElementById('daily-mission-content');
+    if (!container) return;
+
+    if (forceRefresh || !dailyMissionState) {
+        container.innerHTML = '<p style="text-align:center;color:#999;padding:24px;"><i class="fa-solid fa-circle-notch fa-spin"></i> 読み込み中...</p>';
+        try {
+            await loadDailyMissionState();
+        } catch (e) {
+            console.error('[デイリーミッション] 読み込みエラー:', e);
+            container.innerHTML = '<p style="text-align:center;color:#999;padding:24px;">読み込みに失敗しました。更新ボタンをお試しください。</p>';
+            return;
+        }
+    }
+
+    updateDailyMissionBadge();
+
+    if (!dailyMissionState) {
+        container.innerHTML = '<p style="text-align:center;color:#999;padding:24px;"><i class="fa-solid fa-dumbbell"></i> 対象になる種目がまだありません。ルールタブから追加してください。</p>';
+        return;
+    }
+
+    const { exerciseKey, target, bestValue, cleared, dateKey } = dailyMissionState;
+    const ex = freeExercises[exerciseKey] || {};
+    const unit = guessExerciseUnit(ex.name || '');
+    const percent = Math.min(100, Math.round((bestValue / target) * 100));
+    const remaining = Math.max(0, target - bestValue);
+
+    container.innerHTML = `
+        <div class="daily-mission-card${cleared ? ' cleared' : ''}">
+            <div class="daily-mission-badge">
+                <i class="fa-solid ${cleared ? 'fa-circle-check' : 'fa-fire'}"></i>
+                ${cleared ? 'クリア済み' : '挑戦中'}
+            </div>
+            <div class="daily-mission-date">${escapeHtml(formatDailyDateLabel(dateKey))}</div>
+            <div class="daily-mission-exercise">
+                <span class="daily-mission-icon"><i class="fa-solid ${escapeHtml(ex.icon || 'fa-dumbbell')}"></i></span>
+                <span class="daily-mission-name">${escapeHtml(ex.name || exerciseKey)}</span>
+            </div>
+            <div class="daily-mission-target">
+                <span class="daily-mission-target-label">あなたの目標</span>
+                <span class="daily-mission-target-value">${target}<span class="daily-mission-target-unit">${escapeHtml(unit)}</span></span>
+            </div>
+            <div class="daily-mission-progress">
+                <div class="daily-mission-bar"><div class="daily-mission-bar-fill" style="width:${percent}%"></div></div>
+                <div class="daily-mission-progress-text">
+                    <span>今日のベスト ${bestValue}${escapeHtml(unit)}</span>
+                    <span>${cleared ? '達成！' : `あと ${remaining}${escapeHtml(unit)}`}</span>
+                </div>
+            </div>
+            ${ex.rule ? `<p class="daily-mission-rule">${escapeHtml(ex.rule)}</p>` : ''}
+        </div>
+
+        <div class="daily-mission-post">
+            <h3><i class="fa-solid fa-pen-to-square"></i> 記録を投稿</h3>
+            <div class="daily-mission-input-row">
+                <input type="number" id="daily-mission-value" placeholder="${escapeHtml(unit)}数" min="1" max="10000">
+                <span class="daily-mission-unit">${escapeHtml(unit)}</span>
+                <button type="button" class="btn-primary" id="daily-mission-submit">投稿する</button>
+            </div>
+            <p class="daily-mission-note">この投稿はフリーモードの記録としても集計されます。</p>
+            <p id="daily-mission-error" class="error-message"></p>
+        </div>
+    `;
+
+    const submitBtn = document.getElementById('daily-mission-submit');
+    const valueInput = document.getElementById('daily-mission-value');
+    submitBtn.addEventListener('click', submitDailyMissionPost);
+    valueInput.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            submitDailyMissionPost();
+        }
+    });
+}
+
+/**
+ * デイリーミッションの記録を投稿する（モードに関わらず posts_free へ）
+ */
+async function submitDailyMissionPost() {
+    const errorEl = document.getElementById('daily-mission-error');
+    const valueInput = document.getElementById('daily-mission-value');
+    if (!dailyMissionState || !valueInput) return;
+
+    const value = parseInt(valueInput.value);
+    if (!value || value <= 0 || isNaN(value) || value > 10000) {
+        errorEl.textContent = '回数または秒数を正しく入力してください（1〜10000）';
+        return;
+    }
+
+    try {
+        await db.collection('posts_free').add({
+            userId: currentUser.uid,
+            userEmail: currentUser.email,
+            exerciseType: dailyMissionState.exerciseKey,
+            value: value,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            likes: [],
+            comments: []
+        });
+
+        // posts_free は free/weekly の両モードが共有するため両方のキャッシュを破棄
+        ['free', 'weekly'].forEach(mode => {
+            rankingCache[mode] = null;
+            rankingCacheTime[mode] = null;
+            scoreCache[mode] = null;
+            scoreCacheTime[mode] = null;
+            progressCache[mode] = {};
+            postsCache[mode] = null;
+            postsCacheTime[mode] = null;
+        });
+
+        errorEl.textContent = '';
+        valueInput.value = '';
+
+        const wasCleared = dailyMissionState.cleared;
+        await renderDailyMissionTab(true);
+
+        if (!wasCleared && dailyMissionState && dailyMissionState.cleared) {
+            alert('デイリーミッション達成！おつかれさま 🎉');
+        } else {
+            alert('投稿しました！');
+        }
+    } catch (error) {
+        errorEl.textContent = '投稿に失敗しました。もう一度お試しください。';
+        console.error('[デイリーミッション] 投稿エラー:', error);
+    }
+}
+
+/**
+ * 未クリアならタブボタンに赤ドットを表示する
+ */
+function updateDailyMissionBadge() {
+    const pending = !!(dailyMissionState && !dailyMissionState.cleared);
+    document.querySelectorAll('.tab-btn[data-tab="daily"] .daily-mission-dot').forEach(dot => {
+        dot.style.display = pending ? 'block' : 'none';
+    });
+}
+
+/**
+ * デイリーミッションタブに切り替える
+ */
+function switchToDailyMissionTab() {
+    const btn = document.querySelector(`.tab-btn[data-tab="daily"][data-mode="${currentMode}"]`);
+    if (btn) btn.click();
+}
+
+/**
+ * 起動時、今日のミッションが未クリアならデイリーミッションタブを開く。
+ * 一度きり（以降ユーザーの操作を妨げない）。
+ */
+async function maybeOpenDailyMissionOnStart() {
+    if (dailyMissionAutoNavDone) return;
+    if (currentMode !== 'free' && currentMode !== 'weekly') return;
+    dailyMissionAutoNavDone = true;
+
+    try {
+        await loadDailyMissionState();
+    } catch (e) {
+        console.warn('[デイリーミッション] 起動時チェック失敗:', e);
+        return;
+    }
+
+    updateDailyMissionBadge();
+    if (dailyMissionState && !dailyMissionState.cleared) {
+        switchToDailyMissionTab();
+    }
 }
 
 // ====================================================================
