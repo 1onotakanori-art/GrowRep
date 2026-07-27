@@ -25,10 +25,13 @@ export const DAILY_MAX_RATIO = 2.0;
 export const DAILY_REPS_FLOOR = 5;
 /** 過去に投稿が無い種目のピーク回数。 */
 export const DAILY_REPS_DEFAULT_PEAK = 30;
-/** 投稿がある種目のピーク＝過去最高回数のこの割合。 */
-export const DAILY_PEAK_BEST_RATIO = 0.5;
+/**
+ * 投稿がある種目のピーク＝過去最高回数のこの割合。
+ * クリア判定はその日の合計なので、1回の最高記録をそのまま目安にできる。
+ */
+export const DAILY_PEAK_BEST_RATIO = 1.0;
 
-/** ピーク回数の決まり方。best = 過去最高の半分 / default = 投稿が無いので既定値 */
+/** ピーク回数の決まり方。best = 過去最高回数 / default = 投稿が無いので既定値 */
 export type DailyPeakSource = 'best' | 'default';
 
 export interface DailyMission {
@@ -349,6 +352,33 @@ export function buildDailyDistributionCurve(
     points.push({ x, y: top > 0 ? dailyTargetPdf(x, peak) / top : 0 });
   }
   return points;
+}
+
+/** 目盛りの刻み候補（小さい順）。app.js: DAILY_AXIS_STEPS */
+const DAILY_AXIS_STEPS = [
+  5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000,
+];
+/** 目盛りの本数の上限。これを超えないいちばん細かい刻みを選ぶ。 */
+export const DAILY_AXIS_MAX_TICKS = 9;
+
+/**
+ * グラフの x 軸の窓（描画範囲と目盛りの刻み）。
+ * 0 からではなく抽選されうる範囲だけを映す（0 起点だと分布が右端に寄る）。
+ * ピークは種目ごとに大きく変わるので、刻みは本数が増えすぎないものを選ぶ。
+ * app.js: dailyAxisWindow
+ */
+export function dailyAxisWindow(
+  lo: number,
+  hi: number,
+): { min: number; max: number; step: number } {
+  for (const step of DAILY_AXIS_STEPS) {
+    // 端に点が乗らないよう、両側を1目盛りぶん外へ広げる
+    const min = Math.max(0, (Math.ceil(lo / step) - 1) * step);
+    const max = (Math.floor(hi / step) + 1) * step;
+    if ((max - min) / step <= DAILY_AXIS_MAX_TICKS - 1) return { min, max, step };
+  }
+  const step = DAILY_AXIS_STEPS[DAILY_AXIS_STEPS.length - 1];
+  return { min: 0, max: Math.max(step, Math.ceil(hi / step) * step), step };
 }
 
 /**

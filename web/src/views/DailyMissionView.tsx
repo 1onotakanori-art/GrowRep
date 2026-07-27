@@ -173,7 +173,7 @@ export default function DailyMissionView() {
             目標は {peak}
             {unit} をピークに、大きい側を狭めた分布から一人ひとり抽選されます
             {peakSource === 'best'
-              ? `（ピークはこの種目の過去最高 ${bestValue}${unit} の半分）`
+              ? `（ピークはこの種目の過去最高 ${bestValue}${unit}）`
               : '（この種目はまだ投稿が無いので 30 がピーク）'}
             。
           </p>

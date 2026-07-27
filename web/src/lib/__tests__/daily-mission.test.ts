@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
+  DAILY_AXIS_MAX_TICKS,
   DAILY_REPS_DEFAULT_PEAK,
   DAILY_REPS_FLOOR,
   assignLabelLanes,
   buildDailyDistributionCurve,
   buildDailyParticipants,
   createSeededRandom,
+  dailyAxisWindow,
   dailyLogCenter,
   dailyRepsBounds,
   dailyTargetCdf,
@@ -119,9 +121,10 @@ describe('pickDailyMissionExercise', () => {
 });
 
 describe('resolveDailyPeak / dailyRepsBounds', () => {
-  it('投稿がある種目は過去最高の半分がピーク', () => {
-    expect(resolveDailyPeak(100)).toBe(50);
-    expect(resolveDailyPeak(45)).toBe(23); // 22.5 → 四捨五入
+  it('投稿がある種目は過去最高回数がそのままピーク', () => {
+    // クリア判定はその日の合計なので、1回の最高記録をそのまま目安にできる
+    expect(resolveDailyPeak(100)).toBe(100);
+    expect(resolveDailyPeak(45)).toBe(45);
   });
   it('投稿が無い種目は既定の30回', () => {
     expect(resolveDailyPeak(0)).toBe(DAILY_REPS_DEFAULT_PEAK);
@@ -400,6 +403,53 @@ describe('sumDailyTotals（その日の合計で判定する）', () => {
       'free_1',
     );
     expect(totals.u1).toBeGreaterThanOrEqual(target);
+  });
+});
+
+describe('dailyAxisWindow', () => {
+  const cases = [0, 30, 60, 105, 210, 500, 2000, 10000].map((best) =>
+    resolveDailyPeak(best),
+  );
+
+  it('どのピークでも目盛りが多くなりすぎない', () => {
+    cases.forEach((peak) => {
+      const { min, max, step } = dailyAxisWindow(peak, peak); // 幅ゼロでも壊れない
+      expect((max - min) / step + 1).toBeLessThanOrEqual(DAILY_AXIS_MAX_TICKS);
+    });
+    cases.forEach((peak) => {
+      const b = dailyRepsBounds(peak);
+      const { min, max, step } = dailyAxisWindow(b.min, b.max);
+      const ticks = (max - min) / step + 1;
+      expect(Number.isInteger(ticks)).toBe(true);
+      expect(ticks).toBeGreaterThanOrEqual(3);
+      expect(ticks).toBeLessThanOrEqual(DAILY_AXIS_MAX_TICKS);
+    });
+  });
+
+  it('抽選範囲を内側に含み、両端に余白がある', () => {
+    cases.forEach((peak) => {
+      const b = dailyRepsBounds(peak);
+      const { min, max } = dailyAxisWindow(b.min, b.max);
+      expect(min).toBeLessThan(b.min);
+      expect(max).toBeGreaterThan(b.max);
+      expect(min).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  it('ピークが大きくなるほど刻みも粗くなる', () => {
+    const steps = cases.map((peak) => {
+      const b = dailyRepsBounds(peak);
+      return dailyAxisWindow(b.min, b.max).step;
+    });
+    for (let i = 1; i < steps.length; i++) {
+      expect(steps[i]).toBeGreaterThanOrEqual(steps[i - 1]);
+    }
+    // ピーク30なら従来どおり10刻み
+    expect(dailyAxisWindow(14, 60)).toEqual({ min: 10, max: 70, step: 10 });
+  });
+
+  it('目盛りは 0 未満にならない', () => {
+    expect(dailyAxisWindow(2, 9).min).toBe(0);
   });
 });
 
