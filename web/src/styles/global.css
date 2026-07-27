@@ -187,8 +187,18 @@ h4 {
   }
 }
 
+/*
+ * ⚠️ fill-mode は backwards（both/forwards にしない）。
+ * transform を animate するため、forwards で終了状態を保持すると
+ * 計算値が「単位行列」のまま残り、この要素が position:fixed の
+ * 包含ブロックになり続ける（transform:none キーワードとは別物）。
+ * その状態でモーダルを中に描画すると、オーバーレイがビューポートではなく
+ * この要素の高さに広がり、シートが画面外へ飛ぶ。
+ * 終了状態は要素の自然な状態（opacity:1 / transform:none）と同じなので
+ * forwards は元々不要。
+ */
 .fade-in {
-  animation: fadeIn 0.28s ease both;
+  animation: fadeIn 0.28s ease backwards;
 }
 @keyframes fadeIn {
   from {
