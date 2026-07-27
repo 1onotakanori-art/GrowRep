@@ -6,13 +6,16 @@ import {
   assignLabelLanes,
   buildDailyDistributionCurve,
   buildDailyParticipants,
+  buildDailyTeamProgress,
   createSeededRandom,
+  dailyContributionRatio,
   dailyAxisWindow,
   dailyLogCenter,
   dailyRepsBounds,
   dailyTargetCdf,
   dailyTargetPdf,
   dailyTargetProbability,
+  formatDailyCount,
   formatDailyDateLabel,
   formatDailyProbability,
   generateDailyMissionTarget,
@@ -24,9 +27,11 @@ import {
   isDailyActiveUser,
   pickDailyMissionExercise,
   resolveDailyPeak,
+  resolveDailyTeamGoal,
   sumDailyTotals,
   truncateLabelName,
   usedLaneCount,
+  type DailyParticipant,
 } from '../daily-mission';
 import type { FreeExerciseMap } from '../types';
 
@@ -645,5 +650,116 @@ describe('usedLaneCount', () => {
   });
   it('空なら0', () => {
     expect(usedLaneCount([])).toBe(0);
+  });
+});
+
+describe('buildDailyTeamProgress / resolveDailyTeamGoal', () => {
+  const p = (
+    userId: string,
+    target: number,
+    totalValue: number,
+    isMe = false,
+  ): DailyParticipant => ({
+    userId,
+    userName: userId,
+    target,
+    probability: 0.1,
+    totalValue,
+    cleared: totalValue >= target,
+    isMe,
+  });
+
+  it('合計と目標は全員ぶんの足し上げ', () => {
+    const team = buildDailyTeamProgress([
+      p('u1', 30, 10),
+      p('u2', 40, 50),
+      p('u3', 20, 0),
+    ]);
+    expect(team.totalValue).toBe(60);
+    expect(team.goal).toBe(90);
+    expect(team.remaining).toBe(30);
+    expect(team.percent).toBe(67);
+    expect(team.cleared).toBe(false);
+    expect(team.activeCount).toBe(2);
+  });
+
+  it('目標は個人目標の合計（レイドミッションの差し替え口）', () => {
+    const list = [p('u1', 30, 0), p('u2', 40, 0)];
+    expect(resolveDailyTeamGoal(list)).toBe(70);
+    expect(buildDailyTeamProgress(list).goal).toBe(70);
+  });
+
+  it('全員ぶんに届けば達成（超過しても100%止まり）', () => {
+    const team = buildDailyTeamProgress([p('u1', 30, 100), p('u2', 40, 5)]);
+    expect(team.cleared).toBe(true);
+    expect(team.percent).toBe(100);
+    expect(team.remaining).toBe(0);
+  });
+
+  it('個人が未達でも合計では達成しうる（連帯で埋められる）', () => {
+    const team = buildDailyTeamProgress([p('u1', 30, 60), p('u2', 40, 10)]);
+    expect(team.contributors.every((c) => c.cleared)).toBe(false);
+    expect(team.cleared).toBe(true);
+  });
+
+  it('貢献の多い順に並び、0回の人も落とさない', () => {
+    const team = buildDailyTeamProgress([
+      p('u1', 30, 5),
+      p('u2', 40, 90),
+      p('u3', 20, 0),
+    ]);
+    expect(team.contributors.map((c) => c.userId)).toEqual(['u2', 'u1', 'u3']);
+    expect(team.contributors[0].share).toBeCloseTo(90 / 95);
+  });
+
+  it('誰も投稿していなければ 0%（0除算しない）', () => {
+    const team = buildDailyTeamProgress([p('u1', 30, 0), p('u2', 40, 0)]);
+    expect(team.totalValue).toBe(0);
+    expect(team.percent).toBe(0);
+    expect(team.cleared).toBe(false);
+    expect(team.contributors.every((c) => c.share === 0)).toBe(true);
+  });
+
+  it('参加者ゼロでも壊れない（目標0を達成扱いにしない）', () => {
+    const team = buildDailyTeamProgress([]);
+    expect(team.goal).toBe(0);
+    expect(team.percent).toBe(0);
+    expect(team.cleared).toBe(false);
+    expect(team.contributors).toEqual([]);
+  });
+
+  it('割合の合計は1（投稿がある場合）', () => {
+    const team = buildDailyTeamProgress([
+      p('u1', 30, 7),
+      p('u2', 40, 13),
+      p('u3', 20, 5),
+    ]);
+    const sum = team.contributors.reduce((s, c) => s + c.share, 0);
+    expect(sum).toBeCloseTo(1);
+  });
+});
+
+describe('dailyContributionRatio', () => {
+  it('最多貢献者が満杯になるよう正規化する', () => {
+    expect(dailyContributionRatio(50, 100)).toBe(0.5);
+    expect(dailyContributionRatio(100, 100)).toBe(1);
+  });
+  it('0や負の最大値でも0（0除算しない）', () => {
+    expect(dailyContributionRatio(0, 0)).toBe(0);
+    expect(dailyContributionRatio(10, 0)).toBe(0);
+  });
+  it('1を超えない', () => {
+    expect(dailyContributionRatio(200, 100)).toBe(1);
+  });
+});
+
+describe('formatDailyCount', () => {
+  it('4桁以上は3桁区切り', () => {
+    expect(formatDailyCount(1234)).toBe('1,234');
+    expect(formatDailyCount(1234567)).toBe('1,234,567');
+  });
+  it('3桁以下はそのまま', () => {
+    expect(formatDailyCount(0)).toBe('0');
+    expect(formatDailyCount(999)).toBe('999');
   });
 });

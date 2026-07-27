@@ -4128,3 +4128,106 @@ body.dark-mode .dm-dot { stroke: #2a2a2a; }
 body.dark-mode .dm-me { color: #8fa3ff; }
 body.dark-mode .dm-done { color: #43e97b; }
 body.dark-mode .dm-todo { color: #888; }
+
+/* --------------------------------------------------------------------
+   デイリーミッション：みんなの合計（.daily-dist-card を土台に使う）
+   -------------------------------------------------------------------- */
+.daily-team-card.cleared {
+    border: 1px solid #43e97b;
+}
+.daily-team-card.cleared .daily-mission-bar-fill {
+    background: #43e97b;
+}
+.daily-team-card.cleared .daily-mission-progress-text {
+    color: #38c172;
+}
+.daily-team-total {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 6px;
+    padding: 2px 4px 10px;
+}
+.daily-team-total-value {
+    font-size: 34px;
+    font-weight: 900;
+    line-height: 1.05;
+    color: #667eea;
+}
+.daily-team-card.cleared .daily-team-total-value {
+    color: #38c172;
+}
+.daily-team-total-goal {
+    font-size: 14px;
+    font-weight: 700;
+    color: #999;
+}
+.daily-team-card .daily-mission-progress {
+    padding: 0 4px;
+}
+
+.daily-team-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin: 12px 0 0;
+    padding: 0 4px;
+    list-style: none;
+}
+.daily-team-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #666;
+}
+.daily-team-row.is-me {
+    font-weight: 800;
+    color: #333;
+}
+.daily-team-name {
+    flex: 0 0 33%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.daily-team-name i {
+    color: #38c172;
+    margin-right: 4px;
+}
+.daily-team-bar {
+    flex: 1;
+    min-width: 0;
+    height: 7px;
+    border-radius: 999px;
+    background: #eceff1;
+    overflow: hidden;
+}
+.daily-team-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: #667eea;
+    transition: width 0.4s ease;
+}
+.daily-team-bar-fill.cleared {
+    background: #43e97b;
+}
+.daily-team-value {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+.daily-team-target {
+    color: #999;
+    font-weight: 600;
+}
+
+body.dark-mode .daily-team-total-value { color: #8fa3ff; }
+body.dark-mode .daily-team-row { color: #bbb; }
+body.dark-mode .daily-team-row.is-me { color: #e8e8e8; }
+body.dark-mode .daily-team-bar { background: #3a3f44; }
+body.dark-mode .daily-team-bar-fill { background: #8fa3ff; }
+/* 個人が目標を達成した行は暗所でも緑（上の一括指定に負けないよう後ろに置く） */
+body.dark-mode .daily-team-bar-fill.cleared { background: #43e97b; }
+body.dark-mode .daily-team-card.cleared .daily-team-total-value { color: #43e97b; }
