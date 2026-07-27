@@ -79,6 +79,30 @@ export async function updateUserName(
   invalidateUsersMapCache();
 }
 
+/**
+ * 「今日ログインした」印を users ドキュメントに残す（デイリーミッションの
+ * みんなの目標を、その日ログインした人だけに絞るため）。
+ * 既に今日の印があれば書き込まない。⚠️ app.js: touchUserActivity のミラー。
+ */
+export async function touchUserActivity(
+  userId: string,
+  dateKey: string,
+): Promise<void> {
+  try {
+    const current = await getUserData(userId);
+    if (current?.lastActiveDateKey === dateKey) return;
+    await setDoc(
+      doc(db, 'users', userId),
+      { lastActiveDateKey: dateKey, lastActiveAt: serverTimestamp() },
+      { merge: true },
+    );
+    invalidateUsersMapCache();
+  } catch (e) {
+    // 記録できなくてもアプリは動く（自分は必ずグラフに載る）
+    console.warn('[ユーザー] ログイン記録に失敗:', e);
+  }
+}
+
 export async function checkUsernameExists(userName: string): Promise<boolean> {
   const snap = await getDocs(
     query(collection(db, 'users'), where('userName', '==', userName)),

@@ -82,6 +82,12 @@
   font-weight: 900;
   font-size: 11px;
 }
+/* その回数を引く確率（控えめに添える） */
+.prob {
+  font-weight: 600;
+  font-size: 9px;
+  opacity: 0.75;
+}
 
 /* 自分・達成済み・未達成で色分け（currentColor で線と点をまとめて着色） */
 .me {
