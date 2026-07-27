@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   assignLabelLanes,
   buildDailyDistributionCurve,
+  dailyAxisWindow,
   dailyRepsBounds,
   formatDailyProbability,
   truncateLabelName,
@@ -57,11 +58,15 @@ export default function DistributionChart({
 
     // 目盛りは抽選されうる範囲だけを映す（0 から描くと分布が右端に寄る）
     const bounds = dailyRepsBounds(peak);
-    const lo = Math.min(bounds.min, ...participants.map((p) => p.target));
-    const hi = Math.max(bounds.max, ...participants.map((p) => p.target));
-    const step = hi - lo > 90 ? 20 : 10;
-    const xMin = Math.max(0, (Math.ceil(lo / step) - 1) * step);
-    const xMax = (Math.floor(hi / step) + 1) * step;
+    const targets = participants.map((p) => p.target);
+    const {
+      min: xMin,
+      max: xMax,
+      step,
+    } = dailyAxisWindow(
+      Math.min(bounds.min, ...targets),
+      Math.max(bounds.max, ...targets),
+    );
     const toX = (v: number) =>
       PAD_X + ((v - xMin) / (xMax - xMin)) * (W - PAD_X * 2);
 

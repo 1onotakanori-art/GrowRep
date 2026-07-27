@@ -7625,7 +7625,8 @@ const DAILY_REPS_FLOOR = 5;
 // 過去に投稿が無い種目のピーク回数
 const DAILY_REPS_DEFAULT_PEAK = 30;
 // 投稿がある種目のピーク＝過去最高回数のこの割合
-const DAILY_PEAK_BEST_RATIO = 0.5;
+// クリア判定はその日の合計なので、1回の最高記録をそのまま目安にできる
+const DAILY_PEAK_BEST_RATIO = 1.0;
 
 // 今日のミッション状態 { dateKey, exerciseKey, target, totalValue, cleared, participants }
 let dailyMissionState = null;
@@ -7915,6 +7916,31 @@ function buildDailyDistributionCurve(xMin, xMax, peak, steps = 96) {
         points.push({ x: x, y: top > 0 ? dailyTargetPdf(x, peak) / top : 0 });
     }
     return points;
+}
+
+// 目盛りの刻み候補（小さい順）
+const DAILY_AXIS_STEPS = [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000];
+// 目盛りの本数の上限。これを超えないいちばん細かい刻みを選ぶ
+const DAILY_AXIS_MAX_TICKS = 9;
+
+/**
+ * グラフのx軸の窓（描画範囲と目盛りの刻み）。
+ * 0からではなく抽選されうる範囲だけを映す（0起点だと分布が右端に寄る）。
+ * ピークは種目ごとに大きく変わるので、刻みは本数が増えすぎないものを選ぶ。
+ * @param {number} lo
+ * @param {number} hi
+ * @returns {{min: number, max: number, step: number}}
+ */
+function dailyAxisWindow(lo, hi) {
+    for (let i = 0; i < DAILY_AXIS_STEPS.length; i++) {
+        const step = DAILY_AXIS_STEPS[i];
+        // 端に点が乗らないよう、両側を1目盛りぶん外へ広げる
+        const min = Math.max(0, (Math.ceil(lo / step) - 1) * step);
+        const max = (Math.floor(hi / step) + 1) * step;
+        if ((max - min) / step <= DAILY_AXIS_MAX_TICKS - 1) return { min: min, max: max, step: step };
+    }
+    const step = DAILY_AXIS_STEPS[DAILY_AXIS_STEPS.length - 1];
+    return { min: 0, max: Math.max(step, Math.ceil(hi / step) * step), step: step };
 }
 
 /**
@@ -8280,11 +8306,13 @@ function renderDailyDistributionSvg(participants, unit, peak) {
     // 目盛りは抽選されうる範囲だけを映す（0から描くと分布が右端に寄る）
     const targets = participants.map(p => p.target);
     const bounds = dailyRepsBounds(peak);
-    const lo = Math.min.apply(null, [bounds.min].concat(targets));
-    const hi = Math.max.apply(null, [bounds.max].concat(targets));
-    const step = hi - lo > 90 ? 20 : 10;
-    const xMin = Math.max(0, (Math.ceil(lo / step) - 1) * step);
-    const xMax = (Math.floor(hi / step) + 1) * step;
+    const win = dailyAxisWindow(
+        Math.min.apply(null, [bounds.min].concat(targets)),
+        Math.max.apply(null, [bounds.max].concat(targets))
+    );
+    const xMin = win.min;
+    const xMax = win.max;
+    const step = win.step;
     const toX = (v) => DIST_PAD_X + ((v - xMin) / (xMax - xMin)) * (DIST_W - DIST_PAD_X * 2);
 
     // ラベル段数に応じてグラフの高さを決める（重なりを段で解消するため）
@@ -8440,7 +8468,7 @@ async function renderDailyMissionTab(forceRefresh = false) {
                 <span class="daily-dist-count">${clearedCount}/${participants.length} 人クリア</span>
             </div>
             ${renderDailyDistributionSvg(participants, unit, peak)}
-            <p class="daily-dist-note">並ぶのは今日ログインした人だけ。名前の横の％は、その回数を引く確率です。目標は ${peak}${escapeHtml(unit)} をピークに、大きい側を狭めた分布から一人ひとり抽選されます${peakSource === 'best' ? `（ピークはこの種目の過去最高 ${bestValue}${escapeHtml(unit)} の半分）` : '（この種目はまだ投稿が無いので 30 がピーク）'}。</p>
+            <p class="daily-dist-note">並ぶのは今日ログインした人だけ。名前の横の％は、その回数を引く確率です。目標は ${peak}${escapeHtml(unit)} をピークに、大きい側を狭めた分布から一人ひとり抽選されます${peakSource === 'best' ? `（ピークはこの種目の過去最高 ${bestValue}${escapeHtml(unit)}）` : '（この種目はまだ投稿が無いので 30 がピーク）'}。</p>
         </div>
         ` : ''}
 
