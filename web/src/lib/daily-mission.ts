@@ -31,6 +31,17 @@ export interface DailyMissionState {
   target: number;
   cleared: boolean;
   bestValue: number;
+  /** 全ユーザーの目標と達成状況（分布グラフ用） */
+  participants: DailyParticipant[];
+}
+
+export interface DailyParticipant {
+  userId: string;
+  userName: string;
+  target: number;
+  bestValue: number;
+  cleared: boolean;
+  isMe: boolean;
 }
 
 // ---------------------------------------------------------------------
@@ -158,6 +169,130 @@ export function pushRecentMissionKeys(
     0,
     DAILY_RECENT_AVOID,
   );
+}
+
+// ---------------------------------------------------------------------
+// 分布グラフ（みんなの目標を1枚に並べる）
+// ---------------------------------------------------------------------
+
+/**
+ * 目標回数の確率密度（対数正規）。app.js: dailyLogNormalPdf
+ * 目標は保存せずシードから再計算できるので、他ユーザーの回数も
+ * Firestore を読まずに全員分ローカルで求められる。
+ */
+export function dailyLogNormalPdf(x: number): number {
+  if (x <= 0) return 0;
+  const z = (Math.log(x) - DAILY_REPS_MU) / DAILY_REPS_SIGMA;
+  return (
+    Math.exp(-0.5 * z * z) / (x * DAILY_REPS_SIGMA * Math.sqrt(2 * Math.PI))
+  );
+}
+
+/**
+ * 分布カーブの点列。y はピーク(=最頻値30回)が 1 になるよう正規化する。
+ * app.js: buildDailyDistributionCurve
+ */
+export function buildDailyDistributionCurve(
+  xMax: number,
+  steps = 96,
+): Array<{ x: number; y: number }> {
+  const peak = dailyLogNormalPdf(DAILY_REPS_PEAK);
+  const points: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= steps; i++) {
+    const x = (xMax * i) / steps;
+    points.push({ x, y: peak > 0 ? dailyLogNormalPdf(x) / peak : 0 });
+  }
+  return points;
+}
+
+/**
+ * 全ユーザーの目標を算出して並べる（目標が小さい順）。
+ * bestValues は当日の投稿から作った userId→最高値。
+ * app.js: buildDailyParticipants
+ */
+export function buildDailyParticipants(
+  usersMap: Record<string, { userName?: string; email?: string }>,
+  dateKey: string,
+  exerciseKey: string,
+  bestValues: Record<string, number>,
+  myUserId: string,
+): DailyParticipant[] {
+  return Object.keys(usersMap || {})
+    .map((userId) => {
+      const u = usersMap[userId] || {};
+      const target = generateDailyMissionTarget(userId, dateKey, exerciseKey);
+      const bestValue = bestValues[userId] || 0;
+      return {
+        userId,
+        userName: u.userName || u.email || '名無しさん',
+        target,
+        bestValue,
+        cleared: bestValue >= target,
+        isMe: userId === myUserId,
+      };
+    })
+    .sort((a, b) => a.target - b.target || a.userId.localeCompare(b.userId));
+}
+
+/** グラフ上のラベルで表示する名前の最大文字数（長い名前は省略する）。 */
+export const DAILY_LABEL_NAME_MAX = 6;
+
+/** 長い表示名を省略。app.js: truncateLabelName */
+export function truncateLabelName(
+  name: string,
+  max = DAILY_LABEL_NAME_MAX,
+): string {
+  const n = name || '';
+  return n.length > max ? n.slice(0, max) + '…' : n;
+}
+
+/**
+ * ラベルが重ならないように段（レーン）へ割り当てる。
+ * 位置の昇順に、その段の右端と実際の幅で衝突判定し、空いている最小の段へ置く。
+ * どの段にも入らなければ新しい段を開く（= 段さえ増やせば必ず重ならない）。
+ * app.js: assignLabelLanes
+ * @param positions 各ラベルの中心x（昇順である必要はない）
+ * @param widths 各ラベルの幅（positions と同じ並び）
+ * @param maxLanes 段の上限。これを超える場合だけ最も余裕のある段に相乗りする
+ * @param gap ラベル間に空ける最小の余白
+ * @returns 入力順に対応した段番号
+ */
+export function assignLabelLanes(
+  positions: number[],
+  widths: number[],
+  maxLanes = 8,
+  gap = 4,
+): number[] {
+  const order = positions
+    .map((x, i) => ({ x, i }))
+    .sort((a, b) => a.x - b.x || a.i - b.i);
+  const laneRight: number[] = [];
+  const lanes = new Array<number>(positions.length).fill(0);
+
+  order.forEach(({ x, i }) => {
+    const half = (widths[i] || 0) / 2;
+    const left = x - half;
+
+    let lane = 0;
+    for (; lane < laneRight.length; lane++) {
+      if (left >= laneRight[lane] + gap) break;
+    }
+    if (lane === laneRight.length && laneRight.length >= maxLanes) {
+      // 段を増やせないので最も右端が手前の段へ（この場合だけ重なりうる）
+      lane = 0;
+      for (let l = 1; l < laneRight.length; l++) {
+        if (laneRight[l] < laneRight[lane]) lane = l;
+      }
+    }
+    laneRight[lane] = x + half;
+    lanes[i] = lane;
+  });
+  return lanes;
+}
+
+/** 使用された段数（= 最大段番号+1）。app.js: usedLaneCount */
+export function usedLaneCount(lanes: number[]): number {
+  return lanes.length === 0 ? 0 : Math.max(...lanes) + 1;
 }
 
 // ---------------------------------------------------------------------

@@ -1,0 +1,98 @@
+.svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* --- 分布カーブ --- */
+.areaTop {
+  stop-color: var(--accent);
+  stop-opacity: 0.28;
+}
+.areaBottom {
+  stop-color: var(--accent);
+  stop-opacity: 0.02;
+}
+.curve {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/* --- 軸・目盛り --- */
+.axis {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.tick {
+  fill: var(--text-3);
+  font-size: 9px;
+  text-anchor: middle;
+}
+.axisUnit {
+  fill: var(--text-3);
+  font-size: 9px;
+  text-anchor: end;
+}
+.peakLine {
+  stroke: var(--flame);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.55;
+}
+.peakLabel {
+  fill: var(--flame);
+  font-size: 8.5px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+/* --- 各ユーザー --- */
+.connector {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.4;
+}
+.dot {
+  fill: currentColor;
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+.ring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  opacity: 0.55;
+}
+.name {
+  font-size: 10px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: currentColor;
+}
+.value {
+  font-weight: 900;
+  font-size: 11px;
+}
+
+/* 自分・達成済み・未達成で色分け（currentColor で線と点をまとめて着色） */
+.me {
+  color: var(--accent);
+}
+.me .name {
+  font-weight: 900;
+}
+.done {
+  color: var(--success);
+}
+.todo {
+  color: var(--text-3);
+}

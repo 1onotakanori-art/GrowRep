@@ -7,6 +7,7 @@ import {
   formatDailyDateLabel,
   guessExerciseUnit,
 } from '../lib/daily-mission';
+import DistributionChart from '../features/daily/DistributionChart';
 import { EmptyState, Skeleton, ViewHeader } from '../components/ui';
 import styles from './DailyMissionView.module.css';
 
@@ -44,6 +45,7 @@ export default function DailyMissionView() {
   const unit = guessExerciseUnit(ex?.name || '');
   const percent = Math.min(100, Math.round((bestValue / target) * 100));
   const remaining = Math.max(0, target - bestValue);
+  const clearedCount = dailyMission.participants.filter((p) => p.cleared).length;
 
   async function handleSubmit() {
     if (!user) return;
@@ -131,6 +133,27 @@ export default function DailyMissionView() {
 
         {ex?.rule && <p className={styles.rule}>{ex.rule}</p>}
       </div>
+
+      {dailyMission.participants.length > 0 && (
+        <div className={styles.distCard}>
+          <div className={styles.distHead}>
+            <span>
+              <i className="fa-solid fa-chart-simple" /> みんなの目標
+            </span>
+            <span className={styles.distCount}>
+              {clearedCount}/{dailyMission.participants.length} 人クリア
+            </span>
+          </div>
+          <DistributionChart
+            participants={dailyMission.participants}
+            unit={unit}
+          />
+          <p className={styles.distNote}>
+            全員が同じ種目。目標回数は 30{unit} をピークにした偏った分布から
+            一人ひとり抽選されます。
+          </p>
+        </div>
+      )}
 
       <div className={styles.postCard}>
         <h3 className={styles.postTitle}>

@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import {
+  buildDailyParticipants,
   getDailyBoundariesJST,
   getDailyDateKeyJST,
   generateDailyMissionTarget,
@@ -25,7 +26,7 @@ import {
   type DailyMission,
   type DailyMissionState,
 } from './daily-mission';
-import type { FreeExerciseMap, Post } from './types';
+import type { FreeExerciseMap, Post, UserData } from './types';
 
 const SETTINGS = 'settings_free';
 const MISSION_DOC = 'daily_mission';
@@ -94,15 +95,15 @@ export async function getOrCreateDailyMission(
 }
 
 /**
- * その日の自分の最高記録を取得。timestamp の単一フィールド範囲検索だけで
- * 済ませ（複合インデックス不要）、userId / exerciseType はクライアント側で絞る。
- * app.js: getDailyMissionBestValue
+ * その日の「全ユーザー」の最高記録を userId→値 で返す。
+ * timestamp の単一フィールド範囲検索だけで済ませ（複合インデックス不要）、
+ * exerciseType の絞り込みはクライアント側で行う。1クエリで全員分そろう。
+ * app.js: getDailyMissionBestValues
  */
-export async function getDailyMissionBestValue(
-  userId: string,
+export async function getDailyMissionBestValues(
   dateKey: string,
   exerciseKey: string,
-): Promise<number> {
+): Promise<Record<string, number>> {
   const { start, end } = getDailyBoundariesJST(dateKey);
   const snap = await getDocs(
     query(
@@ -111,21 +112,25 @@ export async function getDailyMissionBestValue(
       where('timestamp', '<', Timestamp.fromDate(end)),
     ),
   );
-  let best = 0;
+  const best: Record<string, number> = {};
   snap.docs.forEach((d) => {
     const post = d.data() as Post;
-    if (post.userId !== userId) return;
     if (post.exerciseType !== exerciseKey) return;
     const v = Number(post.value) || 0;
-    if (v > best) best = v;
+    if (v > (best[post.userId] || 0)) best[post.userId] = v;
   });
   return best;
 }
 
-/** ミッション本体＋自分の達成状況をまとめて解決。app.js: loadDailyMissionState */
+/**
+ * ミッション本体＋自分の達成状況＋全員の目標をまとめて解決。
+ * 目標はシードから決まるので、他ユーザーの回数を保存・取得する必要はない。
+ * app.js: loadDailyMissionState
+ */
 export async function loadDailyMissionState(
   userId: string,
   freeExercises: FreeExerciseMap,
+  usersMap: Record<string, UserData> = {},
   now: Date = new Date(),
 ): Promise<DailyMissionState | null> {
   const mission = await getOrCreateDailyMission(freeExercises, now);
@@ -136,10 +141,10 @@ export async function loadDailyMissionState(
     mission.dateKey,
     mission.exerciseKey,
   );
-  let bestValue = 0;
+
+  let bestValues: Record<string, number> = {};
   try {
-    bestValue = await getDailyMissionBestValue(
-      userId,
+    bestValues = await getDailyMissionBestValues(
       mission.dateKey,
       mission.exerciseKey,
     );
@@ -147,11 +152,25 @@ export async function loadDailyMissionState(
     console.warn('[デイリーミッション] クリア判定に失敗:', e);
   }
 
+  // 自分が usersMap に無い場合（初回ログイン直後など）も必ず並べる
+  const users: Record<string, UserData> = { ...usersMap };
+  if (!users[userId]) users[userId] = {};
+
+  const participants = buildDailyParticipants(
+    users,
+    mission.dateKey,
+    mission.exerciseKey,
+    bestValues,
+    userId,
+  );
+
+  const bestValue = bestValues[userId] || 0;
   return {
     dateKey: mission.dateKey,
     exerciseKey: mission.exerciseKey,
     target,
     bestValue,
     cleared: bestValue >= target,
+    participants,
   };
 }

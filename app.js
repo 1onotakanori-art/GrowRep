@@ -7722,6 +7722,127 @@ function pushRecentMissionKeys(recentKeys, exerciseKey) {
     return [exerciseKey, ...(recentKeys || []).filter(k => k !== exerciseKey)].slice(0, DAILY_RECENT_AVOID);
 }
 
+// --------------------------------------------------------------------
+// 分布グラフ（みんなの目標を1枚に並べる）
+// --------------------------------------------------------------------
+
+/**
+ * 目標回数の確率密度（対数正規）
+ * 目標は保存せずシードから再計算できるので、他ユーザーの回数も
+ * Firestoreを読まずに全員分ローカルで求められる。
+ * @param {number} x
+ * @returns {number}
+ */
+function dailyLogNormalPdf(x) {
+    if (x <= 0) return 0;
+    const z = (Math.log(x) - DAILY_REPS_MU) / DAILY_REPS_SIGMA;
+    return Math.exp(-0.5 * z * z) / (x * DAILY_REPS_SIGMA * Math.sqrt(2 * Math.PI));
+}
+
+/**
+ * 分布カーブの点列。yはピーク(=最頻値30回)が1になるよう正規化する。
+ * @param {number} xMax
+ * @param {number} steps
+ * @returns {Array<{x: number, y: number}>}
+ */
+function buildDailyDistributionCurve(xMax, steps = 96) {
+    const peak = dailyLogNormalPdf(DAILY_REPS_PEAK);
+    const points = [];
+    for (let i = 0; i <= steps; i++) {
+        const x = (xMax * i) / steps;
+        points.push({ x: x, y: peak > 0 ? dailyLogNormalPdf(x) / peak : 0 });
+    }
+    return points;
+}
+
+/**
+ * 全ユーザーの目標を算出して並べる（目標が小さい順）
+ * @param {Object} usersMap - userId → { userName, email }
+ * @param {string} dateKey
+ * @param {string} exerciseKey
+ * @param {Object} bestValues - userId → 当日の最高値
+ * @param {string} myUserId
+ * @returns {Array<Object>}
+ */
+function buildDailyParticipants(usersMap, dateKey, exerciseKey, bestValues, myUserId) {
+    return Object.keys(usersMap || {})
+        .map(userId => {
+            const u = usersMap[userId] || {};
+            const target = generateDailyMissionTarget(userId, dateKey, exerciseKey);
+            const bestValue = bestValues[userId] || 0;
+            return {
+                userId: userId,
+                userName: u.userName || u.email || '名無しさん',
+                target: target,
+                bestValue: bestValue,
+                cleared: bestValue >= target,
+                isMe: userId === myUserId
+            };
+        })
+        .sort((a, b) => a.target - b.target || a.userId.localeCompare(b.userId));
+}
+
+// グラフ上のラベルで表示する名前の最大文字数（長い名前は省略する）
+const DAILY_LABEL_NAME_MAX = 6;
+
+/**
+ * 長い表示名を省略
+ * @param {string} name
+ * @param {number} max
+ * @returns {string}
+ */
+function truncateLabelName(name, max = DAILY_LABEL_NAME_MAX) {
+    const n = name || '';
+    return n.length > max ? n.slice(0, max) + '…' : n;
+}
+
+/**
+ * ラベルが重ならないように段（レーン）へ割り当てる。
+ * 位置の昇順に、その段の右端と実際の幅で衝突判定し、空いている最小の段へ置く。
+ * どの段にも入らなければ新しい段を開く（= 段さえ増やせば必ず重ならない）。
+ * @param {number[]} positions - 各ラベルの中心x
+ * @param {number[]} widths - 各ラベルの幅（positionsと同じ並び）
+ * @param {number} maxLanes - 段の上限。超える場合だけ最も余裕のある段に相乗りする
+ * @param {number} gap - ラベル間に空ける最小の余白
+ * @returns {number[]} 入力順に対応した段番号
+ */
+function assignLabelLanes(positions, widths, maxLanes = 8, gap = 4) {
+    const order = positions
+        .map((x, i) => ({ x: x, i: i }))
+        .sort((a, b) => a.x - b.x || a.i - b.i);
+    const laneRight = [];
+    const lanes = new Array(positions.length).fill(0);
+
+    order.forEach(({ x, i }) => {
+        const half = (widths[i] || 0) / 2;
+        const left = x - half;
+
+        let lane = 0;
+        for (; lane < laneRight.length; lane++) {
+            if (left >= laneRight[lane] + gap) break;
+        }
+        if (lane === laneRight.length && laneRight.length >= maxLanes) {
+            // 段を増やせないので最も右端が手前の段へ（この場合だけ重なりうる）
+            lane = 0;
+            for (let l = 1; l < laneRight.length; l++) {
+                if (laneRight[l] < laneRight[lane]) lane = l;
+            }
+        }
+        laneRight[lane] = x + half;
+        lanes[i] = lane;
+    });
+    return lanes;
+}
+
+/**
+ * 使用された段数（= 最大段番号+1）
+ * @param {number[]} lanes
+ * @returns {number}
+ */
+function usedLaneCount(lanes) {
+    return lanes.length === 0 ? 0 : Math.max.apply(null, lanes) + 1;
+}
+
 /**
  * 種目名から単位を推測（種目データに単位情報がないため）
  * @param {string} exerciseName
@@ -7791,32 +7912,32 @@ async function getOrCreateDailyMission(exercises, now = new Date()) {
 }
 
 /**
- * その日の自分の最高記録を取得。timestampの単一フィールド範囲検索だけで
- * 済ませ（複合インデックス不要）、userId / exerciseType はクライアント側で絞る。
- * @param {string} userId
+ * その日の「全ユーザー」の最高記録を userId→値 で返す。
+ * timestampの単一フィールド範囲検索だけで済ませ（複合インデックス不要）、
+ * exerciseType の絞り込みはクライアント側で行う。1クエリで全員分そろう。
  * @param {string} dateKey
  * @param {string} exerciseKey
- * @returns {Promise<number>}
+ * @returns {Promise<Object>}
  */
-async function getDailyMissionBestValue(userId, dateKey, exerciseKey) {
+async function getDailyMissionBestValues(dateKey, exerciseKey) {
     const { start, end } = getDailyBoundariesJST(dateKey);
     const snap = await db.collection('posts_free')
         .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(start))
         .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(end))
         .get();
-    let best = 0;
+    const best = {};
     snap.docs.forEach(d => {
         const post = d.data();
-        if (post.userId !== userId) return;
         if (post.exerciseType !== exerciseKey) return;
         const v = Number(post.value) || 0;
-        if (v > best) best = v;
+        if (v > (best[post.userId] || 0)) best[post.userId] = v;
     });
     return best;
 }
 
 /**
- * ミッション本体＋自分の達成状況を解決し、dailyMissionState に格納する
+ * ミッション本体＋自分の達成状況＋全員の目標を解決し、dailyMissionState に格納する。
+ * 目標はシードから決まるので、他ユーザーの回数を保存・取得する必要はない。
  * @returns {Promise<Object|null>}
  */
 async function loadDailyMissionState() {
@@ -7832,21 +7953,159 @@ async function loadDailyMissionState() {
     }
 
     const target = generateDailyMissionTarget(currentUser.uid, mission.dateKey, mission.exerciseKey);
-    let bestValue = 0;
+
+    let bestValues = {};
     try {
-        bestValue = await getDailyMissionBestValue(currentUser.uid, mission.dateKey, mission.exerciseKey);
+        bestValues = await getDailyMissionBestValues(mission.dateKey, mission.exerciseKey);
     } catch (e) {
         console.warn('[デイリーミッション] クリア判定に失敗:', e);
     }
 
+    // 全ユーザーを取得して分布グラフ用の一覧を作る
+    let usersMap = {};
+    try {
+        usersMap = await getUsersMap();
+    } catch (e) {
+        console.warn('[デイリーミッション] ユーザー一覧の取得に失敗:', e);
+    }
+    // 自分がusersMapに無い場合（初回ログイン直後など）も必ず並べる
+    const users = Object.assign({}, usersMap);
+    if (!users[currentUser.uid]) users[currentUser.uid] = {};
+
+    const participants = buildDailyParticipants(
+        users, mission.dateKey, mission.exerciseKey, bestValues, currentUser.uid
+    );
+
+    const bestValue = bestValues[currentUser.uid] || 0;
     dailyMissionState = {
         dateKey: mission.dateKey,
         exerciseKey: mission.exerciseKey,
         target: target,
         bestValue: bestValue,
-        cleared: bestValue >= target
+        cleared: bestValue >= target,
+        participants: participants
     };
     return dailyMissionState;
+}
+
+// 分布グラフのviewBox座標系（web版 DistributionChart.tsx と同一）
+const DIST_W = 360;
+const DIST_PAD_X = 12;
+const DIST_LANE_H = 20;
+const DIST_LANE_TOP = 6;
+const DIST_MAX_LANES = 12;
+const DIST_PEAK_GAP = 18;  // ラベル段とカーブの間（「ピーク30」の見出しを置く）
+const DIST_CURVE_H = 132;
+const DIST_AXIS_H = 26;
+
+/**
+ * ラベル幅の目安（衝突判定とはみ出し防止用）
+ * ⚠️ web版 DistributionChart.tsx: labelWidth と同じ式にすること（見た目がズレる）。
+ */
+function dailyLabelWidth(p) {
+    return (p.cleared ? 11 : 0)
+        + truncateLabelName(p.userName).length * 10
+        + 4
+        + String(p.target).length * 6.5
+        + 6;
+}
+
+/**
+ * みんなの目標の分布グラフSVGを組み立てる
+ * @param {Array<Object>} participants
+ * @param {string} unit
+ * @returns {string} SVGのHTML
+ */
+function renderDailyDistributionSvg(participants, unit) {
+    if (!participants || participants.length === 0) return '';
+
+    const maxTarget = Math.max.apply(null, participants.map(p => p.target));
+    const xMax = Math.max(80, Math.ceil((maxTarget + 12) / 20) * 20);
+    const toX = (v) => DIST_PAD_X + (v / xMax) * (DIST_W - DIST_PAD_X * 2);
+
+    // ラベル段数に応じてグラフの高さを決める（重なりを段で解消するため）
+    const widths = participants.map(dailyLabelWidth);
+    const xs = participants.map(p => toX(p.target));
+    // 左右端からのはみ出し防止で内側へ寄せてから段を決める。
+    // 寄せた後の位置で判定しないと、端のラベルが隣と重なってしまう。
+    const labelXs = xs.map((x, i) => Math.min(Math.max(x, widths[i] / 2 + 2), DIST_W - widths[i] / 2 - 2));
+    const lanes = assignLabelLanes(labelXs, widths, DIST_MAX_LANES);
+    const laneCount = Math.max(1, usedLaneCount(lanes));
+    const curveTop = DIST_LANE_TOP + laneCount * DIST_LANE_H + DIST_PEAK_GAP;
+    const baseY = curveTop + DIST_CURVE_H;
+    const H = baseY + DIST_AXIS_H;
+
+    const curve = buildDailyDistributionCurve(xMax).map(pt => ({
+        x: toX(pt.x),
+        y: baseY - pt.y * DIST_CURVE_H
+    }));
+
+    const area = `M ${toX(0)} ${baseY} `
+        + curve.map(pt => `L ${pt.x.toFixed(2)} ${pt.y.toFixed(2)}`).join(' ')
+        + ` L ${toX(xMax)} ${baseY} Z`;
+    const line = `M ${curve[0].x.toFixed(2)} ${curve[0].y.toFixed(2)} `
+        + curve.slice(1).map(pt => `L ${pt.x.toFixed(2)} ${pt.y.toFixed(2)}`).join(' ');
+
+    // カーブ上のyを線形補間で引く（点をカーブに乗せるため）
+    const curveYAt = (value) => {
+        const x = toX(value);
+        for (let i = 1; i < curve.length; i++) {
+            if (curve[i].x >= x) {
+                const a = curve[i - 1];
+                const b = curve[i];
+                const t = b.x === a.x ? 0 : (x - a.x) / (b.x - a.x);
+                return a.y + (b.y - a.y) * t;
+            }
+        }
+        return baseY;
+    };
+
+    let ticksHtml = '';
+    for (let v = 0; v <= xMax; v += 20) {
+        const x = toX(v).toFixed(2);
+        ticksHtml += `<line x1="${x}" y1="${curveTop}" x2="${x}" y2="${baseY}" class="dm-grid"></line>`
+            + `<text x="${x}" y="${baseY + 14}" class="dm-tick">${v}</text>`;
+    }
+
+    const peakX = toX(DAILY_REPS_PEAK).toFixed(2);
+
+    let pointsHtml = '';
+    participants.forEach((p, i) => {
+        const x = xs[i];
+        const labelX = labelXs[i];
+        const labelY = DIST_LANE_TOP + lanes[i] * DIST_LANE_H + DIST_LANE_H / 2;
+        const dotY = curveYAt(p.target);
+        const cls = p.isMe ? 'dm-me' : (p.cleared ? 'dm-done' : 'dm-todo');
+        const r = p.isMe ? 5.5 : 4;
+
+        pointsHtml += `<g class="${cls}">`
+            + `<polyline points="${labelX.toFixed(2)},${(labelY + 8).toFixed(2)} ${x.toFixed(2)},${(dotY - 6).toFixed(2)} ${x.toFixed(2)},${dotY.toFixed(2)}" class="dm-connector"></polyline>`
+            + `<circle cx="${x.toFixed(2)}" cy="${dotY.toFixed(2)}" r="${r}" class="dm-dot"></circle>`
+            + (p.cleared ? `<circle cx="${x.toFixed(2)}" cy="${dotY.toFixed(2)}" r="${p.isMe ? 9 : 7.5}" class="dm-ring"></circle>` : '')
+            + `<text x="${labelX.toFixed(2)}" y="${labelY.toFixed(2)}" class="dm-name">`
+            + `${p.cleared ? '✓ ' : ''}${escapeHtml(truncateLabelName(p.userName))}`
+            + `<tspan class="dm-value"> ${p.target}</tspan></text>`
+            + `</g>`;
+    });
+
+    return `
+        <svg class="daily-dist-svg" viewBox="0 0 ${DIST_W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="みんなの目標回数の分布">
+            <defs>
+                <linearGradient id="dmArea" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" class="dm-area-top"></stop>
+                    <stop offset="100%" class="dm-area-bottom"></stop>
+                </linearGradient>
+            </defs>
+            ${ticksHtml}
+            <text x="${DIST_W - DIST_PAD_X}" y="${H - 2}" class="dm-axis-unit">${escapeHtml(unit)}</text>
+            <path d="${area}" fill="url(#dmArea)"></path>
+            <path d="${line}" class="dm-curve"></path>
+            <line x1="${peakX}" y1="${curveTop}" x2="${peakX}" y2="${baseY}" class="dm-peak-line"></line>
+            <text x="${peakX}" y="${curveTop - 5}" class="dm-peak-label">ピーク${DAILY_REPS_PEAK}</text>
+            <line x1="${DIST_PAD_X}" y1="${baseY}" x2="${DIST_W - DIST_PAD_X}" y2="${baseY}" class="dm-axis"></line>
+            ${pointsHtml}
+        </svg>
+    `;
 }
 
 /**
@@ -7880,6 +8139,8 @@ async function renderDailyMissionTab(forceRefresh = false) {
     const unit = guessExerciseUnit(ex.name || '');
     const percent = Math.min(100, Math.round((bestValue / target) * 100));
     const remaining = Math.max(0, target - bestValue);
+    const participants = dailyMissionState.participants || [];
+    const clearedCount = participants.filter(p => p.cleared).length;
 
     container.innerHTML = `
         <div class="daily-mission-card${cleared ? ' cleared' : ''}">
@@ -7905,6 +8166,17 @@ async function renderDailyMissionTab(forceRefresh = false) {
             </div>
             ${ex.rule ? `<p class="daily-mission-rule">${escapeHtml(ex.rule)}</p>` : ''}
         </div>
+
+        ${participants.length > 0 ? `
+        <div class="daily-dist-card">
+            <div class="daily-dist-head">
+                <span><i class="fa-solid fa-chart-simple"></i> みんなの目標</span>
+                <span class="daily-dist-count">${clearedCount}/${participants.length} 人クリア</span>
+            </div>
+            ${renderDailyDistributionSvg(participants, unit)}
+            <p class="daily-dist-note">全員が同じ種目。目標回数は 30${escapeHtml(unit)} をピークにした偏った分布から一人ひとり抽選されます。</p>
+        </div>
+        ` : ''}
 
         <div class="daily-mission-post">
             <h3><i class="fa-solid fa-pen-to-square"></i> 記録を投稿</h3>
