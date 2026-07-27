@@ -56,7 +56,7 @@
 
 .form {
   padding: 0 14px 14px;
-  animation: fadeIn 0.2s ease both;
+  animation: riseIn 0.2s ease backwards;
 }
 .ruleOpen {
   font-size: 12px;
@@ -101,4 +101,21 @@
 }
 .lockNote {
   font-size: 11px;
+}
+
+/*
+ * ⚠️ CSS Modules は animation-name をローカルスコープへ書き換えるため、
+ * global.css の fadeIn を参照しても解決されない。必ずこのファイルで定義する。
+ * fill-mode は backwards（forwards/both にすると transform の計算値が
+ * 単位行列のまま残り、position:fixed の包含ブロックになってしまう）。
+ */
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }

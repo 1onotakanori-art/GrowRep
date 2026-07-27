@@ -1,3 +1,8 @@
+/*
+ * ⚠️ アニメーション名は必ずこのファイル内で @keyframes を定義すること。
+ * CSS Modules は animation-name をローカルスコープへ書き換えるため、
+ * global.css の `fadeIn` を参照しても存在しない名前になり無効化される。
+ */
 .overlay {
   position: fixed;
   inset: 0;
@@ -7,7 +12,16 @@
   justify-content: center;
   background: rgba(10, 12, 22, 0.55);
   backdrop-filter: blur(3px);
-  animation: fadeIn 0.18s ease both;
+  animation: overlayIn 0.18s ease both;
+}
+
+@keyframes overlayIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .sheet {
@@ -28,7 +42,7 @@
   }
   .sheet {
     border-radius: var(--radius-lg);
-    animation: fadeIn 0.2s ease both;
+    animation: overlayIn 0.2s ease both;
   }
 }
 

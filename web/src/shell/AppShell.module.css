@@ -5,9 +5,15 @@
   background: var(--bg);
 }
 
+/*
+ * 入場アニメーションは各ビューの .fade-in が担当する。
+ * ここで animation を指定しても CSS Modules が名前をローカルスコープへ
+ * 書き換えるため global.css の fadeIn には解決されず無効（実際に死んでいた）。
+ * さらに transform を animate する要素を増やすと position:fixed の
+ * 包含ブロックが増えて事故のもとなので、あえて置かない。
+ */
 .main {
   flex: 1;
   padding: var(--sp-4) var(--sp-4);
   padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--sp-6));
-  animation: fadeIn 0.24s ease both;
 }

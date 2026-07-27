@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import styles from './Modal.module.css';
 
 export default function Modal({
@@ -24,7 +25,12 @@ export default function Modal({
     };
   }, [onClose]);
 
-  return (
+  // ⚠️ 必ず body 直下へポータルする。
+  // ビュー側は `.fade-in`（transform を animate する）の中でモーダルを描画するが、
+  // transform を持つ祖先は position:fixed の包含ブロックになる。その結果
+  // オーバーレイがビューポートではなくリスト全体の高さに広がり、
+  // シートが画面外（リスト末尾）へ飛んで「背景だけ暗くなって何も出ない」状態になる。
+  return createPortal(
     <div className={styles.overlay} onMouseDown={onClose}>
       <div
         className={styles.sheet}
@@ -43,6 +49,7 @@ export default function Modal({
         </div>
         <div className={styles.body}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
