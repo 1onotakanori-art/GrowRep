@@ -1725,7 +1725,7 @@ function updateModeInfo() {
             rules: 'フリーモードの種目管理（種目の追加・削除が可能）',
             score: 'フリーモードの総合得点',
             timer: '指定した秒数ごとに音が鳴り、カウントアップされます',
-            daily: '毎日入れ替わる共通種目のミッション（目標回数は人それぞれ）'
+            daily: '毎日入れ替わる共通種目のミッション（目標回数は人それぞれ／その日の合計で判定）'
         },
         'weekly': {
             post: '週間チャレンジの記録を投稿（今週の3種目のみ）',
@@ -1737,7 +1737,7 @@ function updateModeInfo() {
             champions: '毎週の総合得点チャンピオンの記録',
             derby: '週間チャレンジの得点を1ヶ月合計した月間ランキング',
             timer: '指定した秒数ごとに音が鳴り、カウントアップされます',
-            daily: '毎日入れ替わる共通種目のミッション（目標回数は人それぞれ）'
+            daily: '毎日入れ替わる共通種目のミッション（目標回数は人それぞれ／その日の合計で判定）'
         }
     };
 
@@ -7590,7 +7590,7 @@ const DAILY_REPS_MU = Math.log(DAILY_REPS_PEAK) + DAILY_REPS_SIGMA * DAILY_REPS_
 const DAILY_REPS_MIN = 8;
 const DAILY_REPS_MAX = 150;
 
-// 今日のミッション状態 { dateKey, exerciseKey, target, bestValue, cleared }
+// 今日のミッション状態 { dateKey, exerciseKey, target, totalValue, cleared, participants }
 let dailyMissionState = null;
 // 起動時の自動遷移を一度だけ行うためのフラグ
 let dailyMissionAutoNavDone = false;
@@ -7681,6 +7681,25 @@ function generateDailyMissionTarget(userId, dateKey, exerciseKey) {
 }
 
 /**
+ * 当日の投稿から userId→合計回数 を作る。
+ * デイリーミッションは「その日に取り組んだ回数の合計」で達成を判定するので、
+ * 週間チャレンジ（ベスト記録）とは違い最大値ではなく足し上げる。
+ * @param {Array<Object>} posts
+ * @param {string} exerciseKey
+ * @returns {Object} userId → 合計
+ */
+function sumDailyTotals(posts, exerciseKey) {
+    const totals = {};
+    (posts || []).forEach(post => {
+        if (!post || post.exerciseType !== exerciseKey) return;
+        const v = Number(post.value) || 0;
+        if (v <= 0) return;
+        totals[post.userId] = (totals[post.userId] || 0) + v;
+    });
+    return totals;
+}
+
+/**
  * バーバリアン以外のフリー種目キー（安定ソート済み）
  * @param {Object} exercises
  * @returns {string[]}
@@ -7760,22 +7779,22 @@ function buildDailyDistributionCurve(xMax, steps = 96) {
  * @param {Object} usersMap - userId → { userName, email }
  * @param {string} dateKey
  * @param {string} exerciseKey
- * @param {Object} bestValues - userId → 当日の最高値
+ * @param {Object} totals - userId → 当日の合計回数
  * @param {string} myUserId
  * @returns {Array<Object>}
  */
-function buildDailyParticipants(usersMap, dateKey, exerciseKey, bestValues, myUserId) {
+function buildDailyParticipants(usersMap, dateKey, exerciseKey, totals, myUserId) {
     return Object.keys(usersMap || {})
         .map(userId => {
             const u = usersMap[userId] || {};
             const target = generateDailyMissionTarget(userId, dateKey, exerciseKey);
-            const bestValue = bestValues[userId] || 0;
+            const totalValue = totals[userId] || 0;
             return {
                 userId: userId,
                 userName: u.userName || u.email || '名無しさん',
                 target: target,
-                bestValue: bestValue,
-                cleared: bestValue >= target,
+                totalValue: totalValue,
+                cleared: totalValue >= target,
                 isMe: userId === myUserId
             };
         })
@@ -7912,27 +7931,21 @@ async function getOrCreateDailyMission(exercises, now = new Date()) {
 }
 
 /**
- * その日の「全ユーザー」の最高記録を userId→値 で返す。
+ * その日の「全ユーザー」の合計回数を userId→合計 で返す。
+ * 1回で目標に届かなくても、その日の投稿を積み上げて達成できる。
  * timestampの単一フィールド範囲検索だけで済ませ（複合インデックス不要）、
  * exerciseType の絞り込みはクライアント側で行う。1クエリで全員分そろう。
  * @param {string} dateKey
  * @param {string} exerciseKey
  * @returns {Promise<Object>}
  */
-async function getDailyMissionBestValues(dateKey, exerciseKey) {
+async function getDailyMissionTotals(dateKey, exerciseKey) {
     const { start, end } = getDailyBoundariesJST(dateKey);
     const snap = await db.collection('posts_free')
         .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(start))
         .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(end))
         .get();
-    const best = {};
-    snap.docs.forEach(d => {
-        const post = d.data();
-        if (post.exerciseType !== exerciseKey) return;
-        const v = Number(post.value) || 0;
-        if (v > (best[post.userId] || 0)) best[post.userId] = v;
-    });
-    return best;
+    return sumDailyTotals(snap.docs.map(d => d.data()), exerciseKey);
 }
 
 /**
@@ -7954,9 +7967,9 @@ async function loadDailyMissionState() {
 
     const target = generateDailyMissionTarget(currentUser.uid, mission.dateKey, mission.exerciseKey);
 
-    let bestValues = {};
+    let totals = {};
     try {
-        bestValues = await getDailyMissionBestValues(mission.dateKey, mission.exerciseKey);
+        totals = await getDailyMissionTotals(mission.dateKey, mission.exerciseKey);
     } catch (e) {
         console.warn('[デイリーミッション] クリア判定に失敗:', e);
     }
@@ -7973,16 +7986,16 @@ async function loadDailyMissionState() {
     if (!users[currentUser.uid]) users[currentUser.uid] = {};
 
     const participants = buildDailyParticipants(
-        users, mission.dateKey, mission.exerciseKey, bestValues, currentUser.uid
+        users, mission.dateKey, mission.exerciseKey, totals, currentUser.uid
     );
 
-    const bestValue = bestValues[currentUser.uid] || 0;
+    const totalValue = totals[currentUser.uid] || 0;
     dailyMissionState = {
         dateKey: mission.dateKey,
         exerciseKey: mission.exerciseKey,
         target: target,
-        bestValue: bestValue,
-        cleared: bestValue >= target,
+        totalValue: totalValue,
+        cleared: totalValue >= target,
         participants: participants
     };
     return dailyMissionState;
@@ -8134,11 +8147,11 @@ async function renderDailyMissionTab(forceRefresh = false) {
         return;
     }
 
-    const { exerciseKey, target, bestValue, cleared, dateKey } = dailyMissionState;
+    const { exerciseKey, target, totalValue, cleared, dateKey } = dailyMissionState;
     const ex = freeExercises[exerciseKey] || {};
     const unit = guessExerciseUnit(ex.name || '');
-    const percent = Math.min(100, Math.round((bestValue / target) * 100));
-    const remaining = Math.max(0, target - bestValue);
+    const percent = Math.min(100, Math.round((totalValue / target) * 100));
+    const remaining = Math.max(0, target - totalValue);
     const participants = dailyMissionState.participants || [];
     const clearedCount = participants.filter(p => p.cleared).length;
 
@@ -8160,7 +8173,7 @@ async function renderDailyMissionTab(forceRefresh = false) {
             <div class="daily-mission-progress">
                 <div class="daily-mission-bar"><div class="daily-mission-bar-fill" style="width:${percent}%"></div></div>
                 <div class="daily-mission-progress-text">
-                    <span>今日のベスト ${bestValue}${escapeHtml(unit)}</span>
+                    <span>今日の合計 ${totalValue}${escapeHtml(unit)}</span>
                     <span>${cleared ? '達成！' : `あと ${remaining}${escapeHtml(unit)}`}</span>
                 </div>
             </div>
@@ -8185,7 +8198,7 @@ async function renderDailyMissionTab(forceRefresh = false) {
                 <span class="daily-mission-unit">${escapeHtml(unit)}</span>
                 <button type="button" class="btn-primary" id="daily-mission-submit">投稿する</button>
             </div>
-            <p class="daily-mission-note">この投稿はフリーモードの記録としても集計されます。</p>
+            <p class="daily-mission-note">その日の投稿を合計して判定するので、何回かに分けてもOK。この投稿はフリーモードの記録としても集計されます。</p>
             <p id="daily-mission-error" class="error-message"></p>
         </div>
     `;
@@ -8241,12 +8254,17 @@ async function submitDailyMissionPost() {
         valueInput.value = '';
 
         const wasCleared = dailyMissionState.cleared;
+        // 再取得して「その日の合計」で達成を判定し直す
         await renderDailyMissionTab(true);
 
-        if (!wasCleared && dailyMissionState && dailyMissionState.cleared) {
+        const st = dailyMissionState;
+        const unit = st ? guessExerciseUnit((freeExercises[st.exerciseKey] || {}).name || '') : '回';
+        if (!wasCleared && st && st.cleared) {
             alert('デイリーミッション達成！おつかれさま 🎉');
+        } else if (st && !st.cleared) {
+            alert(`投稿しました！（合計 ${st.totalValue}${unit} / あと ${Math.max(0, st.target - st.totalValue)}${unit}）`);
         } else {
-            alert('投稿しました！');
+            alert(`投稿しました！（合計 ${st ? st.totalValue : value}${unit}）`);
         }
     } catch (error) {
         errorEl.textContent = '投稿に失敗しました。もう一度お試しください。';

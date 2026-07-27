@@ -40,11 +40,11 @@ export default function DailyMissionView() {
     );
   }
 
-  const { exerciseKey, target, cleared, bestValue, dateKey } = dailyMission;
+  const { exerciseKey, target, cleared, totalValue, dateKey } = dailyMission;
   const ex = freeExercises[exerciseKey];
   const unit = guessExerciseUnit(ex?.name || '');
-  const percent = Math.min(100, Math.round((bestValue / target) * 100));
-  const remaining = Math.max(0, target - bestValue);
+  const percent = Math.min(100, Math.round((totalValue / target) * 100));
+  const remaining = Math.max(0, target - totalValue);
   const clearedCount = dailyMission.participants.filter((p) => p.cleared).length;
 
   async function handleSubmit() {
@@ -58,11 +58,15 @@ export default function DailyMissionView() {
     try {
       await submitPost(user, exerciseKey, num);
       setValue('');
-      const nowCleared = num >= target;
+      // 合計での達成判定。投稿ぶんだけ確実に増えるので手元で足して判定できる
+      const nextTotal = totalValue + num;
+      const nowCleared = nextTotal >= target;
       toast(
-        nowCleared
+        nowCleared && !cleared
           ? 'ミッション達成！おつかれさま 🎉'
-          : `記録しました（あと ${Math.max(0, target - num)}${unit}）`,
+          : nowCleared
+            ? `記録しました（合計 ${nextTotal}${unit}）`
+            : `記録しました（合計 ${nextTotal}${unit} / あと ${target - nextTotal}${unit}）`,
         nowCleared ? 'success' : 'info',
       );
       await reloadDailyMission();
@@ -83,6 +87,7 @@ export default function DailyMissionView() {
 
       <p className={styles.lead}>
         全員が同じ種目に挑戦。目標回数は一人ひとり違います。
+        その日の投稿を合計して達成を判定するので、何回かに分けてもOK。
       </p>
 
       <div className={`${styles.card} ${cleared ? styles.cardDone : ''}`}>
@@ -122,7 +127,7 @@ export default function DailyMissionView() {
           </div>
           <div className={styles.progressText}>
             <span>
-              今日のベスト {bestValue}
+              今日の合計 {totalValue}
               {unit}
             </span>
             <span>
