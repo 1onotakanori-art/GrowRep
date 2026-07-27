@@ -4,6 +4,7 @@ import styles from './BottomNav.module.css';
 export type NavKey =
   | 'home'
   | 'daily'
+  | 'timer'
   | 'post'
   | 'ranking'
   | 'center'
@@ -18,6 +19,7 @@ interface Item {
 const BASE: Item[] = [
   { key: 'home', label: 'ホーム', icon: 'fa-house' },
   { key: 'daily', label: 'デイリー', icon: 'fa-bullseye' },
+  { key: 'timer', label: 'タイマー', icon: 'fa-stopwatch' },
   { key: 'post', label: '投稿', icon: 'fa-pen-to-square' },
   { key: 'ranking', label: 'ランキング', icon: 'fa-ranking-star' },
 ];

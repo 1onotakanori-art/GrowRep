@@ -7,7 +7,7 @@
   max-width: var(--app-max);
   z-index: 40;
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   height: calc(var(--nav-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background: color-mix(in srgb, var(--bg-elev) 90%, transparent);
@@ -22,10 +22,17 @@
   align-items: center;
   justify-content: center;
   gap: 3px;
-  font-size: 9px;
+  /* 7枠なので端末幅に合わせてラベルを縮める（iPhone SE 320px でも折り返さない） */
+  font-size: clamp(8px, 2.4vw, 10px);
+  letter-spacing: -0.3px;
+  white-space: nowrap;
   font-weight: 600;
   color: var(--text-3);
   transition: color 0.15s ease, transform 0.15s ease;
+}
+.item i,
+.itemOn i {
+  font-size: clamp(15px, 4.4vw, 18px);
 }
 .iconWrap {
   position: relative;
@@ -40,10 +47,6 @@
   border-radius: 50%;
   background: var(--danger);
   box-shadow: 0 0 0 2px var(--bg-elev);
-}
-.item i,
-.itemOn i {
-  font-size: 18px;
 }
 .itemOn {
   color: var(--accent);

@@ -65,11 +65,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ? freeExercises
       : await loadFreeExercises();
     try {
-      setDailyMission(await loadDailyMissionState(user.uid, map));
+      setDailyMission(await loadDailyMissionState(user.uid, map, usersMap));
     } catch (e) {
       console.error('[DataProvider] デイリーミッション取得失敗:', e);
     }
-  }, [user, freeExercises]);
+  }, [user, freeExercises, usersMap]);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,7 +90,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // 未クリア時の初期タブ切り替えを待たせない。
         if (user) {
           try {
-            const daily = await loadDailyMissionState(user.uid, exMap);
+            const daily = await loadDailyMissionState(user.uid, exMap, uMap);
             if (cancelled) return;
             setDailyMission(daily);
           } catch (e) {

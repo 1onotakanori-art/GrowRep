@@ -1,96 +1,179 @@
-.wrap {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  padding: var(--sp-5);
+/*
+ * タイマーは「画面いっぱい」に見せる。AppShell の main が持つ左右パディングを
+ * 打ち消し、ヘッダー／ボトムナビを除いた高さをすべて使う。
+ */
+.screen {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  gap: var(--sp-3);
+  margin: calc(var(--sp-4) * -1) calc(var(--sp-4) * -1)
+    calc((var(--nav-h) + var(--sp-6)) * -1);
+  padding: var(--sp-4) var(--sp-4)
+    calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--sp-4));
+  min-height: calc(100dvh - var(--header-h));
 }
 
+/* --- インターバル設定 --- */
 .settingRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 14px;
-  font-weight: 600;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.settingRow label {
+  font-size: 13px;
+  font-weight: 700;
   color: var(--text-2);
 }
-.settingRow input {
-  width: 80px;
-  padding: 8px 10px;
-  border: 1.5px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stepper button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+}
+.stepper button:disabled {
+  opacity: 0.35;
+}
+.stepper button:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.stepper input {
+  width: 56px;
+  padding: 7px 0;
   text-align: center;
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  /* 数値スピナーは自前のステッパーと重複するため隠す */
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.stepper input::-webkit-outer-spin-button,
+.stepper input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.stepper input:disabled {
+  opacity: 0.55;
+}
+.stepperUnit {
+  font-size: 13px;
   font-weight: 700;
+  color: var(--text-3);
 }
 
-.display {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  padding: var(--sp-4) 0;
-}
-.countBox,
-.timeBox,
-.prep {
+/* --- 大画面表示 --- */
+.stage {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 20px 12px;
-  border-radius: var(--radius);
-  background: var(--surface-2);
+  justify-content: space-evenly;
+  gap: clamp(4px, 1.5vh, 16px);
+  min-height: 0;
+  padding: var(--sp-3) 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
-.prep {
-  background: var(--gold-soft);
-}
-.countLabel,
-.timeLabel,
-.prepLabel {
-  font-size: 12px;
+
+.stageLabel {
+  display: block;
+  text-align: center;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 700;
+  letter-spacing: 2px;
   color: var(--text-3);
-  font-weight: 600;
 }
-.countNum,
-.prepNum {
-  font-size: 52px;
+
+.countBox,
+.timeBox,
+.prepBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+/*
+ * 回数: 画面の主役。iPhone 幅いっぱいまで大きくしつつ、桁が増えても
+ * はみ出さないよう --digits（桁数）で上限を絞る。
+ * 等幅数字は1文字あたり約0.6em なので 桁数 × 0.6 × F ≦ 90vw → F ≦ 150vw/桁数。
+ */
+.countNum {
+  font-size: clamp(3rem, min(46vw, calc(150vw / var(--digits, 1))), 16rem);
   font-weight: 900;
-  line-height: 1;
+  line-height: 0.92;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+  transition: transform 0.12s ease, color 0.12s ease;
 }
-.prepNum {
-  color: var(--gold);
+/* ビープと同時に拍動 */
+.beat {
+  transform: scale(1.09);
+  color: var(--flame);
 }
+
+/* 経過時間。長時間（100分超）でもはみ出さないよう文字数で絞る */
 .timeNum {
-  font-size: 34px;
+  font-size: clamp(2rem, min(27vw, calc(158vw / var(--chars, 4))), 9rem);
   font-weight: 800;
   line-height: 1;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
+/* 準備カウントダウン（常に1〜2桁） */
+.prepNum {
+  font-size: clamp(7rem, 52vw, 20rem);
+  font-weight: 900;
+  line-height: 0.9;
+  color: var(--flame);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- 操作ボタン --- */
 .controls {
-  display: flex;
+  display: grid;
+  /* リセットは内容幅ぶんだけ確保して折り返させない */
+  grid-template-columns: 1fr auto;
   gap: 10px;
+  flex-shrink: 0;
 }
 .startBtn,
 .stopBtn,
 .resetBtn {
-  flex: 1;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 14px;
-  border-radius: var(--radius-sm);
-  font-weight: 700;
-  font-size: 15px;
+  padding: 18px 12px;
+  border-radius: var(--radius);
+  font-size: 16px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.resetBtn {
+  padding-inline: 20px;
 }
 .startBtn {
   background: var(--accent-grad);
@@ -102,9 +185,34 @@
   color: #fff;
 }
 .resetBtn {
-  background: var(--surface-2);
-  color: var(--text-2);
-  border: 1px solid var(--border);
-  flex: 0 0 auto;
-  padding: 14px 18px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+.startBtn:active,
+.stopBtn:active,
+.resetBtn:active {
+  transform: scale(0.97);
+}
+
+/* 横向き・低い画面では数字を控えめにして操作ボタンを確保する */
+@media (max-height: 560px) {
+  .countNum {
+    font-size: clamp(3.5rem, 18vh, 7rem);
+  }
+  .timeNum {
+    font-size: clamp(2rem, 11vh, 4rem);
+  }
+  .prepNum {
+    font-size: clamp(4rem, 26vh, 9rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .countNum {
+    transition: none;
+  }
+  .beat {
+    transform: none;
+  }
 }

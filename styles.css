@@ -4025,3 +4025,98 @@ body.dark-mode .daily-mission-input-row input:focus {
 body.dark-mode .daily-mission-unit {
     color: #bbb;
 }
+
+/* --------------------------------------------------------------------
+   デイリーミッション：みんなの目標の分布グラフ
+   -------------------------------------------------------------------- */
+.daily-dist-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 16px 10px;
+    margin-bottom: 16px;
+}
+.daily-dist-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 4px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #333;
+}
+.daily-dist-head i {
+    color: #667eea;
+    margin-right: 5px;
+}
+.daily-dist-count {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #f0f3ff;
+    color: #5b6bd6;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.daily-dist-note {
+    margin-top: 6px;
+    padding: 0 4px;
+    font-size: 11px;
+    color: #999;
+    line-height: 1.5;
+}
+
+.daily-dist-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+/* 分布カーブ */
+.dm-area-top { stop-color: #667eea; stop-opacity: 0.28; }
+.dm-area-bottom { stop-color: #667eea; stop-opacity: 0.02; }
+.dm-curve {
+    fill: none;
+    stroke: #667eea;
+    stroke-width: 2;
+    stroke-linejoin: round;
+}
+
+/* 軸・目盛り */
+.dm-axis { stroke: #ddd; stroke-width: 1; }
+.dm-grid { stroke: #eee; stroke-width: 1; stroke-dasharray: 2 4; }
+.dm-tick { fill: #999; font-size: 9px; text-anchor: middle; }
+.dm-axis-unit { fill: #999; font-size: 9px; text-anchor: end; }
+.dm-peak-line { stroke: #f7971e; stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.55; }
+.dm-peak-label { fill: #f7971e; font-size: 8.5px; font-weight: 700; text-anchor: middle; }
+
+/* 各ユーザー（currentColor で線と点をまとめて着色） */
+.dm-connector { fill: none; stroke: currentColor; stroke-width: 1; opacity: 0.4; }
+.dm-dot { fill: currentColor; stroke: #fff; stroke-width: 1.5; }
+.dm-ring { fill: none; stroke: currentColor; stroke-width: 1.5; opacity: 0.55; }
+.dm-name { font-size: 10px; font-weight: 700; text-anchor: middle; fill: currentColor; }
+.dm-value { font-weight: 900; font-size: 11px; }
+
+.dm-me { color: #667eea; }
+.dm-me .dm-name { font-weight: 900; }
+.dm-done { color: #38c172; }
+.dm-todo { color: #999; }
+
+/* ダークモード */
+body.dark-mode .daily-dist-card { background: #2a2a2a; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
+body.dark-mode .daily-dist-head { color: #e8e8e8; }
+body.dark-mode .daily-dist-count { background: #1f2937; color: #8fa3ff; }
+body.dark-mode .dm-area-top { stop-color: #8fa3ff; stop-opacity: 0.3; }
+body.dark-mode .dm-area-bottom { stop-color: #8fa3ff; stop-opacity: 0.03; }
+body.dark-mode .dm-curve { stroke: #8fa3ff; }
+body.dark-mode .dm-axis { stroke: #4a4a4a; }
+body.dark-mode .dm-grid { stroke: #3a3f44; }
+body.dark-mode .dm-tick,
+body.dark-mode .dm-axis-unit { fill: #888; }
+body.dark-mode .dm-dot { stroke: #2a2a2a; }
+body.dark-mode .dm-me { color: #8fa3ff; }
+body.dark-mode .dm-done { color: #43e97b; }
+body.dark-mode .dm-todo { color: #888; }
