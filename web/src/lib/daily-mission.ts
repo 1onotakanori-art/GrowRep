@@ -449,6 +449,110 @@ export function buildDailyParticipants({
     .sort((a, b) => a.target - b.target || a.userId.localeCompare(b.userId));
 }
 
+// ---------------------------------------------------------------------
+// みんなの合計（全員ぶんを足し上げた進捗）
+// ---------------------------------------------------------------------
+
+export interface DailyContributor {
+  userId: string;
+  userName: string;
+  /** その日の合計回数 */
+  value: number;
+  target: number;
+  cleared: boolean;
+  isMe: boolean;
+  /** 全体の合計に占める割合（0〜1）。誰も投稿していなければ 0 */
+  share: number;
+}
+
+export interface DailyTeamProgress {
+  /** 全員の当日合計 */
+  totalValue: number;
+  /** みんなで目指す合計回数 */
+  goal: number;
+  /** 目標までの残り（達成済みなら 0） */
+  remaining: number;
+  /** 達成率（0〜100 に丸め込んだ整数） */
+  percent: number;
+  cleared: boolean;
+  /** 貢献の多い順。0回の人も並べる（誰が未着手か分かるように） */
+  contributors: DailyContributor[];
+  /** 1回以上投稿した人数 */
+  activeCount: number;
+}
+
+/**
+ * その日みんなで目指す合計回数。今は「全員が自分の目標をやり切った状態」＝
+ * 個人目標の合計。将来レイドミッション（その日だけ全員で合計◯回を目指す）を
+ * 入れるときは、ここが差し替え口になる（表示側はこの数字しか見ていない）。
+ * app.js: resolveDailyTeamGoal
+ */
+export function resolveDailyTeamGoal(participants: DailyParticipant[]): number {
+  return (participants || []).reduce(
+    (sum, p) => sum + (Number(p.target) || 0),
+    0,
+  );
+}
+
+/**
+ * みんなの合計と一人ひとりの貢献を組み立てる。
+ * 個人の達成判定と同じく「その日の投稿の合計」を足し上げるだけなので、
+ * 分布グラフと同じ participants から追加のFirestore読み取り無しで作れる。
+ * app.js: buildDailyTeamProgress
+ */
+export function buildDailyTeamProgress(
+  participants: DailyParticipant[],
+): DailyTeamProgress {
+  const list = participants || [];
+  const totalValue = list.reduce(
+    (sum, p) => sum + (Number(p.totalValue) || 0),
+    0,
+  );
+  const goal = resolveDailyTeamGoal(list);
+  const contributors: DailyContributor[] = list
+    .map((p) => {
+      const value = Number(p.totalValue) || 0;
+      return {
+        userId: p.userId,
+        userName: p.userName,
+        value,
+        target: p.target,
+        cleared: p.cleared,
+        isMe: p.isMe,
+        share: totalValue > 0 ? value / totalValue : 0,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.value - a.value ||
+        a.target - b.target ||
+        a.userId.localeCompare(b.userId),
+    );
+
+  return {
+    totalValue,
+    goal,
+    remaining: Math.max(0, goal - totalValue),
+    percent: goal > 0 ? Math.min(100, Math.round((totalValue / goal) * 100)) : 0,
+    cleared: goal > 0 && totalValue >= goal,
+    contributors,
+    activeCount: contributors.filter((c) => c.value > 0).length,
+  };
+}
+
+/**
+ * 貢献バーの長さ（0〜1）。いちばん多い人が満杯になるように正規化する。
+ * 割合そのものを幅にすると人数が増えたとき全員が細くなって差が見えない。
+ * app.js: dailyContributionRatio
+ */
+export function dailyContributionRatio(
+  value: number,
+  maxValue: number,
+): number {
+  if (!(maxValue > 0)) return 0;
+  return Math.min(1, Math.max(0, value / maxValue));
+}
+
 /** グラフ上のラベルで表示する名前の最大文字数（長い名前は省略する）。 */
 export const DAILY_LABEL_NAME_MAX = 6;
 
@@ -521,6 +625,16 @@ export function guessExerciseUnit(exerciseName: string): string {
   if (name.includes('セット')) return 'セット';
   if (name.includes('分')) return '分';
   return '回';
+}
+
+/**
+ * 回数を3桁区切りに（みんなの合計は4桁を超えるので読みづらくなる）。
+ * toLocaleString はロケール依存で両アプリの見た目がズレうるので使わない。
+ * app.js: formatDailyCount
+ */
+export function formatDailyCount(value: number): string {
+  const n = Math.round(Number(value) || 0);
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 /** 日付キーを「7/26(日)」形式に。app.js: formatDailyDateLabel */

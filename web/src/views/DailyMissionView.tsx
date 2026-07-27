@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { useToast } from '../context/ToastContext';
 import { submitPost } from '../lib/posts';
 import {
+  buildDailyTeamProgress,
+  dailyContributionRatio,
+  formatDailyCount,
   formatDailyDateLabel,
   formatDailyProbability,
   guessExerciseUnit,
@@ -19,6 +22,16 @@ export default function DailyMissionView() {
   const { toast } = useToast();
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // 早期 return より前に置く（フックの呼び出し順を固定するため）
+  const participants = dailyMission?.participants;
+  const team = useMemo(
+    () =>
+      participants && participants.length > 0
+        ? buildDailyTeamProgress(participants)
+        : null,
+    [participants],
+  );
 
   if (dailyLoading) {
     return (
@@ -152,6 +165,87 @@ export default function DailyMissionView() {
 
         {ex?.rule && <p className={styles.rule}>{ex.rule}</p>}
       </div>
+
+      {team && (
+        <div
+          className={`${styles.distCard} ${team.cleared ? styles.teamDone : ''}`}
+        >
+          <div className={styles.distHead}>
+            <span>
+              <i className="fa-solid fa-people-group" /> みんなの合計
+            </span>
+            <span className={styles.distCount}>
+              {team.activeCount}/{team.contributors.length} 人が投稿
+            </span>
+          </div>
+
+          <div className={styles.teamTotalRow}>
+            <span className={styles.teamTotal}>
+              {formatDailyCount(team.totalValue)}
+            </span>
+            <span className={styles.teamGoal}>
+              / {formatDailyCount(team.goal)}
+              {unit}
+            </span>
+          </div>
+
+          <div className={styles.progressWrap}>
+            <div className={styles.progressBar}>
+              <div
+                className={
+                  team.cleared ? styles.progressFillDone : styles.progressFill
+                }
+                style={{ width: `${team.percent}%` }}
+              />
+            </div>
+            <div className={styles.progressText}>
+              <span>{team.percent}%</span>
+              <span>
+                {team.cleared
+                  ? 'みんなの目標を達成！'
+                  : `あと ${formatDailyCount(team.remaining)}${unit}`}
+              </span>
+            </div>
+          </div>
+
+          <ul className={styles.contribList}>
+            {team.contributors.map((c) => (
+              <li
+                key={c.userId}
+                className={`${styles.contribRow} ${c.isMe ? styles.contribMe : ''}`}
+              >
+                <span className={styles.contribName}>
+                  {c.cleared && (
+                    <i className={`fa-solid fa-circle-check ${styles.contribCheck}`} />
+                  )}
+                  {c.userName}
+                </span>
+                <span className={styles.contribBarWrap}>
+                  <span
+                    className={c.cleared ? styles.contribBarDone : styles.contribBar}
+                    style={{
+                      width: `${
+                        dailyContributionRatio(
+                          c.value,
+                          team.contributors[0]?.value || 0,
+                        ) * 100
+                      }%`,
+                    }}
+                  />
+                </span>
+                <span className={styles.contribValue}>
+                  {formatDailyCount(c.value)}
+                  <span className={styles.contribTarget}>/{c.target}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <p className={styles.distNote}>
+            今日ログインした人ぜんぶの合計。目標はみんなの目標を足した数字です。
+          </p>
+        </div>
+      )}
 
       {dailyMission.participants.length > 0 && (
         <div className={styles.distCard}>

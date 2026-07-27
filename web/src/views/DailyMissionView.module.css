@@ -188,6 +188,99 @@
   line-height: 1.5;
 }
 
+/* みんなの合計（distCard を土台に使う） */
+.teamDone {
+  border-color: var(--success);
+}
+.teamDone .progressText {
+  color: var(--success);
+}
+.teamTotalRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  padding: 2px 4px 10px;
+}
+.teamTotal {
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1.05;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.teamDone .teamTotal {
+  color: var(--success);
+}
+.teamGoal {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.distCard .progressWrap {
+  padding: 0 4px;
+}
+
+.contribList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 0 4px;
+  list-style: none;
+}
+.contribRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.contribMe {
+  font-weight: 800;
+  color: var(--text);
+}
+.contribName {
+  flex: 0 0 33%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contribCheck {
+  color: var(--success);
+  margin-right: 4px;
+}
+.contribBarWrap {
+  flex: 1;
+  min-width: 0;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.contribBar,
+.contribBarDone {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.contribBarDone {
+  background: var(--success);
+}
+.contribValue {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.contribTarget {
+  color: var(--text-3);
+  font-weight: 600;
+}
+
 .postCard {
   background: var(--surface);
   border: 1px solid var(--border);

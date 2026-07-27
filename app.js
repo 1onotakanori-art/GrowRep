@@ -7991,6 +7991,69 @@ function buildDailyParticipants({ usersMap, dateKey, exerciseKey, totals, myUser
         .sort((a, b) => a.target - b.target || a.userId.localeCompare(b.userId));
 }
 
+/**
+ * その日みんなで目指す合計回数。今は「全員が自分の目標をやり切った状態」＝
+ * 個人目標の合計。将来レイドミッション（その日だけ全員で合計◯回を目指す）を
+ * 入れるときは、ここが差し替え口になる（表示側はこの数字しか見ていない）。
+ * ⚠️ web版 daily-mission.ts: resolveDailyTeamGoal のミラー
+ * @param {Array<Object>} participants
+ * @returns {number}
+ */
+function resolveDailyTeamGoal(participants) {
+    return (participants || []).reduce((sum, p) => sum + (Number(p.target) || 0), 0);
+}
+
+/**
+ * みんなの合計と一人ひとりの貢献を組み立てる。
+ * 個人の達成判定と同じく「その日の投稿の合計」を足し上げるだけなので、
+ * 分布グラフと同じ participants から追加のFirestore読み取り無しで作れる。
+ * ⚠️ web版 daily-mission.ts: buildDailyTeamProgress のミラー
+ * @param {Array<Object>} participants
+ * @returns {Object} { totalValue, goal, remaining, percent, cleared, contributors, activeCount }
+ */
+function buildDailyTeamProgress(participants) {
+    const list = participants || [];
+    const totalValue = list.reduce((sum, p) => sum + (Number(p.totalValue) || 0), 0);
+    const goal = resolveDailyTeamGoal(list);
+    const contributors = list
+        .map(p => {
+            const value = Number(p.totalValue) || 0;
+            return {
+                userId: p.userId,
+                userName: p.userName,
+                value: value,
+                target: p.target,
+                cleared: p.cleared,
+                isMe: p.isMe,
+                share: totalValue > 0 ? value / totalValue : 0
+            };
+        })
+        .sort((a, b) => b.value - a.value || a.target - b.target || a.userId.localeCompare(b.userId));
+
+    return {
+        totalValue: totalValue,
+        goal: goal,
+        remaining: Math.max(0, goal - totalValue),
+        percent: goal > 0 ? Math.min(100, Math.round((totalValue / goal) * 100)) : 0,
+        cleared: goal > 0 && totalValue >= goal,
+        contributors: contributors,
+        activeCount: contributors.filter(c => c.value > 0).length
+    };
+}
+
+/**
+ * 貢献バーの長さ（0〜1）。いちばん多い人が満杯になるように正規化する。
+ * 割合そのものを幅にすると人数が増えたとき全員が細くなって差が見えない。
+ * ⚠️ web版 daily-mission.ts: dailyContributionRatio のミラー
+ * @param {number} value
+ * @param {number} maxValue
+ * @returns {number}
+ */
+function dailyContributionRatio(value, maxValue) {
+    if (!(maxValue > 0)) return 0;
+    return Math.min(1, Math.max(0, value / maxValue));
+}
+
 // グラフ上のラベルで表示する名前の最大文字数（長い名前は省略する）
 const DAILY_LABEL_NAME_MAX = 6;
 
@@ -8063,6 +8126,18 @@ function guessExerciseUnit(exerciseName) {
     if (name.includes('セット')) return 'セット';
     if (name.includes('分')) return '分';
     return '回';
+}
+
+/**
+ * 回数を3桁区切りに（みんなの合計は4桁を超えるので読みづらくなる）。
+ * toLocaleString はロケール依存で両アプリの見た目がズレうるので使わない。
+ * ⚠️ web版 daily-mission.ts: formatDailyCount のミラー
+ * @param {number} value
+ * @returns {string}
+ */
+function formatDailyCount(value) {
+    const n = Math.round(Number(value) || 0);
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 /**
@@ -8402,6 +8477,51 @@ function renderDailyDistributionSvg(participants, unit, peak) {
 }
 
 /**
+ * みんなの合計カードのHTMLを組み立てる
+ * ⚠️ web版 DailyMissionView.tsx の「みんなの合計」ブロックと同じ構成にすること
+ * @param {Array<Object>} participants
+ * @param {string} unit
+ * @returns {string} HTML（対象がいなければ空文字）
+ */
+function renderDailyTeamTotalCard(participants, unit) {
+    if (!participants || participants.length === 0) return '';
+    const team = buildDailyTeamProgress(participants);
+    // 先頭が最多貢献者（貢献の多い順に並んでいる）
+    const maxValue = team.contributors.length > 0 ? team.contributors[0].value : 0;
+
+    const rowsHtml = team.contributors.map(c => {
+        const width = (dailyContributionRatio(c.value, maxValue) * 100).toFixed(1);
+        return `<li class="daily-team-row${c.isMe ? ' is-me' : ''}">`
+            + `<span class="daily-team-name">${c.cleared ? '<i class="fa-solid fa-circle-check"></i>' : ''}${escapeHtml(c.userName)}</span>`
+            + `<span class="daily-team-bar"><span class="daily-team-bar-fill${c.cleared ? ' cleared' : ''}" style="width:${width}%"></span></span>`
+            + `<span class="daily-team-value">${formatDailyCount(c.value)}<span class="daily-team-target">/${c.target}</span></span>`
+            + `</li>`;
+    }).join('');
+
+    return `
+        <div class="daily-dist-card daily-team-card${team.cleared ? ' cleared' : ''}">
+            <div class="daily-dist-head">
+                <span><i class="fa-solid fa-people-group"></i> みんなの合計</span>
+                <span class="daily-dist-count">${team.activeCount}/${team.contributors.length} 人が投稿</span>
+            </div>
+            <div class="daily-team-total">
+                <span class="daily-team-total-value">${formatDailyCount(team.totalValue)}</span>
+                <span class="daily-team-total-goal">/ ${formatDailyCount(team.goal)}${escapeHtml(unit)}</span>
+            </div>
+            <div class="daily-mission-progress">
+                <div class="daily-mission-bar"><div class="daily-mission-bar-fill" style="width:${team.percent}%"></div></div>
+                <div class="daily-mission-progress-text">
+                    <span>${team.percent}%</span>
+                    <span>${team.cleared ? 'みんなの目標を達成！' : `あと ${formatDailyCount(team.remaining)}${escapeHtml(unit)}`}</span>
+                </div>
+            </div>
+            <ul class="daily-team-list">${rowsHtml}</ul>
+            <p class="daily-dist-note">今日ログインした人ぜんぶの合計。目標はみんなの目標を足した数字です。</p>
+        </div>
+    `;
+}
+
+/**
  * デイリーミッションタブを描画する
  * @param {boolean} forceRefresh - Firestoreから再取得する
  */
@@ -8460,6 +8580,8 @@ async function renderDailyMissionTab(forceRefresh = false) {
             </div>
             ${ex.rule ? `<p class="daily-mission-rule">${escapeHtml(ex.rule)}</p>` : ''}
         </div>
+
+        ${renderDailyTeamTotalCard(participants, unit)}
 
         ${participants.length > 0 ? `
         <div class="daily-dist-card">
