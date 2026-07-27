@@ -23,6 +23,7 @@ import {
   generateDailyMissionTarget,
   pickDailyMissionExercise,
   pushRecentMissionKeys,
+  sumDailyTotals,
   type DailyMission,
   type DailyMissionState,
 } from './daily-mission';
@@ -95,12 +96,13 @@ export async function getOrCreateDailyMission(
 }
 
 /**
- * その日の「全ユーザー」の最高記録を userId→値 で返す。
+ * その日の「全ユーザー」の合計回数を userId→合計 で返す。
+ * 1回で目標に届かなくても、その日の投稿を積み上げて達成できる。
  * timestamp の単一フィールド範囲検索だけで済ませ（複合インデックス不要）、
  * exerciseType の絞り込みはクライアント側で行う。1クエリで全員分そろう。
- * app.js: getDailyMissionBestValues
+ * app.js: getDailyMissionTotals
  */
-export async function getDailyMissionBestValues(
+export async function getDailyMissionTotals(
   dateKey: string,
   exerciseKey: string,
 ): Promise<Record<string, number>> {
@@ -112,14 +114,10 @@ export async function getDailyMissionBestValues(
       where('timestamp', '<', Timestamp.fromDate(end)),
     ),
   );
-  const best: Record<string, number> = {};
-  snap.docs.forEach((d) => {
-    const post = d.data() as Post;
-    if (post.exerciseType !== exerciseKey) return;
-    const v = Number(post.value) || 0;
-    if (v > (best[post.userId] || 0)) best[post.userId] = v;
-  });
-  return best;
+  return sumDailyTotals(
+    snap.docs.map((d) => d.data() as Post),
+    exerciseKey,
+  );
 }
 
 /**
@@ -142,12 +140,9 @@ export async function loadDailyMissionState(
     mission.exerciseKey,
   );
 
-  let bestValues: Record<string, number> = {};
+  let totals: Record<string, number> = {};
   try {
-    bestValues = await getDailyMissionBestValues(
-      mission.dateKey,
-      mission.exerciseKey,
-    );
+    totals = await getDailyMissionTotals(mission.dateKey, mission.exerciseKey);
   } catch (e) {
     console.warn('[デイリーミッション] クリア判定に失敗:', e);
   }
@@ -160,17 +155,17 @@ export async function loadDailyMissionState(
     users,
     mission.dateKey,
     mission.exerciseKey,
-    bestValues,
+    totals,
     userId,
   );
 
-  const bestValue = bestValues[userId] || 0;
+  const totalValue = totals[userId] || 0;
   return {
     dateKey: mission.dateKey,
     exerciseKey: mission.exerciseKey,
     target,
-    bestValue,
-    cleared: bestValue >= target,
+    totalValue,
+    cleared: totalValue >= target,
     participants,
   };
 }

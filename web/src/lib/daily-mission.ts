@@ -30,7 +30,8 @@ export interface DailyMissionState {
   exerciseKey: string;
   target: number;
   cleared: boolean;
-  bestValue: number;
+  /** その日に投稿した回数の合計（1回で達成しなくても積み上げられる） */
+  totalValue: number;
   /** 全ユーザーの目標と達成状況（分布グラフ用） */
   participants: DailyParticipant[];
 }
@@ -39,7 +40,8 @@ export interface DailyParticipant {
   userId: string;
   userName: string;
   target: number;
-  bestValue: number;
+  /** その日の合計回数 */
+  totalValue: number;
   cleared: boolean;
   isMe: boolean;
 }
@@ -126,6 +128,30 @@ export function generateDailyMissionTarget(
 }
 
 // ---------------------------------------------------------------------
+// 当日の集計
+// ---------------------------------------------------------------------
+
+/**
+ * 当日の投稿から userId→合計回数 を作る。
+ * デイリーミッションは「その日に取り組んだ回数の合計」で達成を判定するので、
+ * 週間チャレンジ（ベスト記録）とは違い最大値ではなく足し上げる。
+ * app.js: sumDailyTotals
+ */
+export function sumDailyTotals(
+  posts: Array<{ userId: string; exerciseType: string; value: number }>,
+  exerciseKey: string,
+): Record<string, number> {
+  const totals: Record<string, number> = {};
+  (posts || []).forEach((post) => {
+    if (!post || post.exerciseType !== exerciseKey) return;
+    const v = Number(post.value) || 0;
+    if (v <= 0) return;
+    totals[post.userId] = (totals[post.userId] || 0) + v;
+  });
+  return totals;
+}
+
+// ---------------------------------------------------------------------
 // 種目の選出（全ユーザー共通）
 // ---------------------------------------------------------------------
 
@@ -207,27 +233,27 @@ export function buildDailyDistributionCurve(
 
 /**
  * 全ユーザーの目標を算出して並べる（目標が小さい順）。
- * bestValues は当日の投稿から作った userId→最高値。
+ * totals は当日の投稿から作った userId→合計回数。
  * app.js: buildDailyParticipants
  */
 export function buildDailyParticipants(
   usersMap: Record<string, { userName?: string; email?: string }>,
   dateKey: string,
   exerciseKey: string,
-  bestValues: Record<string, number>,
+  totals: Record<string, number>,
   myUserId: string,
 ): DailyParticipant[] {
   return Object.keys(usersMap || {})
     .map((userId) => {
       const u = usersMap[userId] || {};
       const target = generateDailyMissionTarget(userId, dateKey, exerciseKey);
-      const bestValue = bestValues[userId] || 0;
+      const totalValue = totals[userId] || 0;
       return {
         userId,
         userName: u.userName || u.email || '名無しさん',
         target,
-        bestValue,
-        cleared: bestValue >= target,
+        totalValue,
+        cleared: totalValue >= target,
         isMe: userId === myUserId,
       };
     })

@@ -16,6 +16,7 @@ import {
   guessExerciseUnit,
   hashStringToSeed,
   pickDailyMissionExercise,
+  sumDailyTotals,
   truncateLabelName,
   usedLaneCount,
 } from '../daily-mission';
@@ -209,6 +210,61 @@ describe('dailyLogNormalPdf / buildDailyDistributionCurve', () => {
   });
 });
 
+describe('sumDailyTotals（その日の合計で判定する）', () => {
+  const posts = [
+    { userId: 'u1', exerciseType: 'free_1', value: 12 },
+    { userId: 'u1', exerciseType: 'free_1', value: 8 },
+    { userId: 'u1', exerciseType: 'free_1', value: 5 },
+    { userId: 'u2', exerciseType: 'free_1', value: 30 },
+    { userId: 'u1', exerciseType: 'free_OTHER', value: 100 }, // 別種目
+  ];
+
+  it('同じユーザーの複数投稿を足し上げる（最大値ではない）', () => {
+    const totals = sumDailyTotals(posts, 'free_1');
+    expect(totals.u1).toBe(25); // 12+8+5。最大値の 12 ではない
+    expect(totals.u2).toBe(30);
+  });
+
+  it('別種目の投稿は数えない', () => {
+    expect(sumDailyTotals(posts, 'free_1').u1).toBe(25);
+    expect(sumDailyTotals(posts, 'free_OTHER').u1).toBe(100);
+  });
+
+  it('投稿が無いユーザーはキーごと存在しない', () => {
+    expect(sumDailyTotals(posts, 'free_1').u3).toBeUndefined();
+  });
+
+  it('0以下・不正な値は無視する', () => {
+    const totals = sumDailyTotals(
+      [
+        { userId: 'u1', exerciseType: 'free_1', value: 10 },
+        { userId: 'u1', exerciseType: 'free_1', value: 0 },
+        { userId: 'u1', exerciseType: 'free_1', value: -5 },
+        { userId: 'u1', exerciseType: 'free_1', value: NaN },
+      ],
+      'free_1',
+    );
+    expect(totals.u1).toBe(10);
+  });
+
+  it('空配列でも壊れない', () => {
+    expect(sumDailyTotals([], 'free_1')).toEqual({});
+  });
+
+  it('1回では届かなくても積み上げれば達成できる', () => {
+    const target = 30;
+    const totals = sumDailyTotals(
+      [
+        { userId: 'u1', exerciseType: 'free_1', value: 10 },
+        { userId: 'u1', exerciseType: 'free_1', value: 10 },
+        { userId: 'u1', exerciseType: 'free_1', value: 10 },
+      ],
+      'free_1',
+    );
+    expect(totals.u1).toBeGreaterThanOrEqual(target);
+  });
+});
+
 describe('buildDailyParticipants', () => {
   const users = {
     u1: { userName: 'あきら' },
@@ -251,7 +307,7 @@ describe('buildDailyParticipants', () => {
     expect(byId.u4).toBe('名無しさん');
   });
 
-  it('当日ベスト値が目標以上ならクリア', () => {
+  it('当日の合計が目標以上ならクリア', () => {
     const t1 = generateDailyMissionTarget('u1', '2026-07-26', 'free_1');
     const t2 = generateDailyMissionTarget('u2', '2026-07-26', 'free_1');
     const list = buildDailyParticipants(
@@ -262,10 +318,10 @@ describe('buildDailyParticipants', () => {
       'u1',
     );
     const byId = Object.fromEntries(list.map((p) => [p.userId, p]));
-    expect(byId.u1.cleared).toBe(true);
-    expect(byId.u2.cleared).toBe(false);
+    expect(byId.u1.cleared).toBe(true); // ちょうど到達
+    expect(byId.u2.cleared).toBe(false); // 1回足りない
     expect(byId.u4.cleared).toBe(false);
-    expect(byId.u4.bestValue).toBe(0);
+    expect(byId.u4.totalValue).toBe(0);
   });
 
   it('ユーザーが居なければ空', () => {
