@@ -7,6 +7,8 @@ export interface UserData {
   userName?: string;
   email?: string;
   isGuest?: boolean;
+  /** 最後にアプリを開いた JST の暦日（YYYY-MM-DD）。デイリーミッションの表示対象判定に使う */
+  lastActiveDateKey?: string;
   // 作成者評価（種目作成者の平均評価）関連
   creatorRatingSum?: number;
   creatorRatingCount?: number;

@@ -1,26 +1,34 @@
 import { describe, it, expect } from 'vitest';
 import {
-  DAILY_REPS_MAX,
-  DAILY_REPS_MIN,
-  DAILY_REPS_PEAK,
+  DAILY_REPS_DEFAULT_PEAK,
+  DAILY_REPS_FLOOR,
   assignLabelLanes,
   buildDailyDistributionCurve,
   buildDailyParticipants,
   createSeededRandom,
-  dailyLogNormalPdf,
+  dailyLogCenter,
+  dailyRepsBounds,
+  dailyTargetCdf,
+  dailyTargetPdf,
+  dailyTargetProbability,
   formatDailyDateLabel,
+  formatDailyProbability,
   generateDailyMissionTarget,
   getDailyBoundariesJST,
   getDailyDateKeyJST,
   getDailyMissionCandidates,
   guessExerciseUnit,
   hashStringToSeed,
+  isDailyActiveUser,
   pickDailyMissionExercise,
+  resolveDailyPeak,
   sumDailyTotals,
   truncateLabelName,
   usedLaneCount,
 } from '../daily-mission';
 import type { FreeExerciseMap } from '../types';
+
+const PEAK = DAILY_REPS_DEFAULT_PEAK;
 
 const EX: FreeExerciseMap = {
   b_push: { name: 'プッシュアップ', rule: '', icon: 'fa-dumbbell', tags: [] },
@@ -110,55 +118,180 @@ describe('pickDailyMissionExercise', () => {
   });
 });
 
+describe('resolveDailyPeak / dailyRepsBounds', () => {
+  it('投稿がある種目は過去最高の半分がピーク', () => {
+    expect(resolveDailyPeak(100)).toBe(50);
+    expect(resolveDailyPeak(45)).toBe(23); // 22.5 → 四捨五入
+  });
+  it('投稿が無い種目は既定の30回', () => {
+    expect(resolveDailyPeak(0)).toBe(DAILY_REPS_DEFAULT_PEAK);
+    expect(resolveDailyPeak(NaN)).toBe(DAILY_REPS_DEFAULT_PEAK);
+    expect(resolveDailyPeak(-10)).toBe(DAILY_REPS_DEFAULT_PEAK);
+  });
+  it('極端に小さい記録でも下限を割らない', () => {
+    expect(resolveDailyPeak(2)).toBe(DAILY_REPS_FLOOR);
+  });
+  it('上下限はピークに比例する（旧仕様の 8〜150 よりはっきり狭い）', () => {
+    expect(dailyRepsBounds(PEAK)).toEqual({ min: 14, max: 60 });
+    expect(dailyRepsBounds(100)).toEqual({ min: 45, max: 200 });
+  });
+});
+
 describe('generateDailyMissionTarget', () => {
   it('同じユーザー×日付×種目なら安定（リロードで変わらない）', () => {
-    const a = generateDailyMissionTarget('u1', '2026-07-26', 'b_push');
-    const b = generateDailyMissionTarget('u1', '2026-07-26', 'b_push');
+    const a = generateDailyMissionTarget('u1', '2026-07-26', 'b_push', PEAK);
+    const b = generateDailyMissionTarget('u1', '2026-07-26', 'b_push', PEAK);
     expect(a).toBe(b);
   });
 
   it('ユーザーごとにバラバラ', () => {
     const values = Array.from({ length: 30 }, (_, i) =>
-      generateDailyMissionTarget(`user${i}`, '2026-07-26', 'b_push'),
+      generateDailyMissionTarget(`user${i}`, '2026-07-26', 'b_push', PEAK),
     );
     expect(new Set(values).size).toBeGreaterThan(10);
   });
 
   it('常に下限〜上限の整数', () => {
+    const { min, max } = dailyRepsBounds(PEAK);
     for (let i = 0; i < 3000; i++) {
-      const v = generateDailyMissionTarget(`u${i}`, '2026-07-26', 'b_push');
+      const v = generateDailyMissionTarget(`u${i}`, '2026-07-26', 'b_push', PEAK);
       expect(Number.isInteger(v)).toBe(true);
-      expect(v).toBeGreaterThanOrEqual(DAILY_REPS_MIN);
-      expect(v).toBeLessThanOrEqual(DAILY_REPS_MAX);
+      expect(v).toBeGreaterThanOrEqual(min);
+      expect(v).toBeLessThanOrEqual(max);
     }
   });
 
-  it('30回付近をピークに右へ裾を引く（対数正規）', () => {
-    const N = 20000;
-    const values = Array.from({ length: N }, (_, i) =>
-      generateDailyMissionTarget(`user${i}`, '2026-07-26', 'b_push'),
+  it('ピークを指定しなければ既定の30基準', () => {
+    expect(generateDailyMissionTarget('u1', '2026-07-26', 'b_push')).toBe(
+      generateDailyMissionTarget('u1', '2026-07-26', 'b_push', PEAK),
+    );
+  });
+
+  it('ピークが変われば目標もその周辺へ移動する', () => {
+    const values = Array.from({ length: 500 }, (_, i) =>
+      generateDailyMissionTarget(`user${i}`, '2026-07-26', 'b_push', 80),
+    );
+    const mean = values.reduce((s, v) => s + v, 0) / values.length;
+    expect(mean).toBeGreaterThan(60);
+    expect(mean).toBeLessThan(100);
+  });
+
+  const sample = (n: number, peak = PEAK) =>
+    Array.from({ length: n }, (_, i) =>
+      generateDailyMissionTarget(`user${i}`, '2026-07-26', 'b_push', peak),
     );
 
-    // 最頻ビン（5回刻み）が 30 を含むビンであること
-    const bins = new Map<number, number>();
-    values.forEach((v) => {
-      const bin = Math.floor(v / 5) * 5;
-      bins.set(bin, (bins.get(bin) || 0) + 1);
+  it('ピーク付近が最頻', () => {
+    const counts = new Map<number, number>();
+    sample(20000).forEach((v) => counts.set(v, (counts.get(v) || 0) + 1));
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    expect(Math.abs(top - PEAK)).toBeLessThanOrEqual(1);
+  });
+
+  it('右に裾を引く（平均 > 中央値。対数正規の形は保つ）', () => {
+    const values = sample(20000).sort((a, b) => a - b);
+    const mean = values.reduce((s, v) => s + v, 0) / values.length;
+    expect(mean).toBeGreaterThan(values[Math.floor(values.length / 2)]);
+  });
+
+  it('倍率で見ると大きい側の方が狭い（多い回数を引いたときの絶望を減らす）', () => {
+    // x そのものでなく log（＝何倍か）で、しかも分布の中心を基準に比べる。
+    // 対数正規は x で見ると上側の裾が長いのが正常なので、圧縮できているかは
+    // 倍率でしか判定できない。
+    const c = dailyLogCenter(PEAK);
+    const values = sample(20000);
+    const logDev = (vs: number[]) =>
+      vs.reduce((s, v) => s + Math.abs(Math.log(v) - c), 0) / vs.length;
+    expect(logDev(values.filter((v) => Math.log(v) > c))).toBeLessThan(
+      logDev(values.filter((v) => Math.log(v) < c)),
+    );
+  });
+
+  it('旧仕様（対数正規 σ0.45）より上振れが小さい', () => {
+    const values = sample(20000).sort((a, b) => a - b);
+    // 旧仕様は p95≈76 / p99≈103 / 最大 150 まで出た
+    expect(values[Math.floor(values.length * 0.95)]).toBeLessThan(55);
+    expect(values[Math.floor(values.length * 0.99)]).toBeLessThanOrEqual(60);
+    expect(Math.max(...values)).toBeLessThanOrEqual(dailyRepsBounds(PEAK).max);
+    // 「50回以上」は 1 割未満に収まる（旧仕様は 25%）
+    expect(values.filter((v) => v >= 50).length / values.length).toBeLessThan(0.1);
+  });
+});
+
+describe('dailyTargetProbability / formatDailyProbability', () => {
+  it('全ての目標回数の確率を足すと1になる', () => {
+    const { min, max } = dailyRepsBounds(PEAK);
+    let sum = 0;
+    for (let t = min; t <= max; t++) sum += dailyTargetProbability(t, PEAK);
+    expect(sum).toBeCloseTo(1, 3);
+  });
+  it('ピークの回数が最も引きやすい', () => {
+    const { min, max } = dailyRepsBounds(PEAK);
+    for (let t = min; t <= max; t++) {
+      if (t === PEAK) continue;
+      expect(dailyTargetProbability(t, PEAK)).toBeLessThan(
+        dailyTargetProbability(PEAK, PEAK),
+      );
+    }
+  });
+  it('同じ倍率なら上側の方が出にくい', () => {
+    expect(dailyTargetProbability(Math.round(PEAK * 1.4), PEAK)).toBeLessThan(
+      dailyTargetProbability(Math.round(PEAK / 1.4), PEAK),
+    );
+  });
+  it('範囲外は端に丸め込まれた確率と同じ', () => {
+    const { min, max } = dailyRepsBounds(PEAK);
+    expect(dailyTargetProbability(min - 5, PEAK)).toBe(
+      dailyTargetProbability(min, PEAK),
+    );
+    expect(dailyTargetProbability(max + 5, PEAK)).toBe(
+      dailyTargetProbability(max, PEAK),
+    );
+  });
+  it('実際の抽選頻度とおおよそ一致する', () => {
+    const N = 20000;
+    const counts = new Map<number, number>();
+    for (let i = 0; i < N; i++) {
+      const v = generateDailyMissionTarget(`user${i}`, '2026-07-26', 'b_push', PEAK);
+      counts.set(v, (counts.get(v) || 0) + 1);
+    }
+    [PEAK - 5, PEAK, PEAK + 5].forEach((t) => {
+      const actual = (counts.get(t) || 0) / N;
+      expect(Math.abs(actual - dailyTargetProbability(t, PEAK))).toBeLessThan(0.01);
     });
-    const topBin = [...bins.entries()].sort((a, b) => b[1] - a[1])[0][0];
-    expect(topBin).toBe(Math.floor(DAILY_REPS_PEAK / 5) * 5);
+  });
+  it('表示は小数1桁、極小は <0.1%', () => {
+    expect(formatDailyProbability(0.0412)).toBe('4.1%');
+    expect(formatDailyProbability(0.0004)).toBe('<0.1%');
+    expect(formatDailyProbability(0)).toBe('0%');
+  });
+});
 
-    // 右に裾を引く: 平均 > 中央値
-    const sorted = [...values].sort((a, b) => a - b);
-    const median = sorted[Math.floor(N / 2)];
-    const mean = values.reduce((s, v) => s + v, 0) / N;
-    expect(mean).toBeGreaterThan(median);
-
-    // ピークを跨ぐ非対称性: 大きい側の方が広く分布する
-    const below = values.filter((v) => v < DAILY_REPS_PEAK).length;
-    const above = values.filter((v) => v > DAILY_REPS_PEAK * 2).length;
-    expect(below).toBeGreaterThan(0);
-    expect(above).toBeGreaterThan(0);
+describe('dailyTargetCdf', () => {
+  it('0から1へ単調に増える', () => {
+    let prev = 0;
+    for (let x = 1; x <= 120; x++) {
+      const v = dailyTargetCdf(x, PEAK);
+      expect(v).toBeGreaterThanOrEqual(prev - 1e-12);
+      prev = v;
+    }
+    expect(dailyTargetCdf(1, PEAK)).toBeLessThan(0.001);
+    expect(dailyTargetCdf(150, PEAK)).toBeGreaterThan(0.999);
+  });
+  it('log空間の中心より下の面積はσの比になる', () => {
+    // σ下:σ上 = 0.34:0.26 なので下側は 0.34/0.60 ≒ 0.567
+    expect(dailyTargetCdf(Math.exp(dailyLogCenter(PEAK)), PEAK)).toBeCloseTo(
+      0.34 / 0.6,
+      6,
+    );
+    // 最頻値（ピーク）は中心より少し左なので、そこまでの面積は半分弱
+    const atPeak = dailyTargetCdf(PEAK, PEAK);
+    expect(atPeak).toBeGreaterThan(0.4);
+    expect(atPeak).toBeLessThan(0.5);
+  });
+  it('0以下は0', () => {
+    expect(dailyTargetCdf(0, PEAK)).toBe(0);
+    expect(dailyTargetCdf(-3, PEAK)).toBe(0);
   });
 });
 
@@ -176,36 +309,41 @@ describe('formatDailyDateLabel', () => {
   });
 });
 
-describe('dailyLogNormalPdf / buildDailyDistributionCurve', () => {
-  it('ピークは最頻値30回', () => {
-    const at30 = dailyLogNormalPdf(DAILY_REPS_PEAK);
-    expect(at30).toBeGreaterThan(dailyLogNormalPdf(DAILY_REPS_PEAK - 5));
-    expect(at30).toBeGreaterThan(dailyLogNormalPdf(DAILY_REPS_PEAK + 5));
+describe('dailyTargetPdf / buildDailyDistributionCurve', () => {
+  it('密度はピークで最大', () => {
+    const atPeak = dailyTargetPdf(PEAK, PEAK);
+    expect(atPeak).toBeGreaterThan(dailyTargetPdf(PEAK - 5, PEAK));
+    expect(atPeak).toBeGreaterThan(dailyTargetPdf(PEAK + 5, PEAK));
+  });
+  it('同じ倍率なら上側の方が低い（裾が短い）', () => {
+    expect(dailyTargetPdf(PEAK * 1.4, PEAK)).toBeLessThan(
+      dailyTargetPdf(PEAK / 1.4, PEAK),
+    );
   });
   it('0以下は0', () => {
-    expect(dailyLogNormalPdf(0)).toBe(0);
-    expect(dailyLogNormalPdf(-5)).toBe(0);
+    expect(dailyTargetPdf(0, PEAK)).toBe(0);
+    expect(dailyTargetPdf(-5, PEAK)).toBe(0);
   });
   it('カーブの最大値は1に正規化される', () => {
-    const curve = buildDailyDistributionCurve(120);
+    const curve = buildDailyDistributionCurve(10, 60, PEAK);
     const maxY = Math.max(...curve.map((p) => p.y));
     expect(maxY).toBeLessThanOrEqual(1.0000001);
     expect(maxY).toBeGreaterThan(0.99);
   });
-  it('カーブの最大点は30付近', () => {
-    const curve = buildDailyDistributionCurve(120, 240);
+  it('カーブの最大点はピーク付近', () => {
+    const curve = buildDailyDistributionCurve(10, 60, PEAK, 240);
     const top = curve.reduce((a, b) => (b.y > a.y ? b : a));
-    expect(Math.abs(top.x - DAILY_REPS_PEAK)).toBeLessThan(2);
+    expect(Math.abs(top.x - PEAK)).toBeLessThan(2);
   });
-  it('x=0 から xMax まで昇順で steps+1 点', () => {
-    const curve = buildDailyDistributionCurve(100, 50);
+  it('xMin から xMax まで昇順で steps+1 点', () => {
+    const curve = buildDailyDistributionCurve(10, 100, PEAK, 50);
     expect(curve.length).toBe(51);
-    expect(curve[0].x).toBe(0);
+    expect(curve[0].x).toBe(10);
     expect(curve[curve.length - 1].x).toBeCloseTo(100);
     expect(curve.every((p, i) => i === 0 || p.x > curve[i - 1].x)).toBe(true);
   });
   it('yは常に有限で非負', () => {
-    const curve = buildDailyDistributionCurve(200, 400);
+    const curve = buildDailyDistributionCurve(0, 200, PEAK, 400);
     expect(curve.every((p) => Number.isFinite(p.y) && p.y >= 0)).toBe(true);
   });
 });
@@ -265,59 +403,104 @@ describe('sumDailyTotals（その日の合計で判定する）', () => {
   });
 });
 
-describe('buildDailyParticipants', () => {
-  const users = {
-    u1: { userName: 'あきら' },
-    u2: { userName: 'ひろし' },
-    u3: { email: 'no-name@example.com' },
-    u4: {},
-  };
+describe('isDailyActiveUser', () => {
+  const DAY = '2026-07-26';
+  it('今日ログインした人は載る', () => {
+    expect(
+      isDailyActiveUser({ lastActiveDateKey: DAY }, 'u2', DAY, {}, 'u1'),
+    ).toBe(true);
+  });
+  it('昨日までしかログインしていない人は載らない', () => {
+    expect(
+      isDailyActiveUser({ lastActiveDateKey: '2026-07-25' }, 'u2', DAY, {}, 'u1'),
+    ).toBe(false);
+    expect(isDailyActiveUser({}, 'u2', DAY, {}, 'u1')).toBe(false);
+    expect(isDailyActiveUser(undefined, 'u2', DAY, {}, 'u1')).toBe(false);
+  });
+  it('自分は記録が無くても必ず載る', () => {
+    expect(isDailyActiveUser({}, 'u1', DAY, {}, 'u1')).toBe(true);
+  });
+  it('今日投稿している人は記録が無くても載る（記録漏れの保険）', () => {
+    expect(isDailyActiveUser({}, 'u2', DAY, { u2: 5 }, 'u1')).toBe(true);
+    expect(isDailyActiveUser({}, 'u2', DAY, { u2: 0 }, 'u1')).toBe(false);
+  });
+});
 
-  it('全ユーザー分を目標の昇順で返す', () => {
-    const list = buildDailyParticipants(users, '2026-07-26', 'free_1', {}, 'u1');
+describe('buildDailyParticipants', () => {
+  const DAY = '2026-07-26';
+  const users = {
+    u1: { userName: 'あきら', lastActiveDateKey: DAY },
+    u2: { userName: 'ひろし', lastActiveDateKey: DAY },
+    u3: { email: 'no-name@example.com', lastActiveDateKey: DAY },
+    u4: { lastActiveDateKey: DAY },
+  };
+  const build = (
+    totals: Record<string, number> = {},
+    myUserId = 'u1',
+    usersMap: Record<
+      string,
+      { userName?: string; email?: string; lastActiveDateKey?: string }
+    > = users,
+  ) =>
+    buildDailyParticipants({
+      usersMap,
+      dateKey: DAY,
+      exerciseKey: 'free_1',
+      totals,
+      myUserId,
+      peak: PEAK,
+    });
+
+  it('今日ログインしたユーザー分を目標の昇順で返す', () => {
+    const list = build();
     expect(list.length).toBe(4);
     for (let i = 1; i < list.length; i++) {
       expect(list[i].target).toBeGreaterThanOrEqual(list[i - 1].target);
     }
   });
 
+  it('今日ログインしていないユーザーは並ばない', () => {
+    const list = build({}, 'u1', {
+      ...users,
+      u5: { userName: 'ねぼすけ', lastActiveDateKey: '2026-07-20' },
+      u6: { userName: 'みかけない' },
+    });
+    expect(list.map((p) => p.userId)).toEqual(['u1', 'u2', 'u3', 'u4'].sort(
+      (a, b) =>
+        generateDailyMissionTarget(a, DAY, 'free_1', PEAK) -
+          generateDailyMissionTarget(b, DAY, 'free_1', PEAK) ||
+        a.localeCompare(b),
+    ));
+  });
+
   it('目標は generateDailyMissionTarget と一致（保存不要で再現できる）', () => {
-    const list = buildDailyParticipants(users, '2026-07-26', 'free_1', {}, 'u1');
-    list.forEach((p) => {
+    build().forEach((p) => {
       expect(p.target).toBe(
-        generateDailyMissionTarget(p.userId, '2026-07-26', 'free_1'),
+        generateDailyMissionTarget(p.userId, DAY, 'free_1', PEAK),
       );
+      expect(p.probability).toBe(dailyTargetProbability(p.target, PEAK));
     });
   });
 
   it('自分だけ isMe が立つ', () => {
-    const list = buildDailyParticipants(users, '2026-07-26', 'free_1', {}, 'u2');
-    expect(list.filter((p) => p.isMe).map((p) => p.userId)).toEqual(['u2']);
+    expect(build({}, 'u2').filter((p) => p.isMe).map((p) => p.userId)).toEqual([
+      'u2',
+    ]);
   });
 
   it('表示名は userName → email → 名無しさん の順', () => {
-    const byId = Object.fromEntries(
-      buildDailyParticipants(users, '2026-07-26', 'free_1', {}, 'u1').map((p) => [
-        p.userId,
-        p.userName,
-      ]),
-    );
+    const byId = Object.fromEntries(build().map((p) => [p.userId, p.userName]));
     expect(byId.u1).toBe('あきら');
     expect(byId.u3).toBe('no-name@example.com');
     expect(byId.u4).toBe('名無しさん');
   });
 
   it('当日の合計が目標以上ならクリア', () => {
-    const t1 = generateDailyMissionTarget('u1', '2026-07-26', 'free_1');
-    const t2 = generateDailyMissionTarget('u2', '2026-07-26', 'free_1');
-    const list = buildDailyParticipants(
-      users,
-      '2026-07-26',
-      'free_1',
-      { u1: t1, u2: t2 - 1 },
-      'u1',
+    const t1 = generateDailyMissionTarget('u1', DAY, 'free_1', PEAK);
+    const t2 = generateDailyMissionTarget('u2', DAY, 'free_1', PEAK);
+    const byId = Object.fromEntries(
+      build({ u1: t1, u2: t2 - 1 }).map((p) => [p.userId, p]),
     );
-    const byId = Object.fromEntries(list.map((p) => [p.userId, p]));
     expect(byId.u1.cleared).toBe(true); // ちょうど到達
     expect(byId.u2.cleared).toBe(false); // 1回足りない
     expect(byId.u4.cleared).toBe(false);
@@ -325,9 +508,7 @@ describe('buildDailyParticipants', () => {
   });
 
   it('ユーザーが居なければ空', () => {
-    expect(buildDailyParticipants({}, '2026-07-26', 'free_1', {}, 'u1')).toEqual(
-      [],
-    );
+    expect(build({}, 'u1', {})).toEqual([]);
   });
 });
 

@@ -18,11 +18,13 @@ import {
 import { db } from './firebase';
 import {
   buildDailyParticipants,
+  dailyTargetProbability,
   getDailyBoundariesJST,
   getDailyDateKeyJST,
   generateDailyMissionTarget,
   pickDailyMissionExercise,
   pushRecentMissionKeys,
+  resolveDailyPeak,
   sumDailyTotals,
   type DailyMission,
   type DailyMissionState,
@@ -37,12 +39,57 @@ interface MissionDoc {
   dateKey?: string;
   exerciseKey?: string;
   recentKeys?: string[];
+  peak?: number;
+  bestValue?: number;
+}
+
+/**
+ * その種目の過去最高回数（ユーザーをまたいだ全投稿の最大値）。
+ * 当日ぶんは除外する。含めると、その日の投稿でピークが動いて
+ * 全員の目標が途中で変わってしまうため。
+ * exerciseType の等値だけで引き（複合インデックス不要）、日付は手元で絞る。
+ * app.js: getExerciseBestValue
+ */
+export async function getExerciseBestValue(
+  exerciseKey: string,
+  before: Date,
+): Promise<number> {
+  const snap = await getDocs(
+    query(collection(db, POSTS), where('exerciseType', '==', exerciseKey)),
+  );
+  let best = 0;
+  snap.docs.forEach((d) => {
+    const post = d.data() as Post;
+    const ts = post.timestamp?.toDate?.();
+    // timestamp 未確定（serverTimestamp 反映待ち）＝ついさっきの投稿なので除外
+    if (!ts || ts >= before) return;
+    const v = Number(post.value) || 0;
+    if (v > best) best = v;
+  });
+  return best;
+}
+
+/** 保存済みの値・過去最高から、その日のピーク回数を組み立てる。 */
+function toMission(
+  dateKey: string,
+  exerciseKey: string,
+  bestValue: number,
+): DailyMission {
+  const best = Number(bestValue) || 0;
+  return {
+    dateKey,
+    exerciseKey,
+    peak: resolveDailyPeak(best),
+    bestValue: best,
+    peakSource: best > 0 ? 'best' : 'default',
+  };
 }
 
 /**
  * 今日のミッションを取得。未生成なら生成して保存する（冪等）。
  * 選出は日付キーだけをシードにする決定的処理なので、保存に失敗しても
- * 全ユーザーで同じ種目になり表示は破綻しない。
+ * 全ユーザーで同じ種目になり表示は破綻しない。ピーク回数も当日ぶんを
+ * 除いた過去最高から決まるため、どの端末でも同じ値になる。
  * app.js: getOrCreateDailyMission
  */
 export async function getOrCreateDailyMission(
@@ -60,13 +107,33 @@ export async function getOrCreateDailyMission(
     console.warn('[デイリーミッション] 取得失敗、ローカル生成にフォールバック:', e);
   }
 
+  /** 過去最高回数を引く。失敗したら既定ピークにフォールバック。 */
+  const resolveBest = async (key: string) => {
+    try {
+      return await getExerciseBestValue(key, getDailyBoundariesJST(dateKey).start);
+    } catch (e) {
+      console.warn('[デイリーミッション] 過去最高回数の取得に失敗:', e);
+      return 0;
+    }
+  };
+
   // 当日分が既にあり、その種目が今も存在すればそれを使う
   if (
     saved.dateKey === dateKey &&
     saved.exerciseKey &&
     freeExercises[saved.exerciseKey]
   ) {
-    return { dateKey, exerciseKey: saved.exerciseKey };
+    // 旧バージョンが書いたドキュメントには bestValue が無いので、その場合だけ引き直す
+    if (typeof saved.bestValue === 'number') {
+      return toMission(dateKey, saved.exerciseKey, saved.bestValue);
+    }
+    const bestValue = await resolveBest(saved.exerciseKey);
+    try {
+      await setDoc(ref, { bestValue, peak: resolveDailyPeak(bestValue) }, { merge: true });
+    } catch {
+      // 書けなくても各端末で同じ値を再計算できる
+    }
+    return toMission(dateKey, saved.exerciseKey, bestValue);
   }
 
   const recentKeys = Array.isArray(saved.recentKeys) ? saved.recentKeys : [];
@@ -77,12 +144,16 @@ export async function getOrCreateDailyMission(
   );
   if (!exerciseKey) return null;
 
+  const bestValue = await resolveBest(exerciseKey);
+
   try {
     await setDoc(
       ref,
       {
         dateKey,
         exerciseKey,
+        bestValue,
+        peak: resolveDailyPeak(bestValue),
         recentKeys: pushRecentMissionKeys(recentKeys, exerciseKey),
         updatedAt: serverTimestamp(),
       },
@@ -92,7 +163,7 @@ export async function getOrCreateDailyMission(
     console.warn('[デイリーミッション] 保存失敗（表示は続行）:', e);
   }
 
-  return { dateKey, exerciseKey };
+  return toMission(dateKey, exerciseKey, bestValue);
 }
 
 /**
@@ -138,6 +209,7 @@ export async function loadDailyMissionState(
     userId,
     mission.dateKey,
     mission.exerciseKey,
+    mission.peak,
   );
 
   let totals: Record<string, number> = {};
@@ -151,13 +223,14 @@ export async function loadDailyMissionState(
   const users: Record<string, UserData> = { ...usersMap };
   if (!users[userId]) users[userId] = {};
 
-  const participants = buildDailyParticipants(
-    users,
-    mission.dateKey,
-    mission.exerciseKey,
+  const participants = buildDailyParticipants({
+    usersMap: users,
+    dateKey: mission.dateKey,
+    exerciseKey: mission.exerciseKey,
     totals,
-    userId,
-  );
+    myUserId: userId,
+    peak: mission.peak,
+  });
 
   const totalValue = totals[userId] || 0;
   return {
@@ -166,6 +239,10 @@ export async function loadDailyMissionState(
     target,
     totalValue,
     cleared: totalValue >= target,
+    probability: dailyTargetProbability(target, mission.peak),
+    peak: mission.peak,
+    bestValue: mission.bestValue,
+    peakSource: mission.peakSource,
     participants,
   };
 }

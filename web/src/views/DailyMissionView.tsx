@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { submitPost } from '../lib/posts';
 import {
   formatDailyDateLabel,
+  formatDailyProbability,
   guessExerciseUnit,
 } from '../lib/daily-mission';
 import DistributionChart from '../features/daily/DistributionChart';
@@ -40,7 +41,17 @@ export default function DailyMissionView() {
     );
   }
 
-  const { exerciseKey, target, cleared, totalValue, dateKey } = dailyMission;
+  const {
+    exerciseKey,
+    target,
+    cleared,
+    totalValue,
+    dateKey,
+    peak,
+    bestValue,
+    peakSource,
+    probability,
+  } = dailyMission;
   const ex = freeExercises[exerciseKey];
   const unit = guessExerciseUnit(ex?.name || '');
   const percent = Math.min(100, Math.round((totalValue / target) * 100));
@@ -116,6 +127,9 @@ export default function DailyMissionView() {
             {target}
             <span className={styles.targetUnit}>{unit}</span>
           </span>
+          <span className={styles.targetProb}>
+            この数字を引く確率 {formatDailyProbability(probability)}
+          </span>
         </div>
 
         <div className={styles.progressWrap}>
@@ -152,10 +166,16 @@ export default function DailyMissionView() {
           <DistributionChart
             participants={dailyMission.participants}
             unit={unit}
+            peak={peak}
           />
           <p className={styles.distNote}>
-            全員が同じ種目。目標回数は 30{unit} をピークにした偏った分布から
-            一人ひとり抽選されます。
+            並ぶのは今日ログインした人だけ。名前の横の％は、その回数を引く確率です。
+            目標は {peak}
+            {unit} をピークに、大きい側を狭めた分布から一人ひとり抽選されます
+            {peakSource === 'best'
+              ? `（ピークはこの種目の過去最高 ${bestValue}${unit} の半分）`
+              : '（この種目はまだ投稿が無いので 30 がピーク）'}
+            。
           </p>
         </div>
       )}

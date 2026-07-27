@@ -23,8 +23,10 @@ import {
   createUserData,
   getUserData,
   invalidateUsersMapCache,
+  touchUserActivity,
   updateUserName as fbUpdateUserName,
 } from '../lib/users';
+import { getDailyDateKeyJST } from '../lib/daily-mission';
 import type { UserData } from '../lib/types';
 
 interface AuthCtx {
@@ -80,6 +82,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           setUserData(data);
         }
+        // デイリーミッションの「みんなの目標」に載る条件なので、
+        // 一覧を読む DataProvider より先に今日の印を残す
+        await touchUserActivity(u.uid, getDailyDateKeyJST());
         setUser(u);
       } else {
         setUser(null);

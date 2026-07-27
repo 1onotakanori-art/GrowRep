@@ -12,17 +12,33 @@ const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 /** 直近何日分の種目を再選出から避けるか。 */
 export const DAILY_RECENT_AVOID = 5;
 
-// 対数正規分布のパラメータ。最頻値（ピーク）= exp(MU - SIGMA^2) = 30 回。
-export const DAILY_REPS_SIGMA = 0.45;
-export const DAILY_REPS_PEAK = 30;
-export const DAILY_REPS_MU =
-  Math.log(DAILY_REPS_PEAK) + DAILY_REPS_SIGMA * DAILY_REPS_SIGMA;
-export const DAILY_REPS_MIN = 8;
-export const DAILY_REPS_MAX = 150;
+// 目標回数の分布パラメータ（対数正規。ただし log 空間で上下の σ を変えられる）。
+// σ上 = σ下 なら純粋な対数正規そのもので、右に裾を引く形はそのまま。
+// σ上を少し小さくしてあるのは、飛び抜けて多い回数を引いたときの絶望を減らすため。
+// σ は倍率に対する広がりなのでピーク回数によらず一定（対数正規のスケール不変性）。
+export const DAILY_SIGMA_LOW = 0.34;
+export const DAILY_SIGMA_HIGH = 0.26;
+/** 抽選結果を丸め込む範囲（ピーク比）。 */
+export const DAILY_MIN_RATIO = 0.45;
+export const DAILY_MAX_RATIO = 2.0;
+/** 何があっても下回らない回数。 */
+export const DAILY_REPS_FLOOR = 5;
+/** 過去に投稿が無い種目のピーク回数。 */
+export const DAILY_REPS_DEFAULT_PEAK = 30;
+/** 投稿がある種目のピーク＝過去最高回数のこの割合。 */
+export const DAILY_PEAK_BEST_RATIO = 0.5;
+
+/** ピーク回数の決まり方。best = 過去最高の半分 / default = 投稿が無いので既定値 */
+export type DailyPeakSource = 'best' | 'default';
 
 export interface DailyMission {
   dateKey: string;
   exerciseKey: string;
+  /** その日の分布のピーク回数（全ユーザー共通） */
+  peak: number;
+  /** ピークの根拠になった過去最高回数（投稿が無ければ 0） */
+  bestValue: number;
+  peakSource: DailyPeakSource;
 }
 
 export interface DailyMissionState {
@@ -32,7 +48,12 @@ export interface DailyMissionState {
   cleared: boolean;
   /** その日に投稿した回数の合計（1回で達成しなくても積み上げられる） */
   totalValue: number;
-  /** 全ユーザーの目標と達成状況（分布グラフ用） */
+  /** 自分の目標を引く確率（0〜1） */
+  probability: number;
+  peak: number;
+  bestValue: number;
+  peakSource: DailyPeakSource;
+  /** その日にログインしたユーザーの目標と達成状況（分布グラフ用） */
   participants: DailyParticipant[];
 }
 
@@ -40,6 +61,8 @@ export interface DailyParticipant {
   userId: string;
   userName: string;
   target: number;
+  /** その目標回数を引く確率（0〜1） */
+  probability: number;
   /** その日の合計回数 */
   totalValue: number;
   cleared: boolean;
@@ -110,7 +133,39 @@ export function seededNormal(rand: () => number): number {
 // ---------------------------------------------------------------------
 
 /**
- * ユーザー×日付×種目で決まる目標回数。ピーク30回で右に裾を引く対数正規分布。
+ * その種目の過去最高回数からピーク回数を決める。
+ * 投稿が一度も無い種目は既定値（30）。app.js: resolveDailyPeak
+ */
+export function resolveDailyPeak(bestValue: number): number {
+  const best = Number(bestValue) || 0;
+  if (best <= 0) return DAILY_REPS_DEFAULT_PEAK;
+  return Math.max(DAILY_REPS_FLOOR, Math.round(best * DAILY_PEAK_BEST_RATIO));
+}
+
+/**
+ * log 空間での分布の中心。最頻値がちょうど peak になるよう σ下² だけ右にずらす
+ * （対数正規の最頻値 = exp(μ - σ²)）。app.js: dailyLogCenter
+ */
+export function dailyLogCenter(peak: number): number {
+  const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
+  return Math.log(p) + DAILY_SIGMA_LOW * DAILY_SIGMA_LOW;
+}
+
+/** 下側に振れる確率（＝密度が繋がるための面積比）。app.js: DAILY_LOW_WEIGHT */
+export const DAILY_LOW_WEIGHT =
+  DAILY_SIGMA_LOW / (DAILY_SIGMA_LOW + DAILY_SIGMA_HIGH);
+
+/** 目標回数が取りうる範囲。app.js: dailyRepsBounds */
+export function dailyRepsBounds(peak: number): { min: number; max: number } {
+  const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
+  const min = Math.max(DAILY_REPS_FLOOR, Math.round(p * DAILY_MIN_RATIO));
+  const max = Math.max(min + 1, Math.round(p * DAILY_MAX_RATIO));
+  return { min, max };
+}
+
+/**
+ * ユーザー×日付×種目で決まる目標回数。ピークを最頻値に右へ裾を引く対数正規で、
+ * 上側の σ だけ小さくして大きい数字を出にくくしてある。
  * シードから毎回同じ値を再計算できるため保存不要（リロードしても変わらない）。
  * app.js: generateDailyMissionTarget
  */
@@ -118,13 +173,22 @@ export function generateDailyMissionTarget(
   userId: string,
   dateKey: string,
   exerciseKey: string,
+  peak: number = DAILY_REPS_DEFAULT_PEAK,
 ): number {
+  const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
   const rand = createSeededRandom(
     hashStringToSeed(`daily-reps|${userId}|${dateKey}|${exerciseKey}`),
   );
-  const z = seededNormal(rand);
-  const raw = Math.exp(DAILY_REPS_MU + DAILY_REPS_SIGMA * z);
-  return Math.min(DAILY_REPS_MAX, Math.max(DAILY_REPS_MIN, Math.round(raw)));
+  const center = dailyLogCenter(p);
+  // どちら側に振れるかは面積比（σ下:σ上）で決める＝境目で密度が繋がる
+  const side = rand();
+  const z = Math.abs(seededNormal(rand));
+  const y =
+    side < DAILY_LOW_WEIGHT
+      ? center - DAILY_SIGMA_LOW * z
+      : center + DAILY_SIGMA_HIGH * z;
+  const { min, max } = dailyRepsBounds(p);
+  return Math.min(max, Math.max(min, Math.round(Math.exp(y))));
 }
 
 // ---------------------------------------------------------------------
@@ -202,56 +266,151 @@ export function pushRecentMissionKeys(
 // ---------------------------------------------------------------------
 
 /**
- * 目標回数の確率密度（対数正規）。app.js: dailyLogNormalPdf
+ * 目標回数の確率密度（対数正規。中心より上だけ σ が小さい）。
+ * 最頻値はちょうどピークで、amp を掛けているので全区間の積分が 1 になる。
  * 目標は保存せずシードから再計算できるので、他ユーザーの回数も
- * Firestore を読まずに全員分ローカルで求められる。
+ * Firestore を読まずに全員分ローカルで求められる。app.js: dailyTargetPdf
  */
-export function dailyLogNormalPdf(x: number): number {
-  if (x <= 0) return 0;
-  const z = (Math.log(x) - DAILY_REPS_MU) / DAILY_REPS_SIGMA;
+export function dailyTargetPdf(x: number, peak: number): number {
+  if (!(x > 0)) return 0;
+  const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
+  const center = dailyLogCenter(p);
+  const d = Math.log(x) - center;
+  const s = d < 0 ? DAILY_SIGMA_LOW : DAILY_SIGMA_HIGH;
+  const amp = Math.sqrt(2 / Math.PI) / (DAILY_SIGMA_LOW + DAILY_SIGMA_HIGH);
+  return (amp / x) * Math.exp(-(d * d) / (2 * s * s));
+}
+
+/** 標準正規分布の累積分布。誤差関数は Abramowitz-Stegun 7.1.26 近似。 */
+function standardNormalCdf(z: number): number {
+  const sign = z < 0 ? -1 : 1;
+  const a = Math.abs(z) / Math.SQRT2;
+  const t = 1 / (1 + 0.3275911 * a);
+  const poly =
+    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) *
+      t +
+      0.254829592) *
+    t;
+  const erf = 1 - poly * Math.exp(-a * a);
+  return 0.5 * (1 + sign * erf);
+}
+
+/** 目標回数の累積分布（丸め前の連続値ベース）。app.js: dailyTargetCdf */
+export function dailyTargetCdf(x: number, peak: number): number {
+  if (!(x > 0)) return 0;
+  const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
+  const d = Math.log(x) - dailyLogCenter(p);
+  if (d <= 0) return 2 * DAILY_LOW_WEIGHT * standardNormalCdf(d / DAILY_SIGMA_LOW);
   return (
-    Math.exp(-0.5 * z * z) / (x * DAILY_REPS_SIGMA * Math.sqrt(2 * Math.PI))
+    DAILY_LOW_WEIGHT +
+    2 *
+      (1 - DAILY_LOW_WEIGHT) *
+      (standardNormalCdf(d / DAILY_SIGMA_HIGH) - 0.5)
   );
 }
 
 /**
- * 分布カーブの点列。y はピーク(=最頻値30回)が 1 になるよう正規化する。
+ * その目標回数を引く確率。丸めた結果がその整数になる幅（±0.5）の面積で、
+ * 上下限はそこへ丸め込まれる裾ぶんも含める（合計するとちょうど 1 になる）。
+ * app.js: dailyTargetProbability
+ */
+export function dailyTargetProbability(target: number, peak: number): number {
+  const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
+  const { min, max } = dailyRepsBounds(p);
+  let prob: number;
+  if (target <= min) prob = dailyTargetCdf(min + 0.5, p);
+  else if (target >= max) prob = 1 - dailyTargetCdf(max - 0.5, p);
+  else prob = dailyTargetCdf(target + 0.5, p) - dailyTargetCdf(target - 0.5, p);
+  return Math.min(1, Math.max(0, prob));
+}
+
+/** 確率をラベル用の短い文字列に。app.js: formatDailyProbability */
+export function formatDailyProbability(probability: number): string {
+  const pct = (Number(probability) || 0) * 100;
+  if (pct <= 0) return '0%';
+  if (pct < 0.1) return '<0.1%';
+  return `${pct.toFixed(1)}%`;
+}
+
+/**
+ * 分布カーブの点列。y はピークが 1 になるよう正規化する。
  * app.js: buildDailyDistributionCurve
  */
 export function buildDailyDistributionCurve(
+  xMin: number,
   xMax: number,
+  peak: number,
   steps = 96,
 ): Array<{ x: number; y: number }> {
-  const peak = dailyLogNormalPdf(DAILY_REPS_PEAK);
+  const top = dailyTargetPdf(peak, peak);
   const points: Array<{ x: number; y: number }> = [];
   for (let i = 0; i <= steps; i++) {
-    const x = (xMax * i) / steps;
-    points.push({ x, y: peak > 0 ? dailyLogNormalPdf(x) / peak : 0 });
+    const x = xMin + ((xMax - xMin) * i) / steps;
+    points.push({ x, y: top > 0 ? dailyTargetPdf(x, peak) / top : 0 });
   }
   return points;
 }
 
 /**
- * 全ユーザーの目標を算出して並べる（目標が小さい順）。
- * totals は当日の投稿から作った userId→合計回数。
- * app.js: buildDailyParticipants
+ * その日のグラフに載せるユーザーか。今日ログインした人だけを対象にし、
+ * 自分と「今日すでに投稿した人」は lastActiveDateKey の書き込み有無に
+ * 関わらず必ず含める。app.js: isDailyActiveUser
  */
-export function buildDailyParticipants(
-  usersMap: Record<string, { userName?: string; email?: string }>,
+export function isDailyActiveUser(
+  user: { lastActiveDateKey?: string } | undefined,
+  userId: string,
   dateKey: string,
-  exerciseKey: string,
   totals: Record<string, number>,
   myUserId: string,
-): DailyParticipant[] {
+): boolean {
+  if (userId === myUserId) return true;
+  if ((totals[userId] || 0) > 0) return true;
+  return (user || {}).lastActiveDateKey === dateKey;
+}
+
+export interface BuildDailyParticipantsInput {
+  usersMap: Record<
+    string,
+    { userName?: string; email?: string; lastActiveDateKey?: string }
+  >;
+  dateKey: string;
+  exerciseKey: string;
+  /** 当日の投稿から作った userId→合計回数 */
+  totals: Record<string, number>;
+  myUserId: string;
+  peak: number;
+}
+
+/**
+ * その日ログインしたユーザーの目標を算出して並べる（目標が小さい順）。
+ * app.js: buildDailyParticipants
+ */
+export function buildDailyParticipants({
+  usersMap,
+  dateKey,
+  exerciseKey,
+  totals,
+  myUserId,
+  peak,
+}: BuildDailyParticipantsInput): DailyParticipant[] {
   return Object.keys(usersMap || {})
+    .filter((userId) =>
+      isDailyActiveUser(usersMap[userId], userId, dateKey, totals, myUserId),
+    )
     .map((userId) => {
       const u = usersMap[userId] || {};
-      const target = generateDailyMissionTarget(userId, dateKey, exerciseKey);
+      const target = generateDailyMissionTarget(
+        userId,
+        dateKey,
+        exerciseKey,
+        peak,
+      );
       const totalValue = totals[userId] || 0;
       return {
         userId,
         userName: u.userName || u.email || '名無しさん',
         target,
+        probability: dailyTargetProbability(target, peak),
         totalValue,
         cleared: totalValue >= target,
         isMe: userId === myUserId,

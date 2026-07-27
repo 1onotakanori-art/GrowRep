@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import {
-  DAILY_REPS_PEAK,
   assignLabelLanes,
   buildDailyDistributionCurve,
+  dailyRepsBounds,
+  formatDailyProbability,
   truncateLabelName,
   usedLaneCount,
   type DailyParticipant,
@@ -22,7 +23,8 @@ const AXIS_H = 26;
 /**
  * ラベル幅の目安（衝突判定とはみ出し防止用）。
  * name は font-size 10 の全角想定で約10px/字、目標値は font-size 11 の
- * 数字で約6.5px/字、クリア済みは「✓ 」ぶんを加える。
+ * 数字で約6.5px/字、確率は font-size 9 で約5.2px/字、
+ * クリア済みは「✓ 」ぶんを加える。
  * ⚠️ app.js: dailyLabelWidth と同じ式にすること（見た目がズレる）。
  */
 function labelWidth(p: DailyParticipant): number {
@@ -31,6 +33,8 @@ function labelWidth(p: DailyParticipant): number {
     truncateLabelName(p.userName).length * 10 +
     4 +
     String(p.target).length * 6.5 +
+    4 +
+    formatDailyProbability(p.probability).length * 5.2 +
     6
   );
 }
@@ -42,17 +46,24 @@ function labelWidth(p: DailyParticipant): number {
 export default function DistributionChart({
   participants,
   unit,
+  peak,
 }: {
   participants: DailyParticipant[];
   unit: string;
+  peak: number;
 }) {
   const model = useMemo(() => {
     if (participants.length === 0) return null;
 
-    const maxTarget = Math.max(...participants.map((p) => p.target));
-    // 目盛りは 20 刻みで、全員が収まる範囲まで伸ばす
-    const xMax = Math.max(80, Math.ceil((maxTarget + 12) / 20) * 20);
-    const toX = (v: number) => PAD_X + (v / xMax) * (W - PAD_X * 2);
+    // 目盛りは抽選されうる範囲だけを映す（0 から描くと分布が右端に寄る）
+    const bounds = dailyRepsBounds(peak);
+    const lo = Math.min(bounds.min, ...participants.map((p) => p.target));
+    const hi = Math.max(bounds.max, ...participants.map((p) => p.target));
+    const step = hi - lo > 90 ? 20 : 10;
+    const xMin = Math.max(0, (Math.ceil(lo / step) - 1) * step);
+    const xMax = (Math.floor(hi / step) + 1) * step;
+    const toX = (v: number) =>
+      PAD_X + ((v - xMin) / (xMax - xMin)) * (W - PAD_X * 2);
 
     // ラベル段数に応じてグラフの高さを決める（重なりを段で解消するため）
     const widths = participants.map(labelWidth);
@@ -68,13 +79,13 @@ export default function DistributionChart({
     const baseY = curveTop + CURVE_H;
     const H = baseY + AXIS_H;
 
-    const curve = buildDailyDistributionCurve(xMax).map((pt) => ({
+    const curve = buildDailyDistributionCurve(xMin, xMax, peak).map((pt) => ({
       x: toX(pt.x),
       y: baseY - pt.y * CURVE_H,
     }));
 
     const area =
-      `M ${toX(0)} ${baseY} ` +
+      `M ${toX(xMin)} ${baseY} ` +
       curve.map((pt) => `L ${pt.x.toFixed(2)} ${pt.y.toFixed(2)}`).join(' ') +
       ` L ${toX(xMax)} ${baseY} Z`;
     const line =
@@ -107,7 +118,7 @@ export default function DistributionChart({
     }));
 
     const ticks: number[] = [];
-    for (let v = 0; v <= xMax; v += 20) ticks.push(v);
+    for (let v = xMin; v <= xMax; v += step) ticks.push(v);
 
     return {
       H,
@@ -118,9 +129,9 @@ export default function DistributionChart({
       line,
       points,
       ticks,
-      peakX: toX(DAILY_REPS_PEAK),
+      peakX: toX(peak),
     };
-  }, [participants]);
+  }, [participants, peak]);
 
   if (!model) return null;
   const { H, curveTop, baseY } = model;
@@ -170,7 +181,7 @@ export default function DistributionChart({
         className={styles.peakLine}
       />
       <text x={model.peakX} y={curveTop - 5} className={styles.peakLabel}>
-        ピーク{DAILY_REPS_PEAK}
+        ピーク{peak}
       </text>
       <line
         x1={PAD_X}
@@ -207,6 +218,10 @@ export default function DistributionChart({
               {p.cleared ? '✓ ' : ''}
               {truncateLabelName(p.userName)}
               <tspan className={styles.value}> {p.target}</tspan>
+              <tspan className={styles.prob}>
+                {' '}
+                {formatDailyProbability(p.probability)}
+              </tspan>
             </text>
           </g>
         );
