@@ -24,6 +24,7 @@ import {
   generateDailyMissionTarget,
   pickDailyMissionExercise,
   pushRecentMissionKeys,
+  readCachedBestValue,
   resolveDailyPeak,
   sumDailyTotals,
   type DailyMission,
@@ -39,8 +40,11 @@ interface MissionDoc {
   dateKey?: string;
   exerciseKey?: string;
   recentKeys?: string[];
-  peak?: number;
-  bestValue?: number;
+  peak?: number | null;
+  bestValue?: number | null;
+  /** bestValue がどの種目・どの日の締めで数えた値か（取り違え防止） */
+  bestValueKey?: string | null;
+  bestValueDateKey?: string | null;
 }
 
 /**
@@ -107,15 +111,32 @@ export async function getOrCreateDailyMission(
     console.warn('[デイリーミッション] 取得失敗、ローカル生成にフォールバック:', e);
   }
 
-  /** 過去最高回数を引く。失敗したら既定ピークにフォールバック。 */
-  const resolveBest = async (key: string) => {
+  /**
+   * 過去最高回数を引く。引けなかったら null を返す（0 と区別する）。
+   * 失敗を 0 として保存すると、その日いっぱい既定ピークのまま固定されてしまう。
+   */
+  const resolveBest = async (key: string): Promise<number | null> => {
     try {
       return await getExerciseBestValue(key, getDailyBoundariesJST(dateKey).start);
     } catch (e) {
       console.warn('[デイリーミッション] 過去最高回数の取得に失敗:', e);
-      return 0;
+      return null;
     }
   };
+
+  /**
+   * 過去最高回数を「どの種目・どの日の値か」とセットで書くためのフィールド。
+   * 引けなかったときは古い値を残さず null で潰し、次の読み込みで引き直させる。
+   */
+  const bestFields = (key: string, bestValue: number | null): MissionDoc =>
+    bestValue == null
+      ? { bestValue: null, bestValueKey: null, bestValueDateKey: null, peak: null }
+      : {
+          bestValue,
+          bestValueKey: key,
+          bestValueDateKey: dateKey,
+          peak: resolveDailyPeak(bestValue),
+        };
 
   // 当日分が既にあり、その種目が今も存在すればそれを使う
   if (
@@ -123,17 +144,19 @@ export async function getOrCreateDailyMission(
     saved.exerciseKey &&
     freeExercises[saved.exerciseKey]
   ) {
-    // 旧バージョンが書いたドキュメントには bestValue が無いので、その場合だけ引き直す
-    if (typeof saved.bestValue === 'number') {
-      return toMission(dateKey, saved.exerciseKey, saved.bestValue);
-    }
-    const bestValue = await resolveBest(saved.exerciseKey);
+    const savedKey = saved.exerciseKey;
+    // 今日のこの種目の値だと確認できたときだけキャッシュを使う。
+    // 別種目・別日の値や旧バージョンの書き込みは信用せず引き直す。
+    const cached = readCachedBestValue(saved, dateKey, savedKey);
+    if (cached != null) return toMission(dateKey, savedKey, cached);
+
+    const bestValue = await resolveBest(savedKey);
     try {
-      await setDoc(ref, { bestValue, peak: resolveDailyPeak(bestValue) }, { merge: true });
+      await setDoc(ref, bestFields(savedKey, bestValue), { merge: true });
     } catch {
       // 書けなくても各端末で同じ値を再計算できる
     }
-    return toMission(dateKey, saved.exerciseKey, bestValue);
+    return toMission(dateKey, savedKey, bestValue ?? 0);
   }
 
   const recentKeys = Array.isArray(saved.recentKeys) ? saved.recentKeys : [];
@@ -152,8 +175,7 @@ export async function getOrCreateDailyMission(
       {
         dateKey,
         exerciseKey,
-        bestValue,
-        peak: resolveDailyPeak(bestValue),
+        ...bestFields(exerciseKey, bestValue),
         recentKeys: pushRecentMissionKeys(recentKeys, exerciseKey),
         updatedAt: serverTimestamp(),
       },
@@ -163,7 +185,7 @@ export async function getOrCreateDailyMission(
     console.warn('[デイリーミッション] 保存失敗（表示は続行）:', e);
   }
 
-  return toMission(dateKey, exerciseKey, bestValue);
+  return toMission(dateKey, exerciseKey, bestValue ?? 0);
 }
 
 /**

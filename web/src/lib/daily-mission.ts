@@ -145,6 +145,38 @@ export function resolveDailyPeak(bestValue: number): number {
   return Math.max(DAILY_REPS_FLOOR, Math.round(best * DAILY_PEAK_BEST_RATIO));
 }
 
+/** ミッションドキュメントに保存された過去最高回数まわりのフィールド。 */
+export interface CachedBestValue {
+  bestValue?: unknown;
+  /** bestValue がどの種目の記録か */
+  bestValueKey?: unknown;
+  /** bestValue をどの日の締め（当日0:00 JST）で数えたか */
+  bestValueDateKey?: unknown;
+}
+
+/**
+ * 保存済みの過去最高回数を、今日のその種目のものとして信用できるときだけ返す。
+ *
+ * 種目とセットで照合するのは、ドキュメントを merge で書いているため。
+ * bestValue を書かない旧バージョン（〜5776118）が日付をまたぐと
+ * dateKey / exerciseKey だけが新しくなり、前日の別種目の bestValue が
+ * 残ったまま「今日のピーク」として読まれてしまう。
+ * 日付も見るのは、同じ種目が後日また選ばれたときに古い締めの値を使わないため。
+ * app.js: readCachedBestValue
+ */
+export function readCachedBestValue(
+  saved: CachedBestValue | null | undefined,
+  dateKey: string,
+  exerciseKey: string,
+): number | null {
+  const s = saved || {};
+  if (typeof s.bestValue !== 'number' || !isFinite(s.bestValue)) return null;
+  if (s.bestValue < 0) return null;
+  if (s.bestValueKey !== exerciseKey) return null;
+  if (s.bestValueDateKey !== dateKey) return null;
+  return s.bestValue;
+}
+
 /**
  * log 空間での分布の中心。最頻値がちょうど peak になるよう σ下² だけ右にずらす
  * （対数正規の最頻値 = exp(μ - σ²)）。app.js: dailyLogCenter
