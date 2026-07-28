@@ -26,6 +26,7 @@ import {
   hashStringToSeed,
   isDailyActiveUser,
   pickDailyMissionExercise,
+  readCachedBestValue,
   resolveDailyPeak,
   resolveDailyTeamGoal,
   sumDailyTotals,
@@ -142,6 +143,75 @@ describe('resolveDailyPeak / dailyRepsBounds', () => {
   it('上下限はピークに比例する（旧仕様の 8〜150 よりはっきり狭い）', () => {
     expect(dailyRepsBounds(PEAK)).toEqual({ min: 14, max: 60 });
     expect(dailyRepsBounds(100)).toEqual({ min: 45, max: 200 });
+  });
+});
+
+describe('readCachedBestValue', () => {
+  const saved = {
+    dateKey: '2026-07-28',
+    exerciseKey: 'b_push',
+    bestValue: 24,
+    bestValueKey: 'b_push',
+    bestValueDateKey: '2026-07-28',
+  };
+
+  it('今日のその種目の値ならそのまま使う', () => {
+    expect(readCachedBestValue(saved, '2026-07-28', 'b_push')).toBe(24);
+  });
+
+  it('0（投稿が一度も無い）も有効な値として返す', () => {
+    expect(
+      readCachedBestValue({ ...saved, bestValue: 0 }, '2026-07-28', 'b_push'),
+    ).toBe(0);
+  });
+
+  it('別種目の値は使わない（前日の bestValue が merge で残るケース）', () => {
+    // 旧バージョンが dateKey/exerciseKey だけ書き替えると、前日の別種目の
+    // bestValue が残ったまま今日のピークとして読まれてしまっていた
+    const stale = { ...saved, exerciseKey: 'a_squat', bestValueKey: 'c_dips' };
+    expect(readCachedBestValue(stale, '2026-07-28', 'a_squat')).toBeNull();
+  });
+
+  it('別日に数えた値は使わない（同じ種目が後日また選ばれたとき）', () => {
+    expect(readCachedBestValue(saved, '2026-08-04', 'b_push')).toBeNull();
+  });
+
+  it('種目・日付の記録が無い旧ドキュメントは使わない', () => {
+    expect(
+      readCachedBestValue({ bestValue: 37 }, '2026-07-28', 'b_push'),
+    ).toBeNull();
+  });
+
+  it('値が無い・数値でない・負のときは使わない', () => {
+    expect(readCachedBestValue({ ...saved, bestValue: null }, '2026-07-28', 'b_push')).toBeNull();
+    expect(readCachedBestValue({ ...saved, bestValue: '24' }, '2026-07-28', 'b_push')).toBeNull();
+    expect(readCachedBestValue({ ...saved, bestValue: NaN }, '2026-07-28', 'b_push')).toBeNull();
+    expect(readCachedBestValue({ ...saved, bestValue: -1 }, '2026-07-28', 'b_push')).toBeNull();
+    expect(readCachedBestValue(undefined, '2026-07-28', 'b_push')).toBeNull();
+  });
+});
+
+describe('ピークを変えても分布での位置は保たれる', () => {
+  // 目標はシード（ユーザー×日付×種目）だけで決まり、ピークは対数正規の
+  // スケール因子でしかない。ピークを直しても各自の分位点は動かず、
+  // 回数だけが 新ピーク/旧ピーク 倍になる。
+  const ids = ['u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'u7', 'u8'];
+
+  it('CDF 上の位置が一致する', () => {
+    ids.forEach((id) => {
+      const oldT = generateDailyMissionTarget(id, '2026-07-28', 'b_push', 37);
+      const newT = generateDailyMissionTarget(id, '2026-07-28', 'b_push', 24);
+      // 丸めの分だけずれるので、整数化前の幅（±0.5回）を許容する
+      expect(dailyTargetCdf(newT, 24)).toBeCloseTo(dailyTargetCdf(oldT, 37), 1);
+    });
+  });
+
+  it('回数はピーク比でスケールする', () => {
+    ids.forEach((id) => {
+      const oldT = generateDailyMissionTarget(id, '2026-07-28', 'b_push', 37);
+      const newT = generateDailyMissionTarget(id, '2026-07-28', 'b_push', 24);
+      expect(Math.abs(newT - (oldT * 24) / 37)).toBeLessThanOrEqual(1);
+    });
   });
 });
 

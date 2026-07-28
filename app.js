@@ -7716,6 +7716,28 @@ function resolveDailyPeak(bestValue) {
 }
 
 /**
+ * 保存済みの過去最高回数を、今日のその種目のものとして信用できるときだけ返す。
+ *
+ * 種目とセットで照合するのは、ドキュメントを merge で書いているため。
+ * bestValue を書かない旧バージョンが日付をまたぐと dateKey / exerciseKey だけが
+ * 新しくなり、前日の別種目の bestValue が残ったまま「今日のピーク」として
+ * 読まれてしまう。日付も見るのは、同じ種目が後日また選ばれたときに
+ * 古い締めの値を使わないため。
+ * @param {Object} saved - settings_free/daily_mission の内容
+ * @param {string} dateKey
+ * @param {string} exerciseKey
+ * @returns {number|null} 信用できないときは null
+ */
+function readCachedBestValue(saved, dateKey, exerciseKey) {
+    const s = saved || {};
+    if (typeof s.bestValue !== 'number' || !isFinite(s.bestValue)) return null;
+    if (s.bestValue < 0) return null;
+    if (s.bestValueKey !== exerciseKey) return null;
+    if (s.bestValueDateKey !== dateKey) return null;
+    return s.bestValue;
+}
+
+/**
  * log空間での分布の中心。最頻値がちょうど peak になるよう σ下² だけ右にずらす
  * （対数正規の最頻値 = exp(μ - σ²)）。
  * @param {number} peak
@@ -8172,29 +8194,44 @@ async function getOrCreateDailyMission(exercises, now = new Date()) {
         console.warn('[デイリーミッション] 取得失敗、ローカル生成にフォールバック:', e);
     }
 
-    // 過去最高回数を引く。失敗したら既定ピークにフォールバック
+    // 過去最高回数を引く。引けなかったら null を返す（0 と区別する）。
+    // 失敗を 0 として保存すると、その日いっぱい既定ピークのまま固定されてしまう
     const resolveBest = async (key) => {
         try {
             return await getExerciseBestValue(key, getDailyBoundariesJST(dateKey).start);
         } catch (e) {
             console.warn('[デイリーミッション] 過去最高回数の取得に失敗:', e);
-            return 0;
+            return null;
         }
     };
 
+    // 過去最高回数を「どの種目・どの日の値か」とセットで書くためのフィールド。
+    // 引けなかったときは古い値を残さず null で潰し、次の読み込みで引き直させる
+    const bestFields = (key, bestValue) => (bestValue == null
+        ? { bestValue: null, bestValueKey: null, bestValueDateKey: null, peak: null }
+        : {
+            bestValue: bestValue,
+            bestValueKey: key,
+            bestValueDateKey: dateKey,
+            peak: resolveDailyPeak(bestValue)
+        });
+
     // 当日分が既にあり、その種目が今も存在すればそれを使う
     if (saved.dateKey === dateKey && saved.exerciseKey && exercises[saved.exerciseKey]) {
-        // 旧バージョンが書いたドキュメントには bestValue が無いので、その場合だけ引き直す
-        if (typeof saved.bestValue === 'number') {
-            return toDailyMission(dateKey, saved.exerciseKey, saved.bestValue);
+        const savedKey = saved.exerciseKey;
+        // 今日のこの種目の値だと確認できたときだけキャッシュを使う。
+        // 別種目・別日の値や旧バージョンの書き込みは信用せず引き直す
+        const cached = readCachedBestValue(saved, dateKey, savedKey);
+        if (cached != null) {
+            return toDailyMission(dateKey, savedKey, cached);
         }
-        const savedBest = await resolveBest(saved.exerciseKey);
+        const savedBest = await resolveBest(savedKey);
         try {
-            await ref.set({ bestValue: savedBest, peak: resolveDailyPeak(savedBest) }, { merge: true });
+            await ref.set(bestFields(savedKey, savedBest), { merge: true });
         } catch (e) {
             // 書けなくても各端末で同じ値を再計算できる
         }
-        return toDailyMission(dateKey, saved.exerciseKey, savedBest);
+        return toDailyMission(dateKey, savedKey, savedBest || 0);
     }
 
     const recentKeys = Array.isArray(saved.recentKeys) ? saved.recentKeys : [];
@@ -8204,19 +8241,17 @@ async function getOrCreateDailyMission(exercises, now = new Date()) {
     const bestValue = await resolveBest(exerciseKey);
 
     try {
-        await ref.set({
+        await ref.set(Object.assign({
             dateKey: dateKey,
             exerciseKey: exerciseKey,
-            bestValue: bestValue,
-            peak: resolveDailyPeak(bestValue),
             recentKeys: pushRecentMissionKeys(recentKeys, exerciseKey),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        }, bestFields(exerciseKey, bestValue)), { merge: true });
     } catch (e) {
         console.warn('[デイリーミッション] 保存失敗（表示は続行）:', e);
     }
 
-    return toDailyMission(dateKey, exerciseKey, bestValue);
+    return toDailyMission(dateKey, exerciseKey, bestValue || 0);
 }
 
 /**
