@@ -1,15 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import {
   BEEP_SOUND,
+  BPM_MAX,
+  BPM_MIN,
   COUNTDOWN_SOUND,
   DECAY_DIVISOR,
+  DEFAULT_BPM,
   MASTER_VOLUME,
+  PENDULUM_MAX_DEG,
   PREP_SECONDS,
   TICK_SOUND,
+  beatInBar,
+  beatPeriodSeconds,
+  bpmBeepDuration,
+  clampBpm,
   countAtElapsed,
+  countAtElapsedBpm,
   envelopeFor,
   formatElapsed,
   getComputedVolume,
+  pendulumAngle,
   prepBeepSeconds,
   prepCountdownAt,
   soundKindForSecond,
@@ -144,6 +154,70 @@ describe('countAtElapsed（回数表示）', () => {
         expect(increased).toBe(soundKindForSecond(s, iv) === 'beep');
       }
     }
+  });
+});
+
+describe('BPMモード', () => {
+  it('clampBpm は 30〜300 に丸める', () => {
+    expect(clampBpm(60)).toBe(60);
+    expect(clampBpm(BPM_MIN - 10)).toBe(BPM_MIN);
+    expect(clampBpm(BPM_MAX + 10)).toBe(BPM_MAX);
+    expect(clampBpm(90.4)).toBe(90);
+    expect(clampBpm(Number.NaN)).toBe(DEFAULT_BPM);
+  });
+
+  it('beatPeriodSeconds: 60BPM=1秒 / 120BPM=0.5秒', () => {
+    expect(beatPeriodSeconds(60)).toBe(1);
+    expect(beatPeriodSeconds(120)).toBe(0.5);
+    expect(beatPeriodSeconds(30)).toBe(2);
+  });
+
+  it('countAtElapsedBpm: 開始時は1で、1拍ごとに1増える', () => {
+    expect(countAtElapsedBpm(0, 120)).toBe(1);
+    expect(countAtElapsedBpm(0.49, 120)).toBe(1);
+    expect(countAtElapsedBpm(0.5, 120)).toBe(2);
+    expect(countAtElapsedBpm(1.0, 120)).toBe(3);
+    // 60BPM はインターバル1秒と同じ刻み
+    for (let s = 0; s < 30; s++) {
+      expect(countAtElapsedBpm(s, 60)).toBe(countAtElapsed(s, 1));
+    }
+  });
+
+  it('bpmBeepDuration: 速いテンポでは1拍の半分まで短くする', () => {
+    // 30BPM(1拍2秒) は通常のビープと同じ長さが上限
+    expect(bpmBeepDuration(30)).toBe(BEEP_SOUND.duration);
+    // 60BPM(1拍1秒) → 0.5秒、120BPM(1拍0.5秒) → 0.25秒
+    expect(bpmBeepDuration(60)).toBeCloseTo(0.5);
+    expect(bpmBeepDuration(120)).toBeCloseTo(0.25);
+    // どのテンポでも音は1拍に収まる（重ならない）
+    for (let bpm = BPM_MIN; bpm <= BPM_MAX; bpm += 7) {
+      expect(bpmBeepDuration(bpm)).toBeLessThanOrEqual(beatPeriodSeconds(bpm));
+      expect(bpmBeepDuration(bpm)).toBeGreaterThan(0);
+    }
+  });
+
+  it('pendulumAngle: 拍の境界でちょうど左右の端に来る', () => {
+    const bpm = 120; // 1拍 500ms
+    expect(pendulumAngle(0, bpm)).toBeCloseTo(PENDULUM_MAX_DEG);
+    expect(pendulumAngle(500, bpm)).toBeCloseTo(-PENDULUM_MAX_DEG);
+    expect(pendulumAngle(1000, bpm)).toBeCloseTo(PENDULUM_MAX_DEG);
+    // 拍の中間では中央（0度）を通過する
+    expect(pendulumAngle(250, bpm)).toBeCloseTo(0);
+    // 振れ角は常に範囲内
+    for (let ms = 0; ms < 3000; ms += 37) {
+      expect(Math.abs(pendulumAngle(ms, bpm))).toBeLessThanOrEqual(
+        PENDULUM_MAX_DEG + 1e-9,
+      );
+    }
+  });
+
+  it('beatInBar: 4拍で一巡する', () => {
+    const bpm = 60; // 1拍 1000ms
+    expect(beatInBar(0, bpm)).toBe(0);
+    expect(beatInBar(999, bpm)).toBe(0);
+    expect(beatInBar(1000, bpm)).toBe(1);
+    expect(beatInBar(3000, bpm)).toBe(3);
+    expect(beatInBar(4000, bpm)).toBe(0);
   });
 });
 
