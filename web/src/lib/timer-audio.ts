@@ -4,6 +4,9 @@
 //    playCountdownSound / scheduleUpcomingAudio / startTimer 相当）の
 //    「ミラー」。音量・周波数・長さ・減衰・鳴るタイミングを変えないこと。
 //    app.js 側を変更した場合はこのファイルも必ず同じに更新する。
+//
+// 📝 BPMモード（mode: 'bpm'）は web 版だけの追加機能で app.js には無い。
+//    インターバルモード側の挙動には一切手を入れていない。
 // =====================================================================
 
 /** 準備フェーズの秒数。app.js: preparationCountdown = 10 */
@@ -95,6 +98,67 @@ export function countAtElapsed(
   return 1 + Math.floor(elapsedSeconds / intervalSeconds);
 }
 
+// --- BPMモード（web 版のみ） ------------------------------------------
+
+/** タイマーの動作モード。'interval' = 秒指定、'bpm' = テンポ指定 */
+export type TimerMode = 'interval' | 'bpm';
+
+export const BPM_MIN = 30;
+export const BPM_MAX = 300;
+export const DEFAULT_BPM = 60;
+
+/** 1小節のビート数（メトロノームのドット表示用） */
+export const BEATS_PER_BAR = 4;
+
+/** 振り子の最大振れ角（度） */
+export const PENDULUM_MAX_DEG = 26;
+
+export function clampBpm(bpm: number): number {
+  if (!Number.isFinite(bpm)) return DEFAULT_BPM;
+  return Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(bpm)));
+}
+
+/** 1拍の長さ（秒）。60 BPM なら 1 秒。 */
+export function beatPeriodSeconds(bpm: number): number {
+  return 60 / clampBpm(bpm);
+}
+
+/** 経過秒から回数表示（BPM版）。1拍ごとに1回。 */
+export function countAtElapsedBpm(elapsedSeconds: number, bpm: number): number {
+  return 1 + Math.floor(elapsedSeconds / beatPeriodSeconds(bpm));
+}
+
+/**
+ * BPM版のビープ長。速いテンポで音が重なって濁らないよう、
+ * 1拍の半分を上限にする（遅いテンポでは通常のビープと同じ 0.6 秒）。
+ */
+export function bpmBeepDuration(bpm: number): number {
+  return Math.min(BEEP_SOUND.duration, beatPeriodSeconds(bpm) / 2);
+}
+
+/**
+ * 振り子の角度（度）。拍のちょうど境界で左右いずれかの端に来るので、
+ * 音とアニメーションが自動的に同期する。
+ */
+export function pendulumAngle(
+  elapsedMs: number,
+  bpm: number,
+  maxDeg: number = PENDULUM_MAX_DEG,
+): number {
+  const periodMs = beatPeriodSeconds(bpm) * 1000;
+  return maxDeg * Math.cos((Math.PI * elapsedMs) / periodMs);
+}
+
+/** 小節内の何拍目か（0 起点） */
+export function beatInBar(
+  elapsedMs: number,
+  bpm: number,
+  beatsPerBar: number = BEATS_PER_BAR,
+): number {
+  const periodMs = beatPeriodSeconds(bpm) * 1000;
+  return Math.floor(Math.max(0, elapsedMs) / periodMs) % beatsPerBar;
+}
+
 /** 経過秒を M:SS 表記に。app.js: updateTimerDisplay */
 export function formatElapsed(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -146,10 +210,21 @@ export interface TimerSnapshot {
   count: number;
   /** 経過秒（メインフェーズのみ） */
   elapsedSeconds: number;
+  /** 経過ミリ秒。メトロノーム振り子の滑らかな描画用 */
+  elapsedMs: number;
   /** 準備の残り秒（準備フェーズのみ） */
   prepCountdown: number;
   /** ビープと同時に立つ視覚フィードバック用フラグ */
   beatAt: number;
+}
+
+/** start() に渡す設定 */
+export interface TimerConfig {
+  mode: TimerMode;
+  /** mode === 'interval' のときの秒数 */
+  intervalSeconds: number;
+  /** mode === 'bpm' のときのテンポ */
+  bpm: number;
 }
 
 type Listener = (s: TimerSnapshot) => void;
@@ -167,16 +242,21 @@ export class IntervalTimerEngine {
   private wakeLock: WakeLockSentinel | null = null;
 
   private phase: TimerPhase = 'idle';
+  private mode: TimerMode = 'interval';
   private intervalSeconds = 3;
+  private bpm = DEFAULT_BPM;
   private prepStartTime: number | null = null;
   private timerStartTime: number | null = null;
   private elapsedSeconds = 0;
+  private elapsedMs = 0;
   private count = 0;
   private prepCountdown = PREP_SECONDS;
   private beatAt = 0;
 
   private audioTimeOffset = 0;
   private nextScheduledSecond = 0;
+  /** BPMモードで次にスケジュールする拍番号（0 起点） */
+  private nextScheduledBeat = 0;
   private nextScheduledPrepSecond = 0;
   private scheduledNodes: OscillatorNode[] = [];
 
@@ -203,9 +283,26 @@ export class IntervalTimerEngine {
       phase: this.phase,
       count: this.count,
       elapsedSeconds: this.elapsedSeconds,
+      elapsedMs: this.elapsedMs,
       prepCountdown: this.prepCountdown,
       beatAt: this.beatAt,
     };
+  }
+
+  /** 経過ミリ秒から回数を求める（モード共通の入口） */
+  private countFor(elapsedMs: number): number {
+    const sec = elapsedMs / 1000;
+    return this.mode === 'bpm'
+      ? countAtElapsedBpm(sec, this.bpm)
+      : countAtElapsed(Math.floor(sec), this.intervalSeconds);
+  }
+
+  /** メインフェーズの経過をモードに応じて更新する */
+  private updateElapsed(now: number) {
+    if (this.timerStartTime === null) return;
+    this.elapsedMs = Math.max(0, now - this.timerStartTime);
+    this.elapsedSeconds = Math.floor(this.elapsedMs / 1000);
+    this.count = this.countFor(this.elapsedMs);
   }
 
   private emit() {
@@ -243,15 +340,28 @@ export class IntervalTimerEngine {
     return wallMs / 1000 - this.audioTimeOffset;
   }
 
-  /** app.js: scheduleOscillator */
-  private scheduleOscillator(kind: SoundKind, when?: number) {
+  /**
+   * app.js: scheduleOscillator
+   * durationOverride は BPMモード専用（速いテンポで音を短く切るため）。
+   */
+  private scheduleOscillator(
+    kind: SoundKind,
+    when?: number,
+    durationOverride?: number,
+  ) {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
 
     try {
       const now = ctx.currentTime;
       const startTime = when !== undefined && when > now ? when : now;
-      const { startVolume, endVolume, duration, frequency } = envelopeFor(kind);
+      const {
+        startVolume,
+        endVolume,
+        duration: baseDuration,
+        frequency,
+      } = envelopeFor(kind);
+      const duration = durationOverride ?? baseDuration;
 
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -320,6 +430,30 @@ export class IntervalTimerEngine {
           this.scheduleOscillator('countdown', Math.max(audioTime, nowAudio));
         }
         this.nextScheduledPrepSecond++;
+      }
+    } else if (this.phase === 'running' && this.timerStartTime && this.mode === 'bpm') {
+      // BPMモード: 1拍ごとにビープ（web 版のみの拡張）
+      const periodMs = beatPeriodSeconds(this.bpm) * 1000;
+      const beepDuration = bpmBeepDuration(this.bpm);
+      const currentBeat = Math.floor(
+        (Date.now() - this.timerStartTime) / periodMs,
+      );
+      if (this.nextScheduledBeat < currentBeat - 1) {
+        this.nextScheduledBeat = Math.max(0, currentBeat - 1);
+      }
+      let safety = 0;
+      while (safety++ < 200) {
+        const wallMs = this.timerStartTime + this.nextScheduledBeat * periodMs;
+        const audioTime = this.wallMsToAudioTime(wallMs);
+        if (audioTime > lookAheadUntil) break;
+        if (audioTime >= nowAudio - 0.3) {
+          this.scheduleOscillator(
+            'beep',
+            Math.max(audioTime, nowAudio),
+            beepDuration,
+          );
+        }
+        this.nextScheduledBeat++;
       }
     } else if (this.phase === 'running' && this.timerStartTime) {
       const currentSecond = Math.floor(
@@ -417,10 +551,9 @@ export class IntervalTimerEngine {
 
     // 復帰時に実時間から経過を再計算
     if (this.phase === 'running' && this.timerStartTime) {
-      const realElapsed = Math.floor((Date.now() - this.timerStartTime) / 1000);
-      if (realElapsed > this.elapsedSeconds) {
-        this.elapsedSeconds = realElapsed;
-        this.count = countAtElapsed(this.elapsedSeconds, this.intervalSeconds);
+      const realElapsedMs = Date.now() - this.timerStartTime;
+      if (realElapsedMs > this.elapsedMs) {
+        this.updateElapsed(Date.now());
         this.emit();
       }
       this.calibrate();
@@ -431,9 +564,14 @@ export class IntervalTimerEngine {
   // --- 操作 ---------------------------------------------------------
 
   /** app.js: startTimer */
-  async start(intervalSeconds: number) {
+  async start(config: TimerConfig) {
     if (this.phase !== 'idle') return;
-    this.intervalSeconds = Math.max(1, Math.min(60, intervalSeconds || 3));
+    this.mode = config.mode === 'bpm' ? 'bpm' : 'interval';
+    this.intervalSeconds = Math.max(
+      1,
+      Math.min(60, config.intervalSeconds || 3),
+    );
+    this.bpm = clampBpm(config.bpm);
 
     const ctx = this.initAudio();
     if (ctx && ctx.state === 'suspended') {
@@ -452,9 +590,11 @@ export class IntervalTimerEngine {
     this.prepStartTime = Date.now();
     this.timerStartTime = null;
     this.elapsedSeconds = 0;
+    this.elapsedMs = 0;
     this.count = 0;
     this.nextScheduledPrepSecond = 1; // 最初のカウントダウン音は1秒後
     this.nextScheduledSecond = 0;
+    this.nextScheduledBeat = 0;
     this.emit();
 
     this.calibrate();
@@ -477,26 +617,28 @@ export class IntervalTimerEngine {
         // 準備終了 → メインフェーズ
         this.phase = 'running';
         this.elapsedSeconds = 0;
+        this.elapsedMs = 0;
         this.count = 1;
         this.timerStartTime = this.prepStartTime + PREP_SECONDS * 1000;
 
         this.calibrate();
         this.nextScheduledSecond = 0;
+        this.nextScheduledBeat = 0;
 
         if (this.ctx && this.ctx.state === 'running') {
           const firstBeep = this.wallMsToAudioTime(this.timerStartTime);
           this.scheduleOscillator(
             'beep',
             Math.max(firstBeep, this.ctx.currentTime),
+            this.mode === 'bpm' ? bpmBeepDuration(this.bpm) : undefined,
           );
-          this.nextScheduledSecond = 1; // 秒0はスケジュール済み
+          // 秒0 / 拍0 はスケジュール済み
+          this.nextScheduledSecond = 1;
+          this.nextScheduledBeat = 1;
         }
       }
     } else if (this.phase === 'running' && this.timerStartTime) {
-      this.elapsedSeconds = Math.floor(
-        (Date.now() - this.timerStartTime) / 1000,
-      );
-      this.count = countAtElapsed(this.elapsedSeconds, this.intervalSeconds);
+      this.updateElapsed(Date.now());
     }
 
     this.calibrate();
@@ -512,10 +654,7 @@ export class IntervalTimerEngine {
       const prepElapsed = Math.floor((Date.now() - this.prepStartTime) / 1000);
       this.prepCountdown = prepCountdownAt(prepElapsed);
     } else if (this.phase === 'running' && this.timerStartTime) {
-      this.elapsedSeconds = Math.floor(
-        (Date.now() - this.timerStartTime) / 1000,
-      );
-      this.count = countAtElapsed(this.elapsedSeconds, this.intervalSeconds);
+      this.updateElapsed(Date.now());
     }
     this.emit();
     this.rafId = requestAnimationFrame(() => this.uiLoop());
@@ -550,10 +689,12 @@ export class IntervalTimerEngine {
     this.stop();
     this.count = 0;
     this.elapsedSeconds = 0;
+    this.elapsedMs = 0;
     this.prepCountdown = PREP_SECONDS;
     this.prepStartTime = null;
     this.timerStartTime = null;
     this.nextScheduledSecond = 0;
+    this.nextScheduledBeat = 0;
     this.nextScheduledPrepSecond = 0;
     this.emit();
     await this.playTestSound();
