@@ -10,10 +10,21 @@ import {
   PENDULUM_MAX_DEG,
   PREP_SECONDS,
   TICK_SOUND,
+  INTERVAL_MAX,
+  INTERVAL_MIN,
   beatInBar,
   beatPeriodSeconds,
   bpmBeepDuration,
+  bpmCountdownDuration,
   clampBpm,
+  clampIntervalSeconds,
+  countStepSeconds,
+  normalizeConfig,
+  prepStepSeconds,
+  scheduleStepSeconds,
+  soundDurationForStep,
+  soundKindForStep,
+  type TimerConfig,
   countAtElapsed,
   countAtElapsedBpm,
   envelopeFor,
@@ -218,6 +229,80 @@ describe('BPMモード', () => {
     expect(beatInBar(1000, bpm)).toBe(1);
     expect(beatInBar(3000, bpm)).toBe(3);
     expect(beatInBar(4000, bpm)).toBe(0);
+  });
+});
+
+describe('モード共通のグリッド（刻み）', () => {
+  const iv = (sec: number): TimerConfig => ({
+    mode: 'interval',
+    intervalSeconds: sec,
+    bpm: 60,
+  });
+  const bp = (bpm: number): TimerConfig => ({
+    mode: 'bpm',
+    intervalSeconds: 3,
+    bpm,
+  });
+
+  it('インターバル: 音は毎秒、回数はインターバル秒ごと', () => {
+    expect(scheduleStepSeconds(iv(3))).toBe(1);
+    expect(countStepSeconds(iv(3))).toBe(3);
+  });
+
+  it('BPM: 音も回数も1拍ごと', () => {
+    expect(scheduleStepSeconds(bp(120))).toBe(0.5);
+    expect(countStepSeconds(bp(120))).toBe(0.5);
+  });
+
+  it('準備の刻み: インターバルは1秒、BPMは1拍', () => {
+    expect(prepStepSeconds(iv(3))).toBe(1);
+    expect(prepStepSeconds(bp(120))).toBe(0.5);
+    expect(prepStepSeconds(bp(30))).toBe(2);
+  });
+
+  it('準備フェーズ全体の長さ = 10刻み', () => {
+    // インターバルモードは app.js と同じ10秒
+    expect(PREP_SECONDS * prepStepSeconds(iv(3))).toBe(10);
+    // 120BPM なら10拍 = 5秒
+    expect(PREP_SECONDS * prepStepSeconds(bp(120))).toBe(5);
+  });
+
+  it('soundKindForStep: インターバルは従来どおり、BPMは常にビープ', () => {
+    const kinds = Array.from({ length: 7 }, (_, s) => soundKindForStep(s, iv(3)));
+    expect(kinds).toEqual([
+      'beep', 'tick', 'tick', 'beep', 'tick', 'tick', 'beep',
+    ]);
+    for (let s = 0; s < 8; s++) {
+      expect(soundKindForStep(s, bp(120))).toBe('beep');
+    }
+  });
+
+  it('soundDurationForStep: インターバルは既定長、BPMは1拍の半分が上限', () => {
+    expect(soundDurationForStep('beep', iv(3))).toBeUndefined();
+    expect(soundDurationForStep('countdown', iv(3))).toBeUndefined();
+    expect(soundDurationForStep('beep', bp(120))).toBe(bpmBeepDuration(120));
+    expect(soundDurationForStep('countdown', bp(120))).toBe(
+      bpmCountdownDuration(120),
+    );
+  });
+
+  it('bpmCountdownDuration も1拍の半分に収まる', () => {
+    expect(bpmCountdownDuration(60)).toBe(COUNTDOWN_SOUND.duration);
+    expect(bpmCountdownDuration(240)).toBeCloseTo(0.125);
+    for (let bpm = BPM_MIN; bpm <= BPM_MAX; bpm += 11) {
+      expect(bpmCountdownDuration(bpm)).toBeLessThanOrEqual(
+        beatPeriodSeconds(bpm),
+      );
+    }
+  });
+
+  it('clampIntervalSeconds / normalizeConfig が範囲外を丸める', () => {
+    expect(clampIntervalSeconds(0)).toBe(INTERVAL_MIN);
+    expect(clampIntervalSeconds(999)).toBe(INTERVAL_MAX);
+    expect(clampIntervalSeconds(Number.NaN)).toBe(3);
+    expect(
+      normalizeConfig({ mode: 'bpm', intervalSeconds: 0, bpm: 1000 }),
+    ).toEqual({ mode: 'bpm', intervalSeconds: INTERVAL_MIN, bpm: BPM_MAX });
   });
 });
 

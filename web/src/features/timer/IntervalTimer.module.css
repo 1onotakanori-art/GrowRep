@@ -41,8 +41,8 @@
   color: var(--accent);
   box-shadow: var(--shadow-sm);
 }
-.modeToggle button:disabled:not(.modeOn) {
-  opacity: 0.4;
+.modeToggle button:active {
+  transform: scale(0.98);
 }
 
 /* --- インターバル設定 --- */
@@ -102,9 +102,6 @@
 .stepper input::-webkit-inner-spin-button {
   appearance: none;
   margin: 0;
-}
-.stepper input:disabled {
-  opacity: 0.55;
 }
 .stepperUnit {
   font-size: 13px;
