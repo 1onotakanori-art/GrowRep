@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { useToast } from '../context/ToastContext';
@@ -9,11 +9,36 @@ import {
   formatDailyCount,
   formatDailyDateLabel,
   formatDailyProbability,
+  getDailyBoundariesJST,
   guessExerciseUnit,
 } from '../lib/daily-mission';
+import {
+  RAID_END_DATE_KEY,
+  RAID_MODE_LABEL,
+  RAID_START_DATE_KEY,
+  RAID_TITLE,
+  RAID_TOTAL_DAYS,
+  raidContributionRatio,
+} from '../lib/raid-mode';
 import DistributionChart from '../features/daily/DistributionChart';
 import { EmptyState, Skeleton, ViewHeader } from '../components/ui';
 import styles from './DailyMissionView.module.css';
+
+/** 残り時間を「X時間YY分ZZ秒」で刻む。target が null なら止める。 */
+function useCountdown(target: number | null): string {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (target == null) return;
+    const id = window.setInterval(() => tick((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [target]);
+  if (target == null) return '';
+  const diff = Math.max(0, target - Date.now());
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  return `${h}時間${String(m).padStart(2, '0')}分${String(s).padStart(2, '0')}秒`;
+}
 
 export default function DailyMissionView() {
   const { user } = useAuth();
@@ -32,6 +57,90 @@ export default function DailyMissionView() {
         : null,
     [participants],
   );
+  const raidStartMs = useMemo(
+    () => getDailyBoundariesJST(RAID_START_DATE_KEY).start.getTime(),
+    [],
+  );
+  const countdown = useCountdown(dailyMission?.maintenance ? raidStartMs : null);
+
+  const exerciseKey = dailyMission?.exerciseKey || '';
+  const ex = freeExercises[exerciseKey];
+  const unit = guessExerciseUnit(ex?.name || '');
+  const raid = dailyMission?.raid || null;
+
+  /** 記録を投稿して状態を取り直す。通知の文面だけレイドと通常で変える。 */
+  async function handleSubmit() {
+    if (!user || !dailyMission || !exerciseKey) return;
+    const num = parseInt(value, 10);
+    if (!num || num <= 0 || isNaN(num) || num > 10000) {
+      toast(`${unit}数を正しく入力してください（1〜10000）`, 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      await submitPost(user, exerciseKey, num);
+      setValue('');
+      if (raid) {
+        // 投稿ぶんは確実に増えるので、みんなの合計に足して手元で判定できる
+        const nextTotal = raid.totalValue + num;
+        toast(
+          nextTotal >= raid.goal && !raid.cleared
+            ? 'レイド討伐完了！ おつかれさま 🎉'
+            : nextTotal >= raid.goal
+              ? `記録しました（みんなの合計 ${formatDailyCount(nextTotal)}${unit}）`
+              : `記録しました（みんなであと ${formatDailyCount(raid.goal - nextTotal)}${unit}）`,
+          nextTotal >= raid.goal ? 'success' : 'info',
+        );
+      } else {
+        const { totalValue, target, cleared } = dailyMission;
+        // 合計での達成判定。投稿ぶんだけ確実に増えるので手元で足して判定できる
+        const nextTotal = totalValue + num;
+        const nowCleared = nextTotal >= target;
+        toast(
+          nowCleared && !cleared
+            ? 'ミッション達成！おつかれさま 🎉'
+            : nowCleared
+              ? `記録しました（合計 ${nextTotal}${unit}）`
+              : `記録しました（合計 ${nextTotal}${unit} / あと ${target - nextTotal}${unit}）`,
+          nowCleared ? 'success' : 'info',
+        );
+      }
+      await reloadDailyMission();
+    } catch {
+      toast('投稿に失敗しました', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** 記録の投稿フォーム（通常・レイド共通）。 */
+  function renderPostCard(note: string) {
+    return (
+      <div className={styles.postCard}>
+        <h3 className={styles.postTitle}>
+          <i className="fa-solid fa-pen-to-square" /> 記録を投稿
+        </h3>
+        <div className={styles.inputRow}>
+          <input
+            className="field"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={10000}
+            placeholder={`${unit}数`}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+          />
+          <span className={styles.unit}>{unit}</span>
+          <button className="btn-primary" disabled={busy} onClick={handleSubmit}>
+            {busy ? <i className="fa-solid fa-circle-notch spin" /> : '投稿'}
+          </button>
+        </div>
+        <p className={styles.note}>{note}</p>
+      </div>
+    );
+  }
 
   if (dailyLoading) {
     return (
@@ -54,8 +163,189 @@ export default function DailyMissionView() {
     );
   }
 
+  // ---------------------------------------------------------------
+  // レイド開始前のメンテナンス表示
+  // ---------------------------------------------------------------
+  if (dailyMission.maintenance) {
+    return (
+      <div className="fade-in">
+        <ViewHeader
+          icon="fa-bullseye"
+          title="デイリーミッション"
+          action={
+            <span className={styles.date}>
+              {formatDailyDateLabel(dailyMission.dateKey)}
+            </span>
+          }
+        />
+        <div className={`${styles.card} ${styles.maintCard}`}>
+          <div className={`${styles.badge} ${styles.maintBadge}`}>
+            <i className="fa-solid fa-screwdriver-wrench" /> メンテナンス中
+          </div>
+          <p className={styles.maintLead}>
+            本日のデイリーミッションはお休みです。
+            <br />
+            明日 0:00 から{RAID_MODE_LABEL}がはじまります。
+          </p>
+          <div className={styles.maintCountdownBox}>
+            <span className={styles.maintCountdownLabel}>
+              <i className="fa-solid fa-dragon" /> {RAID_TITLE} まで
+            </span>
+            <span className={styles.maintCountdown}>
+              {countdown || 'まもなく'}
+            </span>
+          </div>
+          <ul className={styles.maintList}>
+            <li>
+              <i className="fa-solid fa-people-group" />
+              毎日ひとつの種目をピックアップ。
+              <strong>その日にやった全員ぶんの回数を合計</strong>
+              して目標に挑みます。
+            </li>
+            <li>
+              <i className="fa-solid fa-dumbbell" />
+              1日目は<strong>全員で腕立て1,000回</strong>。
+            </li>
+            <li>
+              <i className="fa-solid fa-calendar-week" />
+              来週は夏休みのため、週間チャレンジは1週間お休み（種目の選出なし）。
+            </li>
+          </ul>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // レイド開催中
+  // ---------------------------------------------------------------
+  if (raid) {
+    const maxValue = raid.contributors[0]?.value || 0;
+    return (
+      <div className="fade-in">
+        <ViewHeader
+          icon="fa-dragon"
+          title={RAID_TITLE}
+          action={
+            <span className={styles.date}>
+              {formatDailyDateLabel(dailyMission.dateKey)}
+            </span>
+          }
+        />
+
+        <p className={styles.lead}>
+          {RAID_MODE_LABEL}（{RAID_START_DATE_KEY.slice(5).replace('-', '/')}〜
+          {RAID_END_DATE_KEY.slice(5).replace('-', '/')}）。
+          今日の種目を全員で積み上げて、みんなの合計で目標を撃破します。
+          個人の目標回数はありません。
+        </p>
+
+        <div className={`${styles.card} ${raid.cleared ? styles.cardDone : ''}`}>
+          <div className={`${styles.badge} ${styles.raidBadge}`}>
+            <i className={`fa-solid ${raid.cleared ? 'fa-circle-check' : 'fa-dragon'}`} />
+            {raid.cleared ? '討伐完了' : `Day ${raid.day} / ${RAID_TOTAL_DAYS}`}
+          </div>
+
+          <div className={styles.exRow}>
+            <span className={styles.exIcon}>
+              <i className={`fa-solid ${ex?.icon || 'fa-dumbbell'}`} />
+            </span>
+            <span className={styles.exName}>{ex?.name || exerciseKey}</span>
+          </div>
+
+          <div className={styles.raidGoalBox}>
+            <span className={styles.targetLabel}>みんなの目標</span>
+            <span className={styles.targetValue}>
+              {formatDailyCount(raid.goal)}
+              <span className={styles.targetUnit}>{unit}</span>
+            </span>
+            <span className={styles.targetProb}>{raid.label}</span>
+          </div>
+
+          <div className={styles.teamTotalRow}>
+            <span className={styles.teamTotal}>
+              {formatDailyCount(raid.totalValue)}
+            </span>
+            <span className={styles.teamGoal}>
+              / {formatDailyCount(raid.goal)}
+              {unit}
+            </span>
+          </div>
+
+          <div className={styles.progressWrap}>
+            <div className={styles.progressBar}>
+              <div
+                className={raid.cleared ? styles.progressFillDone : styles.progressFill}
+                style={{ width: `${raid.percent}%` }}
+              />
+            </div>
+            <div className={styles.progressText}>
+              <span>{raid.percent}%</span>
+              <span>
+                {raid.cleared
+                  ? '討伐完了！'
+                  : `あと ${formatDailyCount(raid.remaining)}${unit}`}
+              </span>
+            </div>
+          </div>
+
+          {ex?.rule && <p className={styles.rule}>{ex.rule}</p>}
+        </div>
+
+        <div className={styles.distCard}>
+          <div className={styles.distHead}>
+            <span>
+              <i className="fa-solid fa-people-group" /> みんなの貢献
+            </span>
+            <span className={styles.distCount}>
+              {raid.activeCount}/{raid.contributors.length} 人が参加
+            </span>
+          </div>
+
+          <ul className={styles.contribList}>
+            {raid.contributors.map((c) => (
+              <li
+                key={c.userId}
+                className={`${styles.contribRow} ${c.isMe ? styles.contribMe : ''}`}
+              >
+                <span className={styles.contribName}>{c.userName}</span>
+                <span className={styles.contribBarWrap}>
+                  <span
+                    className={styles.contribBar}
+                    style={{
+                      width: `${raidContributionRatio(c.value, maxValue) * 100}%`,
+                    }}
+                  />
+                </span>
+                <span className={styles.contribValue}>
+                  {formatDailyCount(c.value)}
+                  <span className={styles.contribTarget}>
+                    {' '}
+                    {Math.round(c.share * 100)}%
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <p className={styles.distNote}>
+            並ぶのは今日ログインした人だけ。右の％はみんなの合計に占める割合です。
+            あなたの今日の合計は {formatDailyCount(raid.myValue)}
+            {unit}。
+          </p>
+        </div>
+
+        {renderPostCard(
+          '何回かに分けてもOK。投稿するとすぐレイドの合計に加算されます（フリーモードの記録としても集計されます）。',
+        )}
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // 通常のデイリーミッション
+  // ---------------------------------------------------------------
   const {
-    exerciseKey,
     target,
     cleared,
     totalValue,
@@ -65,41 +355,9 @@ export default function DailyMissionView() {
     peakSource,
     probability,
   } = dailyMission;
-  const ex = freeExercises[exerciseKey];
-  const unit = guessExerciseUnit(ex?.name || '');
   const percent = Math.min(100, Math.round((totalValue / target) * 100));
   const remaining = Math.max(0, target - totalValue);
   const clearedCount = dailyMission.participants.filter((p) => p.cleared).length;
-
-  async function handleSubmit() {
-    if (!user) return;
-    const num = parseInt(value, 10);
-    if (!num || num <= 0 || isNaN(num) || num > 10000) {
-      toast(`${unit}数を正しく入力してください（1〜10000）`, 'error');
-      return;
-    }
-    setBusy(true);
-    try {
-      await submitPost(user, exerciseKey, num);
-      setValue('');
-      // 合計での達成判定。投稿ぶんだけ確実に増えるので手元で足して判定できる
-      const nextTotal = totalValue + num;
-      const nowCleared = nextTotal >= target;
-      toast(
-        nowCleared && !cleared
-          ? 'ミッション達成！おつかれさま 🎉'
-          : nowCleared
-            ? `記録しました（合計 ${nextTotal}${unit}）`
-            : `記録しました（合計 ${nextTotal}${unit} / あと ${target - nextTotal}${unit}）`,
-        nowCleared ? 'success' : 'info',
-      );
-      await reloadDailyMission();
-    } catch {
-      toast('投稿に失敗しました', 'error');
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <div className="fade-in">
@@ -274,31 +532,7 @@ export default function DailyMissionView() {
         </div>
       )}
 
-      <div className={styles.postCard}>
-        <h3 className={styles.postTitle}>
-          <i className="fa-solid fa-pen-to-square" /> 記録を投稿
-        </h3>
-        <div className={styles.inputRow}>
-          <input
-            className="field"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={10000}
-            placeholder={`${unit}数`}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          />
-          <span className={styles.unit}>{unit}</span>
-          <button className="btn-primary" disabled={busy} onClick={handleSubmit}>
-            {busy ? <i className="fa-solid fa-circle-notch spin" /> : '投稿'}
-          </button>
-        </div>
-        <p className={styles.note}>
-          この投稿はフリーモードの記録としても集計されます。
-        </p>
-      </div>
+      {renderPostCard('この投稿はフリーモードの記録としても集計されます。')}
     </div>
   );
 }

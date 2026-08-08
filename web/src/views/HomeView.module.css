@@ -105,6 +105,12 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+/* メンテナンス・休止のお知らせ本文 */
+.noticeText {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
 .exChip {
   display: inline-flex;
   align-items: center;

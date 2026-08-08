@@ -5,7 +5,14 @@ import { useMode } from '../context/ModeContext';
 import { useScores } from '../hooks/useScores';
 import { rankUsers } from '../lib/scoring';
 import { getActiveWeeklyKeys } from '../lib/time-jst';
-import { guessExerciseUnit } from '../lib/daily-mission';
+import { formatDailyCount, guessExerciseUnit } from '../lib/daily-mission';
+import {
+  RAID_MODE_LABEL,
+  RAID_TITLE,
+  RAID_TOTAL_DAYS,
+  WEEKLY_PAUSE_NOTE,
+  WEEKLY_PAUSE_RESUME_NOTE,
+} from '../lib/raid-mode';
 import type { NavKey } from '../shell/BottomNav';
 import { Skeleton } from '../components/ui';
 import styles from './HomeView.module.css';
@@ -92,7 +99,72 @@ export default function HomeView({
             </div>
           </div>
 
-          {dailyMission && (
+          {dailyMission?.maintenance && (
+            <div className={styles.card}>
+              <div className={styles.cardHead}>
+                <span>
+                  <i className="fa-solid fa-screwdriver-wrench" /> メンテナンス中
+                </span>
+                <button
+                  className={styles.link}
+                  onClick={() => onNavigate('daily')}
+                >
+                  詳細 <i className="fa-solid fa-chevron-right" />
+                </button>
+              </div>
+              <p className={styles.noticeText}>
+                本日のデイリーミッションはお休みです。明日 0:00 から
+                {RAID_MODE_LABEL}「{RAID_TITLE}」がはじまります。
+              </p>
+            </div>
+          )}
+
+          {dailyMission?.raid && (
+            <div className={styles.card}>
+              <div className={styles.cardHead}>
+                <span>
+                  <i className="fa-solid fa-dragon" /> {RAID_TITLE} Day{' '}
+                  {dailyMission.raid.day}/{RAID_TOTAL_DAYS}
+                </span>
+                <button
+                  className={styles.link}
+                  onClick={() => onNavigate('daily')}
+                >
+                  参戦 <i className="fa-solid fa-chevron-right" />
+                </button>
+              </div>
+              <div className={styles.chips}>
+                <span className={styles.exChip}>
+                  <i
+                    className={`fa-solid ${freeExercises[dailyMission.exerciseKey]?.icon || 'fa-dumbbell'}`}
+                  />
+                  {freeExercises[dailyMission.exerciseKey]?.name ||
+                    dailyMission.exerciseKey}
+                  <strong>
+                    {formatDailyCount(dailyMission.raid.totalValue)}/
+                    {formatDailyCount(dailyMission.raid.goal)}
+                    {guessExerciseUnit(
+                      freeExercises[dailyMission.exerciseKey]?.name || '',
+                    )}
+                  </strong>
+                </span>
+                <span
+                  className={
+                    dailyMission.raid.cleared ? styles.doneChip : styles.todoChip
+                  }
+                >
+                  <i
+                    className={`fa-solid ${dailyMission.raid.cleared ? 'fa-circle-check' : 'fa-fire'}`}
+                  />
+                  {dailyMission.raid.cleared
+                    ? '討伐完了'
+                    : `${dailyMission.raid.percent}%`}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {dailyMission && !dailyMission.maintenance && !dailyMission.raid && (
             <div className={styles.card}>
               <div className={styles.cardHead}>
                 <span>
@@ -133,7 +205,21 @@ export default function HomeView({
             </div>
           )}
 
-          {mode === 'weekly' && weeklyChallenge && (
+          {mode === 'weekly' && weeklyChallenge?.paused && (
+            <div className={styles.card}>
+              <div className={styles.cardHead}>
+                <span>
+                  <i className="fa-solid fa-umbrella-beach" /> 今週のチャレンジ
+                </span>
+              </div>
+              <p className={styles.noticeText}>
+                {WEEKLY_PAUSE_NOTE}
+                {WEEKLY_PAUSE_RESUME_NOTE}
+              </p>
+            </div>
+          )}
+
+          {mode === 'weekly' && weeklyChallenge && !weeklyChallenge.paused && (
             <div className={styles.card}>
               <div className={styles.cardHead}>
                 <span>

@@ -281,6 +281,100 @@
   font-weight: 600;
 }
 
+/* ---------------------------------------------------------------
+   レイド（夏休み特別モード）
+   --------------------------------------------------------------- */
+.raidBadge {
+  gap: 6px;
+  background: linear-gradient(135deg, #7c3aed, #db2777);
+}
+.cardDone .raidBadge {
+  background: var(--success);
+}
+/* みんなの目標。個人目標の targetBox と同じ形だが色で別物だと分かるようにする */
+.raidGoalBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--sp-4);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #7c3aed, #db2777);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--sp-4);
+}
+.raidGoalBox .targetProb {
+  margin-top: 2px;
+  text-align: center;
+  line-height: 1.4;
+}
+/* レイドカードは .teamDone ではなく .cardDone が付くので、合計の緑を別途指定する */
+.cardDone .teamTotal {
+  color: var(--success);
+}
+
+/* ---------------------------------------------------------------
+   メンテナンス告知
+   --------------------------------------------------------------- */
+.maintCard {
+  border-style: dashed;
+}
+.maintBadge {
+  background: var(--text-3);
+}
+.maintLead {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.7;
+  text-align: center;
+  margin-bottom: var(--sp-4);
+}
+.maintCountdownBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--sp-4);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #7c3aed, #db2777);
+  box-shadow: var(--shadow-sm);
+  color: #fff;
+}
+.maintCountdownLabel {
+  font-size: 11px;
+  font-weight: 800;
+  opacity: 0.9;
+}
+.maintCountdown {
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.maintList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: var(--sp-4);
+  list-style: none;
+}
+.maintList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.maintList li i {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
 .postCard {
   background: var(--surface);
   border: 1px solid var(--border);

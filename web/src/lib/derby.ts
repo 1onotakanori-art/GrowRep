@@ -168,8 +168,9 @@ export async function computeMonthlyDerbyData(
     }
   });
 
-  // 今週が期間内なら追加（history 未登録の場合）
-  if (weeklyChallenge && weeklyChallenge.weekStart) {
+  // 今週が期間内なら追加（history 未登録の場合）。
+  // 休止週は種目が無く得点も出ないので、ダービーの週としては数えない
+  if (weeklyChallenge && weeklyChallenge.weekStart && !weeklyChallenge.paused) {
     const { monJST, docId: currentDocId } = buildChampionDocMeta(
       weeklyChallenge.weekStart,
     );

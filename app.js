@@ -6554,6 +6554,21 @@ async function maybeUpgradeCurrentWeekExercises(data) {
  */
 async function getOrUpdateWeeklyChallenge() {
     const { start: weekStart, end: weekEnd } = getWeekBoundaries();
+    // 夏休み休止週。種目を選出せず、選出履歴にも手を付けない
+    const paused = isWeeklyPausedWeekStart(weekStart);
+    const setPausedChallenge = (selectionHistory, creatorSelectionHistory) => {
+        weeklyChallenge = {
+            weekStart: weekStart,
+            weekEnd: weekEnd,
+            exercises: [],
+            selectionHistory: selectionHistory || {},
+            creatorSelectionHistory: creatorSelectionHistory || {},
+            paused: true,
+            pauseLabel: WEEKLY_PAUSE_LABEL
+        };
+        weeklyChallengeLoaded = true;
+        return weeklyChallenge;
+    };
 
     try {
         const doc = await db.collection('settings_free').doc('weekly_challenge').get();
@@ -6564,6 +6579,10 @@ async function getOrUpdateWeeklyChallenge() {
 
             // 同じ週かどうか確認（1分の誤差許容）
             if (savedWeekStart && Math.abs(savedWeekStart.getTime() - weekStart.getTime()) < 60 * 1000) {
+                if (paused) {
+                    console.log('[週間チャレンジ] 夏休み休止週のため種目を選出しません');
+                    return setPausedChallenge(data.selectionHistory, data.creatorSelectionHistory);
+                }
                 // exerciseCount を途中で増やした場合、既存種目を変えずに不足ぶんを追記
                 const upgradedExercises = await maybeUpgradeCurrentWeekExercises(data);
                 weeklyChallenge = {
@@ -6609,6 +6628,29 @@ async function getOrUpdateWeeklyChallenge() {
 
         const existingHistory = (doc.exists && doc.data().selectionHistory) ? doc.data().selectionHistory : {};
         const existingCreatorHistory = (doc.exists && doc.data().creatorSelectionHistory) ? doc.data().creatorSelectionHistory : {};
+
+        // 休止週: 前週の確定だけ済ませ、今週は種目を選出しない。
+        // 選出履歴はそのまま持ち越すので、再開週の公平性に影響しない
+        if (paused) {
+            await db.collection('settings_free').doc('weekly_challenge').set({
+                weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
+                weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
+                exercises: [],
+                selectionHistory: existingHistory,
+                creatorSelectionHistory: existingCreatorHistory,
+                isManualOverride: false,
+                overrideLabel: null,
+                paused: true,
+                pauseLabel: WEEKLY_PAUSE_LABEL,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            rankingCache.weekly = null;
+            rankingCacheTime.weekly = null;
+            scoreCache.weekly = null;
+            scoreCacheTime.weekly = null;
+            console.log('[週間チャレンジ] 夏休み休止週として保存しました');
+            return setPausedChallenge(existingHistory, existingCreatorHistory);
+        }
 
         // 手動上書き設定を確認（管理者が事前に来週の種目を指定している場合）
         const overrideDoc = await db.collection('settings_free').doc('weekly_override').get();
@@ -6805,6 +6847,25 @@ function renderWeeklyChallengeInfo() {
     const infoEl = document.getElementById('weekly-challenge-info');
     if (!infoEl) return;
 
+    // 夏休み休止週。種目が無いのは「未登録」ではないので別表示にする
+    if (weeklyChallenge && weeklyChallenge.paused) {
+        const JST_OFFSET = 9 * 60 * 60 * 1000;
+        const pauseWeekStartJST = new Date(weeklyChallenge.weekStart.getTime() + JST_OFFSET);
+        const pauseMon = new Date(pauseWeekStartJST.getTime() + 1 * 24 * 60 * 60 * 1000);
+        const pauseFri = new Date(pauseWeekStartJST.getTime() + 5 * 24 * 60 * 60 * 1000);
+        const dayNamesJa = ['日','月','火','水','木','金','土'];
+        const fmtJa = (d) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${dayNamesJa[d.getUTCDay()]})`;
+        infoEl.style.display = 'block';
+        infoEl.className = 'weekly-challenge-info weekly-paused-info';
+        infoEl.innerHTML = `
+            <h3><i class="fa-solid fa-umbrella-beach"></i> ${escapeHtml(weeklyChallenge.pauseLabel || WEEKLY_PAUSE_LABEL)}</h3>
+            <div class="weekly-challenge-period"><i class="fa-solid fa-calendar"></i> ${fmtJa(pauseMon)} 〜 ${fmtJa(pauseFri)}</div>
+            <p class="weekly-paused-note">${escapeHtml(WEEKLY_PAUSE_NOTE)}${escapeHtml(WEEKLY_PAUSE_RESUME_NOTE)}</p>
+            <p class="weekly-paused-raid"><i class="fa-solid fa-dragon"></i> この期間は${escapeHtml(RAID_MODE_LABEL)}「${escapeHtml(RAID_TITLE)}」を開催中。デイリーミッションタブから参戦できます。</p>
+        `;
+        return;
+    }
+
     if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) {
         infoEl.style.display = 'block';
         infoEl.className = 'weekly-challenge-info';
@@ -6873,8 +6934,9 @@ async function renderPredictionWidget() {
 
     let container = document.getElementById('weekly-prediction-widget');
 
+    // 休止週はチャンプが出ないので予想も受け付けない
     const cfg = await getWeeklyConfig();
-    if (!cfg.enablePrediction) {
+    if (weeklyChallenge.paused || !cfg.enablePrediction) {
         if (container) container.remove();
         return;
     }
@@ -6983,6 +7045,12 @@ async function loadWeeklyRanking(forceRefresh = false) {
 
     if (!weeklyChallengeLoaded) {
         await getOrUpdateWeeklyChallenge();
+    }
+
+    if (weeklyChallenge && weeklyChallenge.paused) {
+        rankingList.innerHTML = `<p class="weekly-paused-inline"><i class="fa-solid fa-umbrella-beach"></i> ${escapeHtml(WEEKLY_PAUSE_NOTE)}${escapeHtml(WEEKLY_PAUSE_RESUME_NOTE)}</p>`;
+        renderWeeklyChallengeInfo();
+        return;
     }
 
     if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) {
@@ -7435,6 +7503,11 @@ function updateWeeklyPostDropdown() {
 
     exercisesGrid.innerHTML = '';
 
+    if (weeklyChallenge && weeklyChallenge.paused) {
+        exercisesGrid.innerHTML = `<p class="weekly-paused-inline"><i class="fa-solid fa-umbrella-beach"></i> ${escapeHtml(WEEKLY_PAUSE_NOTE)}${escapeHtml(WEEKLY_PAUSE_RESUME_NOTE)}<br>この期間は${escapeHtml(RAID_TITLE)}中です。デイリーミッションタブから投稿できます。</p>`;
+        return;
+    }
+
     if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) {
         exercisesGrid.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">今週のチャレンジ種目はまだ設定されていません。</p>';
         return;
@@ -7516,6 +7589,13 @@ async function updateWeeklyRulesTab() {
 
     // 今週の3種目を読み取り専用で表示
     rulesList.innerHTML = '';
+
+    if (weeklyChallenge && weeklyChallenge.paused) {
+        rulesList.innerHTML = `<p class="weekly-paused-inline"><i class="fa-solid fa-umbrella-beach"></i> ${escapeHtml(WEEKLY_PAUSE_NOTE)}${escapeHtml(WEEKLY_PAUSE_RESUME_NOTE)}<br>この期間は${escapeHtml(RAID_TITLE)}中です。デイリーミッションタブから参戦できます。</p>`;
+        const pausedBanner = rulesTab.querySelector('.weekly-rating-banner');
+        if (pausedBanner) pausedBanner.remove();
+        return;
+    }
 
     if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) {
         rulesList.innerHTML = '<p style="text-align:center; color:#999; padding:20px;">今週のチャレンジ種目がまだ設定されていません。</p>';
@@ -7599,6 +7679,223 @@ function updateWeeklyGraphDropdown() {
 }
 
 // ====================================================================
+// 夏休み特別モード「レイド」
+// ⚠️ web/src/lib/raid-mode.ts の「ミラー」。両アプリが同じ Firestore の
+//    settings_free/daily_mission と posts_free を共有するため、日程表
+//    （RAID_SCHEDULE）・種目解決ルール・休止週キーは必ず同じにすること。
+//
+// レイドは「その日の指定種目を、全員の合計で目標回数まで積み上げる」催し。
+// 通常のデイリーミッション（一人ひとり別の目標回数を抽選）とは違い、
+// 個人目標の抽選は行わず、チーム合計だけを見る。
+// ====================================================================
+
+// バナーやバッジに出す催しの名前
+const RAID_MODE_LABEL = '夏休み特別モード';
+// デイリーの枠に出す特殊モード名
+const RAID_TITLE = 'レイド開催';
+
+// レイド開始前にメンテナンス表示を出す日（JST 日付キー）。
+// この日はデイリーミッションを止め、翌0:00からのレイド開始だけを告知する
+const RAID_MAINTENANCE_DATE_KEYS = ['2026-08-08'];
+
+// レイド初日・最終日（表示用。実際の判定は RAID_SCHEDULE の有無で行う）
+const RAID_START_DATE_KEY = '2026-08-09';
+const RAID_END_DATE_KEY = '2026-08-16';
+
+// 週間チャレンジを休止する週。値は「週の起点（日曜17:00 JST）」の JST 日付キー。
+// 2026-08-09 の週 = 月〜金が 8/10〜8/14（夏休み週）
+const WEEKLY_PAUSE_WEEK_KEYS = ['2026-08-09'];
+const WEEKLY_PAUSE_LABEL = '夏休み休止';
+const WEEKLY_PAUSE_NOTE = '夏休みのため、今週の週間チャレンジはお休みです。種目の選出も得点集計もありません。';
+const WEEKLY_PAUSE_RESUME_NOTE = '再開は 8/17(月) の週から。';
+
+/**
+ * レイドの日程表。
+ * nameHints は登録種目の「名前」に対する部分一致候補（優先順）。
+ * フリー種目のキーは 'free_<timestamp>' で環境ごとに違うため名前で引き当てる。
+ * ⚠️ 一致する種目が無い日はレイドを行わず、通常のデイリーミッションに戻る。
+ * @type {Array<{dateKey: string, day: number, nameHints: string[], goal: number, label: string}>}
+ */
+const RAID_SCHEDULE = [
+    { dateKey: '2026-08-09', day: 1, nameHints: ['腕立て', 'プッシュアップ', 'push'], goal: 1000, label: '開幕戦。まずは全員で1000回。' },
+    { dateKey: '2026-08-10', day: 2, nameHints: ['スクワット', 'squat'], goal: 1500, label: '下半身デー。数で押し切ろう。' },
+    { dateKey: '2026-08-11', day: 3, nameHints: ['腹筋', 'シットアップ', 'クランチ', 'アブ', 'sit'], goal: 1500, label: '体幹デー。すきま時間で積み上げ。' },
+    { dateKey: '2026-08-12', day: 4, nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'], goal: 300, label: '難関。1回の重みが大きい日。' },
+    { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス', 'dip'], goal: 600, label: '押す種目でもう一押し。' },
+    { dateKey: '2026-08-14', day: 6, nameHints: ['バーピー', 'burpee'], goal: 800, label: '全身デー。息が上がる。' },
+    { dateKey: '2026-08-15', day: 7, nameHints: ['ランジ', 'lunge'], goal: 1200, label: '最終日前夜。左右の合計でOK。' },
+    { dateKey: '2026-08-16', day: 8, nameHints: ['腕立て', 'プッシュアップ', 'push'], goal: 2000, label: '最終決戦。初日の倍を全員で。' }
+];
+
+// レイド全体の日数
+const RAID_TOTAL_DAYS = RAID_SCHEDULE.length;
+
+// 管理者が目標回数を上書きする Firestore ドキュメント（settings_free/）
+// ⚠️ admin.html の「夏休みレイド」セクションと同じドキュメント名・形状にすること
+const RAID_CONFIG_DOC = 'raid_config';
+// 目標回数として受け付ける範囲。桁を打ち間違えても壊れないように上限を置く
+const RAID_GOAL_MIN = 1;
+const RAID_GOAL_MAX = 1000000;
+
+/**
+ * Firestoreから読んだ上書き設定を、信用できる形に整える。
+ * 日程表に無い日付・数値でない値・範囲外は落とす（管理画面の入力ミスや
+ * 古い日程表の残骸で、その日のレイドが壊れないようにするため）
+ * @param {*} raw - raid_config.goals
+ * @returns {Object} 日付キー→目標回数
+ */
+function sanitizeRaidGoalOverrides(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    const scheduled = new Set(RAID_SCHEDULE.map(d => d.dateKey));
+    Object.keys(raw).forEach(dateKey => {
+        if (!scheduled.has(dateKey)) return;
+        const n = Number(raw[dateKey]);
+        if (!isFinite(n)) return;
+        const goal = Math.round(n);
+        if (goal < RAID_GOAL_MIN || goal > RAID_GOAL_MAX) return;
+        out[dateKey] = goal;
+    });
+    return out;
+}
+
+/**
+ * 管理画面での上書きを日程表に反映した設定を返す（非破壊）。
+ * 上書きが無い日はコードの既定値をそのまま使う
+ * @param {Object} config - RAID_SCHEDULE の1件
+ * @param {Object|null} overrides - 日付キー→目標回数
+ * @returns {Object}
+ */
+function applyRaidGoalOverride(config, overrides) {
+    const override = (overrides || {})[config.dateKey];
+    if (typeof override !== 'number') {
+        return Object.assign({}, config, { goalSource: 'default' });
+    }
+    return Object.assign({}, config, { goal: override, goalSource: 'override' });
+}
+
+/**
+ * 管理画面で設定された目標回数の上書きを読む。
+ * 読めなければ空（＝コードの既定値）で進める。ここで失敗して
+ * レイドごと落とすより、既定の目標で開催を続けたほうが害が小さい
+ * @returns {Promise<Object>}
+ */
+async function getRaidGoalOverrides() {
+    try {
+        const snap = await db.collection('settings_free').doc(RAID_CONFIG_DOC).get();
+        if (!snap.exists) return {};
+        return sanitizeRaidGoalOverrides((snap.data() || {}).goals);
+    } catch (e) {
+        console.warn('[レイド] 目標回数の設定を読めませんでした（既定値で続行）:', e);
+        return {};
+    }
+}
+
+/**
+ * その日がレイド開始前のメンテナンス日か
+ * @param {string} dateKey
+ * @returns {boolean}
+ */
+function isRaidMaintenanceDay(dateKey) {
+    return RAID_MAINTENANCE_DATE_KEYS.indexOf(dateKey) >= 0;
+}
+
+/**
+ * その日のレイド設定。レイド期間外なら null
+ * @param {string} dateKey
+ * @returns {Object|null}
+ */
+function getRaidDayConfig(dateKey) {
+    return RAID_SCHEDULE.find(d => d.dateKey === dateKey) || null;
+}
+
+/**
+ * レイドの種目キーを登録種目から引き当てる。
+ * nameHints を優先順に見て、最初に名前が部分一致した種目を返す。
+ * キーは昇順で走査するので、どの端末でも同じ種目に決まる。
+ * バーバリアン種目（短いほど良い＝合計で競えない）は対象外。
+ * @param {Object} config - RAID_SCHEDULE の1件
+ * @param {Object} exercises - freeExercises
+ * @returns {string|null} 一致が無ければ null（その日はレイドを行わない）
+ */
+function resolveRaidExerciseKey(config, exercises) {
+    const keys = Object.keys(exercises || {})
+        .filter(key => exercises[key] && !exercises[key].barbarian)
+        .sort();
+    for (let i = 0; i < config.nameHints.length; i++) {
+        const needle = config.nameHints[i].toLowerCase();
+        const hit = keys.find(key => (exercises[key].name || '').toLowerCase().includes(needle));
+        if (hit) return hit;
+    }
+    return null;
+}
+
+/**
+ * 週の起点（日曜17:00 JST）がレイドによる週間チャレンジ休止週か
+ * @param {Date|null} weekStart
+ * @returns {boolean}
+ */
+function isWeeklyPausedWeekStart(weekStart) {
+    if (!weekStart) return false;
+    return WEEKLY_PAUSE_WEEK_KEYS.indexOf(getDailyDateKeyJST(weekStart)) >= 0;
+}
+
+/**
+ * レイドの進捗（全員の合計）を組み立てる。
+ * 並ぶのは通常のデイリーミッションと同じ「今日ログインした人」＋投稿済みの人。
+ * 個人目標の抽選は無いので、達成判定はチーム合計だけを見る。
+ * @param {{usersMap: Object, dateKey: string, totals: Object, myUserId: string, config: Object}} input
+ * @returns {Object}
+ */
+function buildRaidProgress({ usersMap, dateKey, totals, myUserId, config }) {
+    const rows = Object.keys(usersMap || {})
+        .filter(userId => isDailyActiveUser(usersMap[userId], userId, dateKey, totals, myUserId))
+        .map(userId => {
+            const u = usersMap[userId] || {};
+            return {
+                userId: userId,
+                userName: u.userName || u.email || '名無しさん',
+                value: Number(totals[userId]) || 0,
+                isMe: userId === myUserId
+            };
+        });
+
+    const totalValue = rows.reduce((sum, r) => sum + r.value, 0);
+    const contributors = rows
+        .map(r => Object.assign({}, r, { share: totalValue > 0 ? r.value / totalValue : 0 }))
+        .sort((a, b) => b.value - a.value
+            || a.userName.localeCompare(b.userName)
+            || a.userId.localeCompare(b.userId));
+
+    const goal = config.goal;
+    return {
+        day: config.day,
+        totalDays: RAID_TOTAL_DAYS,
+        goal: goal,
+        goalSource: config.goalSource || 'default',
+        label: config.label,
+        totalValue: totalValue,
+        remaining: Math.max(0, goal - totalValue),
+        percent: goal > 0 ? Math.min(100, Math.round((totalValue / goal) * 100)) : 0,
+        cleared: goal > 0 && totalValue >= goal,
+        myValue: Number(totals[myUserId]) || 0,
+        contributors: contributors,
+        activeCount: contributors.filter(c => c.value > 0).length
+    };
+}
+
+/**
+ * 貢献バーの長さ（0〜1）。いちばん多い人が満杯になるように正規化する
+ * @param {number} value
+ * @param {number} maxValue
+ * @returns {number}
+ */
+function raidContributionRatio(value, maxValue) {
+    if (!(maxValue > 0)) return 0;
+    return Math.min(1, Math.max(0, value / maxValue));
+}
+
+// ====================================================================
 // デイリーミッション機能
 // ⚠️ web/src/lib/daily-mission.ts / daily-mission-engine.ts の「ミラー」。
 //    両アプリが同じ settings_free/daily_mission と posts_free を共有し、
@@ -7632,6 +7929,8 @@ const DAILY_PEAK_BEST_RATIO = 1.0;
 let dailyMissionState = null;
 // 起動時の自動遷移を一度だけ行うためのフラグ
 let dailyMissionAutoNavDone = false;
+// メンテナンス告知のカウントダウン用インターバルID（カードが消えたら止める）
+let raidCountdownTimer = null;
 
 /**
  * JSTの暦日を YYYY-MM-DD で返す
@@ -8194,6 +8493,48 @@ async function getOrCreateDailyMission(exercises, now = new Date()) {
         console.warn('[デイリーミッション] 取得失敗、ローカル生成にフォールバック:', e);
     }
 
+    // レイド開催日: 個人目標の抽選も過去最高回数の集計も要らないので先に返す。
+    // 種目が引き当てられない（対象の種目が未登録）日は通常のミッションに戻す
+    const scheduledRaid = getRaidDayConfig(dateKey);
+    if (scheduledRaid) {
+        const raidKey = resolveRaidExerciseKey(scheduledRaid, exercises);
+        if (raidKey) {
+            // 目標回数は管理画面で上書きできる。毎回読み直すので、
+            // 開催中に変更してもリロードだけで全員に反映される
+            const raidConfig = applyRaidGoalOverride(scheduledRaid, await getRaidGoalOverrides());
+            // 書き込みは日付が変わった1回だけ（recentKeys を毎回積み増さないため）
+            if (saved.dateKey !== dateKey) {
+                const prevKeys = Array.isArray(saved.recentKeys) ? saved.recentKeys : [];
+                try {
+                    await ref.set({
+                        dateKey: dateKey,
+                        exerciseKey: raidKey,
+                        raidDay: raidConfig.day,
+                        raidGoal: raidConfig.goal,
+                        recentKeys: pushRecentMissionKeys(prevKeys, raidKey),
+                        // 個人目標を使わない日なので、前日のピーク情報は残さず潰す
+                        peak: null,
+                        bestValue: null,
+                        bestValueKey: null,
+                        bestValueDateKey: null,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                } catch (e) {
+                    console.warn('[レイド] 保存失敗（表示は続行）:', e);
+                }
+            }
+            return {
+                dateKey: dateKey,
+                exerciseKey: raidKey,
+                peak: 0,
+                bestValue: 0,
+                peakSource: 'default',
+                raid: raidConfig
+            };
+        }
+        console.warn('[レイド] 対象種目が見つからないため通常のデイリーミッションで進めます:', scheduledRaid.nameHints);
+    }
+
     // 過去最高回数を引く。引けなかったら null を返す（0 と区別する）。
     // 失敗を 0 として保存すると、その日いっぱい既定ピークのまま固定されてしまう
     const resolveBest = async (key) => {
@@ -8326,10 +8667,75 @@ async function loadDailyMissionState() {
         await loadFreeExercises();
     }
 
+    // レイド開始前のメンテナンス日はミッションを出さず、告知だけを返す
+    const maintenanceDateKey = getDailyDateKeyJST();
+    if (isRaidMaintenanceDay(maintenanceDateKey)) {
+        dailyMissionState = {
+            dateKey: maintenanceDateKey,
+            exerciseKey: '',
+            target: 0,
+            totalValue: 0,
+            // 未クリア扱いにして、タブのドット・起動時の自動遷移で告知を届ける
+            cleared: false,
+            probability: 0,
+            peak: 0,
+            bestValue: 0,
+            peakSource: 'default',
+            participants: [],
+            raid: null,
+            maintenance: true
+        };
+        return dailyMissionState;
+    }
+
     const mission = await getOrCreateDailyMission(freeExercises);
     if (!mission) {
         dailyMissionState = null;
         return null;
+    }
+
+    // 全ユーザーを取得して一覧を作る（載るのは今日ログインした人だけ）
+    let usersMap = {};
+    try {
+        usersMap = await getUsersMap();
+    } catch (e) {
+        console.warn('[デイリーミッション] ユーザー一覧の取得に失敗:', e);
+    }
+    // 自分がusersMapに無い場合（初回ログイン直後など）も必ず並べる
+    const users = Object.assign({}, usersMap);
+    if (!users[currentUser.uid]) users[currentUser.uid] = {};
+
+    // レイド開催日: 個人目標は無く、全員の合計だけで達成を判定する
+    if (mission.raid) {
+        let raidTotals = {};
+        try {
+            raidTotals = await getDailyMissionTotals(mission.dateKey, mission.exerciseKey);
+        } catch (e) {
+            console.warn('[レイド] 集計に失敗:', e);
+        }
+        const raid = buildRaidProgress({
+            usersMap: users,
+            dateKey: mission.dateKey,
+            totals: raidTotals,
+            myUserId: currentUser.uid,
+            config: mission.raid
+        });
+        dailyMissionState = {
+            dateKey: mission.dateKey,
+            exerciseKey: mission.exerciseKey,
+            target: 0,
+            totalValue: raid.myValue,
+            // レイド中の「クリア済み」は自分が今日1回でも積んだか（タブのドット用）
+            cleared: raid.myValue > 0,
+            probability: 0,
+            peak: 0,
+            bestValue: 0,
+            peakSource: 'default',
+            participants: [],
+            raid: raid,
+            maintenance: false
+        };
+        return dailyMissionState;
     }
 
     const target = generateDailyMissionTarget(
@@ -8342,17 +8748,6 @@ async function loadDailyMissionState() {
     } catch (e) {
         console.warn('[デイリーミッション] クリア判定に失敗:', e);
     }
-
-    // 全ユーザーを取得して分布グラフ用の一覧を作る（載るのは今日ログインした人だけ）
-    let usersMap = {};
-    try {
-        usersMap = await getUsersMap();
-    } catch (e) {
-        console.warn('[デイリーミッション] ユーザー一覧の取得に失敗:', e);
-    }
-    // 自分がusersMapに無い場合（初回ログイン直後など）も必ず並べる
-    const users = Object.assign({}, usersMap);
-    if (!users[currentUser.uid]) users[currentUser.uid] = {};
 
     const participants = buildDailyParticipants({
         usersMap: users,
@@ -8374,7 +8769,9 @@ async function loadDailyMissionState() {
         peak: mission.peak,
         bestValue: mission.bestValue,
         peakSource: mission.peakSource,
-        participants: participants
+        participants: participants,
+        raid: null,
+        maintenance: false
     };
     return dailyMissionState;
 }
@@ -8557,6 +8954,136 @@ function renderDailyTeamTotalCard(participants, unit) {
 }
 
 /**
+ * レイド開始前のメンテナンス告知カードのHTMLを組み立てる
+ * ⚠️ web版 DailyMissionView.tsx のメンテナンス表示と同じ構成にすること
+ * @param {string} dateKey
+ * @returns {string} HTML
+ */
+function renderRaidMaintenanceCard(dateKey) {
+    return `
+        <div class="daily-mission-card raid-maintenance-card">
+            <div class="daily-mission-badge raid-maintenance-badge">
+                <i class="fa-solid fa-screwdriver-wrench"></i> メンテナンス中
+            </div>
+            <div class="daily-mission-date">${escapeHtml(formatDailyDateLabel(dateKey))}</div>
+            <p class="raid-maintenance-lead">
+                本日のデイリーミッションはお休みです。<br>
+                明日 0:00 から${escapeHtml(RAID_MODE_LABEL)}がはじまります。
+            </p>
+            <div class="raid-countdown-box">
+                <span class="raid-countdown-label"><i class="fa-solid fa-dragon"></i> ${escapeHtml(RAID_TITLE)} まで</span>
+                <span class="raid-countdown" id="raid-countdown">まもなく</span>
+            </div>
+            <ul class="raid-maintenance-list">
+                <li><i class="fa-solid fa-people-group"></i> 毎日ひとつの種目をピックアップ。<strong>その日にやった全員ぶんの回数を合計</strong>して目標に挑みます。</li>
+                <li><i class="fa-solid fa-dumbbell"></i> 1日目は<strong>全員で腕立て1,000回</strong>。</li>
+                <li><i class="fa-solid fa-calendar-week"></i> 来週は夏休みのため、週間チャレンジは1週間お休み（種目の選出なし）。</li>
+            </ul>
+        </div>
+    `;
+}
+
+/**
+ * メンテナンス告知のカウントダウンを1秒ごとに更新する。
+ * カードが消えたら（タブ切り替え・日付変更）自動で止まる。
+ */
+function startRaidCountdown() {
+    if (raidCountdownTimer) {
+        clearInterval(raidCountdownTimer);
+        raidCountdownTimer = null;
+    }
+    const targetMs = getDailyBoundariesJST(RAID_START_DATE_KEY).start.getTime();
+    const tick = () => {
+        const el = document.getElementById('raid-countdown');
+        if (!el) {
+            clearInterval(raidCountdownTimer);
+            raidCountdownTimer = null;
+            return;
+        }
+        const diff = Math.max(0, targetMs - Date.now());
+        const h = Math.floor(diff / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        el.textContent = `${h}時間${String(m).padStart(2, '0')}分${String(s).padStart(2, '0')}秒`;
+    };
+    tick();
+    raidCountdownTimer = setInterval(tick, 1000);
+}
+
+/**
+ * レイドの貢献一覧カードのHTMLを組み立てる
+ * ⚠️ web版 DailyMissionView.tsx の「みんなの貢献」ブロックと同じ構成にすること
+ * @param {Object} raid - buildRaidProgress の結果
+ * @param {string} unit
+ * @returns {string} HTML
+ */
+function renderRaidContributionCard(raid, unit) {
+    // 先頭が最多貢献者（貢献の多い順に並んでいる）
+    const maxValue = raid.contributors.length > 0 ? raid.contributors[0].value : 0;
+    const rowsHtml = raid.contributors.map(c => {
+        const width = (raidContributionRatio(c.value, maxValue) * 100).toFixed(1);
+        return `<li class="daily-team-row${c.isMe ? ' is-me' : ''}">`
+            + `<span class="daily-team-name">${escapeHtml(c.userName)}</span>`
+            + `<span class="daily-team-bar"><span class="daily-team-bar-fill" style="width:${width}%"></span></span>`
+            + `<span class="daily-team-value">${formatDailyCount(c.value)}<span class="daily-team-target"> ${Math.round(c.share * 100)}%</span></span>`
+            + `</li>`;
+    }).join('');
+
+    return `
+        <div class="daily-dist-card daily-team-card">
+            <div class="daily-dist-head">
+                <span><i class="fa-solid fa-people-group"></i> みんなの貢献</span>
+                <span class="daily-dist-count">${raid.activeCount}/${raid.contributors.length} 人が参加</span>
+            </div>
+            <ul class="daily-team-list">${rowsHtml}</ul>
+            <p class="daily-dist-note">並ぶのは今日ログインした人だけ。右の％はみんなの合計に占める割合です。あなたの今日の合計は ${formatDailyCount(raid.myValue)}${escapeHtml(unit)}。</p>
+        </div>
+    `;
+}
+
+/**
+ * レイド開催中のミッションカードのHTMLを組み立てる
+ * ⚠️ web版 DailyMissionView.tsx のレイド表示と同じ構成にすること
+ * @param {Object} state - dailyMissionState（raid あり）
+ * @param {Object} ex - 種目
+ * @param {string} unit
+ * @returns {string} HTML
+ */
+function renderRaidCard(state, ex, unit) {
+    const raid = state.raid;
+    return `
+        <div class="daily-mission-card raid-card${raid.cleared ? ' cleared' : ''}">
+            <div class="daily-mission-badge raid-badge">
+                <i class="fa-solid ${raid.cleared ? 'fa-circle-check' : 'fa-dragon'}"></i>
+                ${raid.cleared ? '討伐完了' : `Day ${raid.day} / ${RAID_TOTAL_DAYS}`}
+            </div>
+            <div class="daily-mission-date">${escapeHtml(formatDailyDateLabel(state.dateKey))}</div>
+            <div class="daily-mission-exercise">
+                <span class="daily-mission-icon"><i class="fa-solid ${escapeHtml(ex.icon || 'fa-dumbbell')}"></i></span>
+                <span class="daily-mission-name">${escapeHtml(ex.name || state.exerciseKey)}</span>
+            </div>
+            <div class="daily-mission-target raid-goal">
+                <span class="daily-mission-target-label">みんなの目標</span>
+                <span class="daily-mission-target-value">${formatDailyCount(raid.goal)}<span class="daily-mission-target-unit">${escapeHtml(unit)}</span></span>
+                <span class="daily-mission-target-prob">${escapeHtml(raid.label)}</span>
+            </div>
+            <div class="daily-team-total">
+                <span class="daily-team-total-value">${formatDailyCount(raid.totalValue)}</span>
+                <span class="daily-team-total-goal">/ ${formatDailyCount(raid.goal)}${escapeHtml(unit)}</span>
+            </div>
+            <div class="daily-mission-progress">
+                <div class="daily-mission-bar"><div class="daily-mission-bar-fill" style="width:${raid.percent}%"></div></div>
+                <div class="daily-mission-progress-text">
+                    <span>${raid.percent}%</span>
+                    <span>${raid.cleared ? '討伐完了！' : `あと ${formatDailyCount(raid.remaining)}${escapeHtml(unit)}`}</span>
+                </div>
+            </div>
+            ${ex.rule ? `<p class="daily-mission-rule">${escapeHtml(ex.rule)}</p>` : ''}
+        </div>
+    `;
+}
+
+/**
  * デイリーミッションタブを描画する
  * @param {boolean} forceRefresh - Firestoreから再取得する
  */
@@ -8582,9 +9109,44 @@ async function renderDailyMissionTab(forceRefresh = false) {
         return;
     }
 
+    // レイド開始前のメンテナンス日はミッションを出さず、告知だけ表示する
+    if (dailyMissionState.maintenance) {
+        container.innerHTML = renderRaidMaintenanceCard(dailyMissionState.dateKey);
+        startRaidCountdown();
+        return;
+    }
+
     const { exerciseKey, target, totalValue, cleared, dateKey, peak, bestValue, peakSource, probability } = dailyMissionState;
     const ex = freeExercises[exerciseKey] || {};
     const unit = guessExerciseUnit(ex.name || '');
+
+    // レイド開催中は個人目標も分布グラフも無く、みんなの合計だけを見る
+    if (dailyMissionState.raid) {
+        const raid = dailyMissionState.raid;
+        container.innerHTML = `
+            <div class="raid-lead">
+                <span class="raid-lead-badge"><i class="fa-solid fa-dragon"></i> ${escapeHtml(RAID_MODE_LABEL)}</span>
+                今日の種目を全員で積み上げて、みんなの合計で目標を撃破します。個人の目標回数はありません。
+            </div>
+
+            ${renderRaidCard(dailyMissionState, ex, unit)}
+
+            ${renderRaidContributionCard(raid, unit)}
+
+            <div class="daily-mission-post">
+                <h3><i class="fa-solid fa-pen-to-square"></i> 記録を投稿</h3>
+                <div class="daily-mission-input-row">
+                    <input type="number" id="daily-mission-value" placeholder="${escapeHtml(unit)}数" min="1" max="10000">
+                    <span class="daily-mission-unit">${escapeHtml(unit)}</span>
+                    <button type="button" class="btn-primary" id="daily-mission-submit">投稿する</button>
+                </div>
+                <p class="daily-mission-note">何回かに分けてもOK。投稿するとすぐレイドの合計に加算されます（フリーモードの記録としても集計されます）。</p>
+                <p id="daily-mission-error" class="error-message"></p>
+            </div>
+        `;
+        bindDailyMissionPostForm();
+        return;
+    }
     const percent = Math.min(100, Math.round((totalValue / target) * 100));
     const remaining = Math.max(0, target - totalValue);
     const participants = dailyMissionState.participants || [];
@@ -8641,8 +9203,16 @@ async function renderDailyMissionTab(forceRefresh = false) {
         </div>
     `;
 
+    bindDailyMissionPostForm();
+}
+
+/**
+ * デイリーミッション（レイド含む）の投稿フォームにハンドラを付ける
+ */
+function bindDailyMissionPostForm() {
     const submitBtn = document.getElementById('daily-mission-submit');
     const valueInput = document.getElementById('daily-mission-value');
+    if (!submitBtn || !valueInput) return;
     submitBtn.addEventListener('click', submitDailyMissionPost);
     valueInput.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter') {
@@ -8692,11 +9262,24 @@ async function submitDailyMissionPost() {
         valueInput.value = '';
 
         const wasCleared = dailyMissionState.cleared;
+        const wasRaidCleared = !!(dailyMissionState.raid && dailyMissionState.raid.cleared);
         // 再取得して「その日の合計」で達成を判定し直す
         await renderDailyMissionTab(true);
 
         const st = dailyMissionState;
         const unit = st ? guessExerciseUnit((freeExercises[st.exerciseKey] || {}).name || '') : '回';
+        // レイドは個人目標が無いので、みんなの合計で知らせる
+        if (st && st.raid) {
+            const raid = st.raid;
+            if (raid.cleared && !wasRaidCleared) {
+                alert('レイド討伐完了！ おつかれさま 🎉');
+            } else if (raid.cleared) {
+                alert(`投稿しました！（みんなの合計 ${formatDailyCount(raid.totalValue)}${unit}）`);
+            } else {
+                alert(`投稿しました！（みんなであと ${formatDailyCount(raid.remaining)}${unit}）`);
+            }
+            return;
+        }
         if (!wasCleared && st && st.cleared) {
             alert('デイリーミッション達成！おつかれさま 🎉');
         } else if (st && !st.cleared) {
@@ -9651,8 +10234,9 @@ async function computeMonthlyDerbyData(year, month) {
         }
     });
 
-    // 今週が同期間内であれば追加（historyに未登録の場合）
-    if (weeklyChallenge && weeklyChallenge.weekStart) {
+    // 今週が同期間内であれば追加（historyに未登録の場合）。
+    // 休止週は種目が無く得点も出ないので、ダービーの週としては数えない
+    if (weeklyChallenge && weeklyChallenge.weekStart && !weeklyChallenge.paused) {
         const { monJST } = buildChampionDocMeta(weeklyChallenge.weekStart);
         const monDay = new Date(Date.UTC(monJST.getUTCFullYear(), monJST.getUTCMonth(), monJST.getUTCDate()));
         if (monDay >= derbyStart && monDay <= derbyEnd) {

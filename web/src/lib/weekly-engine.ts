@@ -39,6 +39,7 @@ import {
   computeStreakBonus,
 } from './scoring';
 import { RANKING_TIE_EPSILON } from './constants';
+import { isWeeklyPausedWeekStart, WEEKLY_PAUSE_LABEL } from './raid-mode';
 import type {
   FreeExerciseMap,
   Post,
@@ -175,6 +176,20 @@ export async function getOrUpdateWeeklyChallenge(
   freeExercises: FreeExerciseMap,
 ): Promise<WeeklyChallenge> {
   const { start: weekStart, end: weekEnd } = getWeekBoundaries();
+  // 夏休み休止週。種目を選出せず、選出履歴にも手を付けない。
+  const paused = isWeeklyPausedWeekStart(weekStart);
+  const pausedChallenge = (
+    selectionHistory: Record<string, number> = {},
+    creatorSelectionHistory: Record<string, number> = {},
+  ): WeeklyChallenge => ({
+    weekStart,
+    weekEnd,
+    exercises: [],
+    selectionHistory,
+    creatorSelectionHistory,
+    paused: true,
+    pauseLabel: WEEKLY_PAUSE_LABEL,
+  });
 
   try {
     const chalRef = doc(db, SETTINGS, 'weekly_challenge');
@@ -196,6 +211,12 @@ export async function getOrUpdateWeeklyChallenge(
         savedWeekStart &&
         Math.abs(savedWeekStart.getTime() - weekStart.getTime()) < 60 * 1000
       ) {
+        if (paused) {
+          return pausedChallenge(
+            data.selectionHistory || {},
+            data.creatorSelectionHistory || {},
+          );
+        }
         const upgradedExercises = await maybeUpgradeCurrentWeekExercises(
           data,
           freeExercises,
@@ -253,6 +274,24 @@ export async function getOrUpdateWeeklyChallenge(
         (snap.data() as { creatorSelectionHistory?: Record<string, number> })
           .creatorSelectionHistory) ||
       {};
+
+    // 休止週: 前週の確定だけ済ませ、今週は種目を選出しない。
+    // 選出履歴はそのまま持ち越すので、再開週の公平性に影響しない。
+    if (paused) {
+      await setDoc(chalRef, {
+        weekStart: Timestamp.fromDate(weekStart),
+        weekEnd: Timestamp.fromDate(weekEnd),
+        exercises: [],
+        selectionHistory: existingHistory,
+        creatorSelectionHistory: existingCreatorHistory,
+        isManualOverride: false,
+        overrideLabel: null,
+        paused: true,
+        pauseLabel: WEEKLY_PAUSE_LABEL,
+        updatedAt: serverTimestamp(),
+      });
+      return pausedChallenge(existingHistory, existingCreatorHistory);
+    }
 
     // 手動 override 確認
     const overrideSnap = await getDoc(doc(db, SETTINGS, 'weekly_override'));
