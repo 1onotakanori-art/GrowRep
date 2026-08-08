@@ -31,6 +31,49 @@
   font-weight: 800;
 }
 
+/* 夏休み休止週のお知らせ */
+.pauseCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: var(--sp-4);
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.pauseBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+.pauseNote {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.pauseRaid {
+  width: 100%;
+  margin-top: 2px;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.pauseRaid i {
+  color: var(--accent);
+  margin-right: 5px;
+}
+
 .exList {
   display: flex;
   flex-direction: column;

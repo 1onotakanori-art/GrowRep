@@ -4231,3 +4231,159 @@ body.dark-mode .daily-team-bar-fill { background: #8fa3ff; }
 /* 個人が目標を達成した行は暗所でも緑（上の一括指定に負けないよう後ろに置く） */
 body.dark-mode .daily-team-bar-fill.cleared { background: #43e97b; }
 body.dark-mode .daily-team-card.cleared .daily-team-total-value { color: #43e97b; }
+
+/* ====================================================================
+   夏休み特別モード「レイド」
+   ⚠️ web版 DailyMissionView.module.css のレイド/メンテナンス表示と対。
+   ==================================================================== */
+.raid-lead {
+    margin-bottom: 20px;
+    font-size: 12px;
+    color: #777;
+    line-height: 1.6;
+}
+.raid-lead-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-right: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #7c3aed, #db2777);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.daily-mission-badge.raid-badge {
+    background: linear-gradient(135deg, #7c3aed, #db2777);
+}
+.daily-mission-card.cleared .daily-mission-badge.raid-badge {
+    background: linear-gradient(135deg, #43e97b, #38c172);
+}
+/* みんなの目標。個人目標の枠と同じ形だが色で別物だと分かるようにする */
+.daily-mission-target.raid-goal {
+    background: linear-gradient(135deg, #7c3aed, #db2777);
+}
+.raid-card .daily-team-total {
+    padding-top: 4px;
+}
+/* 討伐完了したら合計も緑に（緑ルールは .daily-team-card 側にしか無いため） */
+.raid-card.cleared .daily-team-total-value {
+    color: #38c172;
+}
+body.dark-mode .raid-card.cleared .daily-team-total-value {
+    color: #43e97b;
+}
+
+/* メンテナンス告知 */
+.daily-mission-card.raid-maintenance-card {
+    border: 2px dashed #d7dbe0;
+}
+.daily-mission-badge.raid-maintenance-badge {
+    background: #6b7280;
+}
+.raid-maintenance-lead {
+    margin-bottom: 16px;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.7;
+    text-align: center;
+    color: #333;
+}
+.raid-countdown-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 16px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #7c3aed, #db2777);
+    color: #fff;
+}
+.raid-countdown-label {
+    font-size: 11px;
+    font-weight: 800;
+    opacity: 0.9;
+}
+.raid-countdown {
+    font-size: 26px;
+    font-weight: 900;
+    line-height: 1.1;
+}
+.raid-maintenance-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 16px 0 0;
+    padding: 0;
+    list-style: none;
+}
+.raid-maintenance-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 9px 11px;
+    border-radius: 8px;
+    background: #f7f8fa;
+    font-size: 12px;
+    color: #666;
+    line-height: 1.6;
+}
+.raid-maintenance-list li i {
+    flex-shrink: 0;
+    margin-top: 3px;
+    color: #667eea;
+}
+
+body.dark-mode .raid-lead { color: #aaa; }
+body.dark-mode .raid-maintenance-lead { color: #e8e8e8; }
+body.dark-mode .daily-mission-card.raid-maintenance-card { border-color: #3a3f44; }
+body.dark-mode .raid-maintenance-list li { background: #1f2937; color: #bbb; }
+body.dark-mode .raid-maintenance-list li i { color: #8fa3ff; }
+
+/* ====================================================================
+   週間チャレンジ 休止週（夏休み）
+   ==================================================================== */
+/* 休止週は「開催中」と一目で見分くよう、暖色の通常カードから寒色に振る */
+.weekly-challenge-info.weekly-paused-info {
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.12) 0%, rgba(20, 184, 166, 0.12) 100%);
+    border-color: rgba(14, 165, 233, 0.4);
+}
+.weekly-challenge-info.weekly-paused-info h3 {
+    color: #0d8bbf;
+}
+.weekly-paused-note {
+    margin-top: 8px;
+    color: #666;
+    font-size: 12px;
+    line-height: 1.6;
+}
+.weekly-paused-raid {
+    margin-top: 10px;
+    padding: 9px 11px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.7);
+    color: #666;
+    font-size: 12px;
+    line-height: 1.6;
+}
+.weekly-paused-raid i {
+    color: #7c3aed;
+    margin-right: 5px;
+}
+body.dark-mode .weekly-paused-note,
+body.dark-mode .weekly-paused-raid { color: #ccc; }
+body.dark-mode .weekly-paused-raid { background: rgba(0, 0, 0, 0.28); }
+.weekly-paused-inline {
+    padding: 20px;
+    text-align: center;
+    color: #777;
+    font-size: 12px;
+    line-height: 1.8;
+}
+.weekly-paused-inline i {
+    color: #0ea5e9;
+    margin-right: 5px;
+}
+body.dark-mode .weekly-paused-inline { color: #aaa; }

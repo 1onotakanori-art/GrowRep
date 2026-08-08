@@ -6,6 +6,9 @@
 //    Firestore アクセスは daily-mission-engine.ts 側にある。
 // =====================================================================
 import type { FreeExerciseMap } from './types';
+// 型だけの参照。実行時の import は raid-mode → daily-mission の一方向だけにする
+// （raid-mode がこちらの純粋関数を使うため、逆向きに値を持ち込むと循環する）。
+import type { RaidDayConfig, RaidProgress } from './raid-mode';
 
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
@@ -42,6 +45,8 @@ export interface DailyMission {
   /** ピークの根拠になった過去最高回数（投稿が無ければ 0） */
   bestValue: number;
   peakSource: DailyPeakSource;
+  /** レイド開催日ならその設定。通常のデイリーミッションなら null */
+  raid?: RaidDayConfig | null;
 }
 
 export interface DailyMissionState {
@@ -58,6 +63,14 @@ export interface DailyMissionState {
   peakSource: DailyPeakSource;
   /** その日にログインしたユーザーの目標と達成状況（分布グラフ用） */
   participants: DailyParticipant[];
+  /**
+   * レイド開催日ならチーム合計の進捗。通常日は null。
+   * これが入っている日は個人目標の抽選を行わないので
+   * target / probability / peak / participants は空になる。
+   */
+  raid?: RaidProgress | null;
+  /** レイド開始前のメンテナンス日なら true（ミッション自体を出さない）。 */
+  maintenance?: boolean;
 }
 
 export interface DailyParticipant {

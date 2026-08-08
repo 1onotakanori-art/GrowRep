@@ -13,6 +13,13 @@ import {
   getWeeklyPredictionsMap,
   saveMyPrediction,
 } from '../../lib/weekly-engine';
+import {
+  RAID_MODE_LABEL,
+  RAID_TITLE,
+  WEEKLY_PAUSE_LABEL,
+  WEEKLY_PAUSE_NOTE,
+  WEEKLY_PAUSE_RESUME_NOTE,
+} from '../../lib/raid-mode';
 import { EmptyState, Barbadge } from '../../components/ui';
 import styles from './ThisWeek.module.css';
 
@@ -65,6 +72,33 @@ export default function ThisWeek() {
   const lockedCount = weeklyChallenge
     ? weeklyChallenge.exercises.length - activeKeys.length
     : 0;
+
+  // 夏休み休止週。種目が選ばれていないのは「準備中」ではないので別表示にする
+  if (weeklyChallenge?.paused) {
+    const { monJST: pauseMon, friJST: pauseFri } = buildChampionDocMeta(
+      weeklyChallenge.weekStart,
+    );
+    return (
+      <div className={styles.wrap}>
+        <div className={styles.pauseCard}>
+          <span className={styles.pauseBadge}>
+            <i className="fa-solid fa-umbrella-beach" />{' '}
+            {weeklyChallenge.pauseLabel || WEEKLY_PAUSE_LABEL}
+          </span>
+          <span className={styles.periodLabel}>
+            <i className="fa-solid fa-calendar-week" />{' '}
+            {formatWeeklyPeriodLabel(pauseMon, pauseFri)}
+          </span>
+          <p className={styles.pauseNote}>{WEEKLY_PAUSE_NOTE}</p>
+          <p className={styles.pauseNote}>{WEEKLY_PAUSE_RESUME_NOTE}</p>
+          <p className={styles.pauseRaid}>
+            <i className="fa-solid fa-dragon" /> この期間は{RAID_MODE_LABEL}
+            「{RAID_TITLE}」を開催中。デイリータブから参戦できます。
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) {
     return (

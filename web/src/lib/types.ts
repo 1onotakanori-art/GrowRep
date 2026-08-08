@@ -53,6 +53,9 @@ export interface WeeklyChallenge {
   creatorSelectionHistory: Record<string, number>;
   isManualOverride?: boolean;
   overrideLabel?: string | null;
+  /** 夏休みなどで種目を選出せず休止している週か（raid-mode.ts の休止週）。 */
+  paused?: boolean;
+  pauseLabel?: string | null;
 }
 
 export interface WeeklyConfig {

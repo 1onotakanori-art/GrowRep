@@ -196,6 +196,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
     <div class="card-b" id="sec-weekly"></div>
 </div>
 
+<!-- ===== 1.5 Summer raid ===== -->
+<div class="card">
+    <div class="card-h th-purple" onclick="tog(this)">
+        <i class="ico fa-solid fa-dragon"></i> 夏休みレイド（目標回数）
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b" id="sec-raid"></div>
+</div>
+
 <!-- ===== 2. Weight Config ===== -->
 <div class="card">
     <div class="card-h th-orange" onclick="tog(this)">
@@ -279,6 +288,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
 // ====================================================================
 const $ = id => document.getElementById(id);
 let _exercises = {}, _wc = null, _wcConfig = {}, _users = {}, _override = null;
+// settings_free/raid_config の goals（日付キー→目標回数）。未設定の日は既定値
+let _raidGoals = {};
+
+// 夏休みレイドの日程表。
+// ⚠️ app.js / web の RAID_SCHEDULE の「表示用ミラー」。日付・既定値がズレても
+//    実際に使われる目標はアプリ側の RAID_SCHEDULE + この画面が書く上書き
+//    （日付キー単位）なので、ズレの影響はこの画面の表示だけに閉じる。
+//    それでも紛らわしいので、日程を変えるときは3か所そろえること。
+const RAID_SCHEDULE = [
+    { dateKey: '2026-08-09', day: 1, nameHints: ['腕立て', 'プッシュアップ', 'push'], goal: 1000 },
+    { dateKey: '2026-08-10', day: 2, nameHints: ['スクワット', 'squat'], goal: 1500 },
+    { dateKey: '2026-08-11', day: 3, nameHints: ['腹筋', 'シットアップ', 'クランチ', 'アブ', 'sit'], goal: 1500 },
+    { dateKey: '2026-08-12', day: 4, nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'], goal: 300 },
+    { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス', 'dip'], goal: 600 },
+    { dateKey: '2026-08-14', day: 6, nameHints: ['バーピー', 'burpee'], goal: 800 },
+    { dateKey: '2026-08-15', day: 7, nameHints: ['ランジ', 'lunge'], goal: 1200 },
+    { dateKey: '2026-08-16', day: 8, nameHints: ['腕立て', 'プッシュアップ', 'push'], goal: 2000 }
+];
+const RAID_GOAL_MIN = 1;
+const RAID_GOAL_MAX = 1000000;
 
 // ====================================================================
 // UTILS
@@ -352,11 +381,12 @@ $('refresh-btn').addEventListener('click', () => loadAll());
 async function loadAll() {
     $('loading').classList.remove('hide');
     try {
-        const [exDoc, wcDoc, cfgDoc, overrideDoc, mFree, mNorm, mInt, champSnap, histSnap, usrSnap] = await Promise.all([
+        const [exDoc, wcDoc, cfgDoc, overrideDoc, raidDoc, mFree, mNorm, mInt, champSnap, histSnap, usrSnap] = await Promise.all([
             db.collection('settings_free').doc('exercises').get(),
             db.collection('settings_free').doc('weekly_challenge').get(),
             db.collection('settings_free').doc('weekly_config').get(),
             db.collection('settings_free').doc('weekly_override').get(),
+            db.collection('settings_free').doc('raid_config').get(),
             db.collection('settings_free').doc('multipliers').get(),
             db.collection('settings').doc('multipliers').get(),
             db.collection('settings_interval').doc('multipliers').get(),
@@ -368,10 +398,12 @@ async function loadAll() {
         _wc = wcDoc.exists ? wcDoc.data() : null;
         _wcConfig = cfgDoc.exists ? cfgDoc.data() : { weightExponent: 2 };
         _override = overrideDoc.exists ? overrideDoc.data() : null;
+        _raidGoals = raidDoc.exists ? sanitizeRaidGoals(raidDoc.data().goals) : {};
         _users = {};
         usrSnap.forEach(d => { _users[d.id] = d.data(); });
 
         renderWeekly();
+        renderRaid();
         renderWeight();
         renderFree();
         renderMul(mFree, mNorm, mInt);
@@ -492,6 +524,146 @@ async function rerollOne(oldKey, idx) {
             await loadAll();
         } catch (e) { console.error(e); toast('エラー: ' + e.message); }
         finally { $('loading').classList.add('hide'); }
+    });
+}
+
+// ====================================================================
+// 1.5 SUMMER RAID（目標回数の上書き）
+// 保存先: settings_free/raid_config { goals: { 'YYYY-MM-DD': 回数 } }
+// 既定値と同じ日は保存しない＝コード側の既定がそのまま生きる。
+// ====================================================================
+
+/** Firestore/入力から読んだ goals を、日程表にある日・妥当な数値だけに絞る */
+function sanitizeRaidGoals(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    const scheduled = new Set(RAID_SCHEDULE.map(d => d.dateKey));
+    Object.keys(raw).forEach(k => {
+        if (!scheduled.has(k)) return;
+        const n = Number(raw[k]);
+        if (!isFinite(n)) return;
+        const goal = Math.round(n);
+        if (goal < RAID_GOAL_MIN || goal > RAID_GOAL_MAX) return;
+        out[k] = goal;
+    });
+    return out;
+}
+
+/** JSTの今日の日付キー（開催中の日を強調するため） */
+function todayDateKeyJST() {
+    const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    return `${jst.getUTCFullYear()}-${String(jst.getUTCMonth() + 1).padStart(2, '0')}-${String(jst.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** 日付キーを 8/9(日) 形式に */
+function fmtRaidDate(dateKey) {
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const names = ['日', '月', '火', '水', '木', '金', '土'];
+    return `${m}/${d}(${names[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]})`;
+}
+
+/**
+ * その日の種目を登録種目から引き当てる（アプリ側 resolveRaidExerciseKey と同じ規則）。
+ * ここでの用途は表示のみ。バーバリアン種目は合計で競えないので除外する。
+ */
+function resolveRaidExerciseName(dayCfg) {
+    const keys = Object.keys(_exercises).filter(k => _exercises[k] && !_exercises[k].barbarian).sort();
+    for (const hint of dayCfg.nameHints) {
+        const needle = hint.toLowerCase();
+        const hit = keys.find(k => (_exercises[k].name || '').toLowerCase().includes(needle));
+        if (hit) return _exercises[hit].name;
+    }
+    return null;
+}
+
+function renderRaid() {
+    const el = $('sec-raid');
+    if (!el) return;
+    const today = todayDateKeyJST();
+    const overrideCount = Object.keys(_raidGoals).length;
+
+    let html = `<div class="info-panel">
+        <div class="ip-row"><span class="ip-label">期間</span><span class="ip-val">${fmtRaidDate(RAID_SCHEDULE[0].dateKey)} 〜 ${fmtRaidDate(RAID_SCHEDULE[RAID_SCHEDULE.length - 1].dateKey)}（全${RAID_SCHEDULE.length}日）</span></div>
+        <div class="ip-row"><span class="ip-label">上書き</span><span class="ip-val">${overrideCount > 0 ? `${overrideCount}日ぶん設定中` : 'なし（すべて既定値）'}</span></div>
+        <div class="ip-row"><span class="ip-label">反映</span><span class="ip-val">保存後、各自がアプリを開き直した時点で反映されます</span></div>
+    </div>`;
+
+    RAID_SCHEDULE.forEach(d => {
+        const effective = _raidGoals[d.dateKey] != null ? _raidGoals[d.dateKey] : d.goal;
+        const isOverride = _raidGoals[d.dateKey] != null;
+        const isToday = d.dateKey === today;
+        const exName = resolveRaidExerciseName(d);
+        const exCell = exName
+            ? esc(exName)
+            : `<span style="color:var(--ng)"><i class="fa-solid fa-triangle-exclamation"></i> 未登録（この日は通常ミッション）</span>`;
+        html += `<div class="cfg-row" style="align-items:center;flex-wrap:wrap;gap:8px;${isToday ? 'background:#fff8e1;border-radius:6px;padding:6px 8px' : ''}">
+            <span style="min-width:96px;font-weight:700">Day ${d.day} <span style="color:var(--tx2);font-weight:400">${fmtRaidDate(d.dateKey)}</span>${isToday ? ' <span class="badge badge-sel">今日</span>' : ''}</span>
+            <span style="flex:1;min-width:140px;font-size:.9em">${exCell}</span>
+            <input type="number" id="raid-goal-${d.dateKey}" value="${effective}" min="${RAID_GOAL_MIN}" max="${RAID_GOAL_MAX}" step="1" style="width:88px">
+            <span style="color:var(--tx2);font-size:.8em;min-width:86px">既定 ${d.goal}${isOverride ? ' <b style="color:var(--pri)">(上書き中)</b>' : ''}</span>
+        </div>`;
+    });
+
+    html += `<div class="cfg-row">
+        <button class="btn btn-sm btn-ok" onclick="saveRaidGoals()"><i class="fa-solid fa-floppy-disk"></i> 目標回数を保存</button>
+        <button class="btn btn-sm btn-warn" onclick="resetRaidGoals()"><i class="fa-solid fa-rotate-left"></i> すべて既定に戻す</button>
+    </div>
+    <div id="raid-result" class="cfg-result"></div>
+    <p style="color:var(--tx2);font-size:.8em;margin-top:6px;line-height:1.6">
+        既定値と同じ数字は保存しません（コード側の既定がそのまま使われます）。<br>
+        種目は登録種目の名前から自動で引き当てます。「未登録」の日はレイドを行わず、通常のデイリーミッションになります。
+    </p>`;
+
+    el.innerHTML = html;
+}
+
+async function saveRaidGoals() {
+    const goals = {};
+    const invalid = [];
+    for (const d of RAID_SCHEDULE) {
+        const inp = $(`raid-goal-${d.dateKey}`);
+        if (!inp) continue;
+        const n = Math.round(Number(inp.value));
+        if (!isFinite(n) || n < RAID_GOAL_MIN || n > RAID_GOAL_MAX) {
+            invalid.push(`Day ${d.day}`);
+            continue;
+        }
+        // 既定と同じなら保存しない＝コード側の既定を生かす
+        if (n !== d.goal) goals[d.dateKey] = n;
+    }
+    if (invalid.length > 0) {
+        $('raid-result').textContent = `${invalid.join(' / ')} の値が不正です（${RAID_GOAL_MIN}〜${RAID_GOAL_MAX}）`;
+        $('raid-result').className = 'cfg-result cfg-err';
+        return;
+    }
+    try {
+        await db.collection('settings_free').doc('raid_config').set({
+            goals: goals,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        _raidGoals = goals;
+        const n = Object.keys(goals).length;
+        $('raid-result').textContent = n > 0 ? `${n}日ぶんの目標回数を保存しました` : 'すべて既定値に戻しました';
+        $('raid-result').className = 'cfg-result';
+        renderRaid();
+        toast('レイドの目標回数を保存');
+    } catch (e) {
+        $('raid-result').textContent = '保存失敗: ' + e.message;
+        $('raid-result').className = 'cfg-result cfg-err';
+    }
+}
+
+function resetRaidGoals() {
+    showConfirm('目標回数をリセット', 'すべての日をコード側の既定値に戻しますか？', async () => {
+        try {
+            await db.collection('settings_free').doc('raid_config').set({
+                goals: {},
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            _raidGoals = {};
+            renderRaid();
+            toast('既定値に戻しました');
+        } catch (e) { console.error(e); toast('エラー: ' + e.message); }
     });
 }
 

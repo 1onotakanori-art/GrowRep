@@ -30,6 +30,16 @@ import {
   type DailyMission,
   type DailyMissionState,
 } from './daily-mission';
+import {
+  applyRaidGoalOverride,
+  buildRaidProgress,
+  getRaidDayConfig,
+  isRaidMaintenanceDay,
+  resolveRaidExerciseKey,
+  sanitizeRaidGoalOverrides,
+  RAID_CONFIG_DOC,
+  type RaidGoalOverrides,
+} from './raid-mode';
 import type { FreeExerciseMap, Post, UserData } from './types';
 
 const SETTINGS = 'settings_free';
@@ -45,6 +55,42 @@ interface MissionDoc {
   /** bestValue がどの種目・どの日の締めで数えた値か（取り違え防止） */
   bestValueKey?: string | null;
   bestValueDateKey?: string | null;
+  /** レイド開催日に記録する何日目か・目標回数（表示には使わず記録用） */
+  raidDay?: number | null;
+  raidGoal?: number | null;
+}
+
+/**
+ * 管理画面で設定された目標回数の上書きを読む。
+ * 読めなければ空（＝コードの既定値）で進める。ここで失敗して
+ * レイドごと落とすより、既定の目標で開催を続けたほうが害が小さい。
+ * app.js: getRaidGoalOverrides
+ */
+export async function getRaidGoalOverrides(): Promise<RaidGoalOverrides> {
+  try {
+    const snap = await getDoc(doc(db, SETTINGS, RAID_CONFIG_DOC));
+    if (!snap.exists()) return {};
+    return sanitizeRaidGoalOverrides((snap.data() as { goals?: unknown }).goals);
+  } catch (e) {
+    console.warn('[レイド] 目標回数の設定を読めませんでした（既定値で続行）:', e);
+    return {};
+  }
+}
+
+/** 個人目標の抽選を行わない日（レイド）のミッション。 */
+function toRaidMission(
+  dateKey: string,
+  exerciseKey: string,
+  raid: ReturnType<typeof getRaidDayConfig>,
+): DailyMission {
+  return {
+    dateKey,
+    exerciseKey,
+    peak: 0,
+    bestValue: 0,
+    peakSource: 'default',
+    raid,
+  };
 }
 
 /**
@@ -109,6 +155,51 @@ export async function getOrCreateDailyMission(
     if (snap.exists()) saved = snap.data() as MissionDoc;
   } catch (e) {
     console.warn('[デイリーミッション] 取得失敗、ローカル生成にフォールバック:', e);
+  }
+
+  // レイド開催日: 個人目標の抽選も過去最高回数の集計も要らないので先に返す。
+  // 種目が引き当てられない（対象の種目が未登録）日は通常のミッションに戻す。
+  const scheduled = getRaidDayConfig(dateKey);
+  if (scheduled) {
+    const raidKey = resolveRaidExerciseKey(scheduled, freeExercises);
+    if (raidKey) {
+      // 目標回数は管理画面で上書きできる。毎回読み直すので、
+      // 開催中に変更してもリロードだけで全員に反映される
+      const raidConfig = applyRaidGoalOverride(
+        scheduled,
+        await getRaidGoalOverrides(),
+      );
+      // 書き込みは日付が変わった1回だけ（recentKeys を毎回積み増さないため）
+      if (saved.dateKey !== dateKey) {
+        const prevKeys = Array.isArray(saved.recentKeys) ? saved.recentKeys : [];
+        try {
+          await setDoc(
+            ref,
+            {
+              dateKey,
+              exerciseKey: raidKey,
+              raidDay: raidConfig.day,
+              raidGoal: raidConfig.goal,
+              recentKeys: pushRecentMissionKeys(prevKeys, raidKey),
+              // 個人目標を使わない日なので、前日のピーク情報は残さず潰す
+              peak: null,
+              bestValue: null,
+              bestValueKey: null,
+              bestValueDateKey: null,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } catch (e) {
+          console.warn('[レイド] 保存失敗（表示は続行）:', e);
+        }
+      }
+      return toRaidMission(dateKey, raidKey, raidConfig);
+    }
+    console.warn(
+      '[レイド] 対象種目が見つからないため通常のデイリーミッションで進めます:',
+      scheduled.nameHints,
+    );
   }
 
   /**
@@ -224,8 +315,67 @@ export async function loadDailyMissionState(
   usersMap: Record<string, UserData> = {},
   now: Date = new Date(),
 ): Promise<DailyMissionState | null> {
+  // レイド開始前のメンテナンス日はミッションを出さず、告知だけを返す。
+  const maintenanceDateKey = getDailyDateKeyJST(now);
+  if (isRaidMaintenanceDay(maintenanceDateKey)) {
+    return {
+      dateKey: maintenanceDateKey,
+      exerciseKey: '',
+      target: 0,
+      // 未クリア扱いにして、タブのドット・起動時の自動遷移で告知を届ける
+      cleared: false,
+      totalValue: 0,
+      probability: 0,
+      peak: 0,
+      bestValue: 0,
+      peakSource: 'default',
+      participants: [],
+      raid: null,
+      maintenance: true,
+    };
+  }
+
   const mission = await getOrCreateDailyMission(freeExercises, now);
   if (!mission) return null;
+
+  // 自分が usersMap に無い場合（初回ログイン直後など）も必ず並べる
+  const usersWithMe: Record<string, UserData> = { ...usersMap };
+  if (!usersWithMe[userId]) usersWithMe[userId] = {};
+
+  // レイド開催日: 個人目標は無く、全員の合計だけで達成を判定する
+  if (mission.raid) {
+    let raidTotals: Record<string, number> = {};
+    try {
+      raidTotals = await getDailyMissionTotals(
+        mission.dateKey,
+        mission.exerciseKey,
+      );
+    } catch (e) {
+      console.warn('[レイド] 集計に失敗:', e);
+    }
+    const raid = buildRaidProgress({
+      usersMap: usersWithMe,
+      dateKey: mission.dateKey,
+      totals: raidTotals,
+      myUserId: userId,
+      config: mission.raid,
+    });
+    return {
+      dateKey: mission.dateKey,
+      exerciseKey: mission.exerciseKey,
+      target: 0,
+      totalValue: raid.myValue,
+      // レイド中の「クリア済み」は自分が今日1回でも積んだか（タブのドット用）
+      cleared: raid.myValue > 0,
+      probability: 0,
+      peak: 0,
+      bestValue: 0,
+      peakSource: 'default',
+      participants: [],
+      raid,
+      maintenance: false,
+    };
+  }
 
   const target = generateDailyMissionTarget(
     userId,
@@ -241,12 +391,8 @@ export async function loadDailyMissionState(
     console.warn('[デイリーミッション] クリア判定に失敗:', e);
   }
 
-  // 自分が usersMap に無い場合（初回ログイン直後など）も必ず並べる
-  const users: Record<string, UserData> = { ...usersMap };
-  if (!users[userId]) users[userId] = {};
-
   const participants = buildDailyParticipants({
-    usersMap: users,
+    usersMap: usersWithMe,
     dateKey: mission.dateKey,
     exerciseKey: mission.exerciseKey,
     totals,
@@ -266,5 +412,7 @@ export async function loadDailyMissionState(
     bestValue: mission.bestValue,
     peakSource: mission.peakSource,
     participants,
+    raid: null,
+    maintenance: false,
   };
 }
