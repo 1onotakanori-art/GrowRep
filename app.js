@@ -3773,9 +3773,10 @@ let exerciseFilterState = {
 let selectedPostExerciseKey = null;
 
 // プリセットタグ定義
+// 'レイド' は RAID_TAG。付けた種目が夏休みレイドの候補になる
 const PRESET_TAGS = [
     '胸', '背中', '肩', '腕', '脚', '腹', '全身', '体幹',
-    '自重','ウェイト','3秒1回','1分間'
+    '自重','ウェイト','3秒1回','1分間','レイド'
 ];
 
 /**
@@ -7694,6 +7695,10 @@ const RAID_MODE_LABEL = '夏休み特別モード';
 // デイリーの枠に出す特殊モード名
 const RAID_TITLE = 'レイド開催';
 
+// この種目はレイド向け、と種目側で宣言するためのタグ。
+// 名前からの推測より確実なので、付いていればこちらを優先する
+const RAID_TAG = 'レイド';
+
 // レイド開始前にメンテナンス表示を出す日（JST 日付キー）。
 // この日はデイリーミッションを止め、翌0:00からのレイド開始だけを告知する
 const RAID_MAINTENANCE_DATE_KEYS = ['2026-08-08'];
@@ -7847,28 +7852,30 @@ function isRaidEligibleExercise(exercises, key) {
 }
 
 /**
- * レイドの種目キーを登録種目から引き当てる。
- *
- * 1. 管理画面でその日の種目が指定されていればそれを使う（最優先）
- * 2. 無ければ nameHints を優先順に見て、名前が部分一致した種目から選ぶ
- *
+ * 「レイド」タグが付いているか
+ * @param {Object} exercises
+ * @param {string} key
+ * @returns {boolean}
+ */
+function hasRaidTag(exercises, key) {
+    const ex = (exercises || {})[key];
+    return !!ex && Array.isArray(ex.tags) && ex.tags.indexOf(RAID_TAG) >= 0;
+}
+
+/**
+ * 候補の中から名前ヒントで1件選ぶ。
  * ⚠️ 部分一致の中では**名前が短いものを優先**する。「腕立て」で引くと
  *    「腕立てジャンプ」のような派生種目も一致してしまい、キー順で先に
  *    出たほうが勝つと意図しない種目になる（実際に初日で踏んだ）。
  *    余計な語が付いていない＝名前が短いほうが素の種目、という前提で選ぶ。
- *    同じ長さが並んだらキー昇順にして、どの端末でも同じ種目に決める。
+ *    名前の長さが並んだらキー昇順にして、どの端末でも同じ種目に決める。
  * @param {Object} config - RAID_SCHEDULE の1件
- * @param {Object} exercises - freeExercises
- * @param {Object|null} exerciseOverrides - 日付キー→種目キー（管理画面での指定）
- * @returns {string|null} 一致が無ければ null（その日はレイドを行わない）
+ * @param {Object} exercises
+ * @param {string[]} keys - 候補キー
+ * @returns {string|null}
  */
-function resolveRaidExerciseKey(config, exercises, exerciseOverrides) {
-    const pinned = (exerciseOverrides || {})[config.dateKey];
-    if (pinned && isRaidEligibleExercise(exercises, pinned)) return pinned;
-
-    const keys = Object.keys(exercises || {}).filter(key => isRaidEligibleExercise(exercises, key));
+function pickRaidKeyByNameHints(config, exercises, keys) {
     const nameOf = (key) => exercises[key].name || '';
-
     for (let i = 0; i < config.nameHints.length; i++) {
         const needle = config.nameHints[i].toLowerCase();
         const matches = keys
@@ -7877,6 +7884,49 @@ function resolveRaidExerciseKey(config, exercises, exerciseOverrides) {
         if (matches.length > 0) return matches[0];
     }
     return null;
+}
+
+/**
+ * レイドの種目を登録種目から引き当てる。優先順は次のとおり。
+ *
+ * 1. pinned : 管理画面でその日の種目が指定されていればそれ（最優先）
+ * 2. tag    : 「レイド」タグが付いた種目に絞って名前ヒントで選ぶ
+ *             （名前からの推測より、種目側の宣言のほうが確実なため）
+ * 3. name   : タグ付きに該当が無ければ、全種目から名前ヒントで選ぶ
+ *             （タグを1つも付けていない環境でも動かすためのフォールバック）
+ *
+ * @param {Object} config - RAID_SCHEDULE の1件
+ * @param {Object} exercises - freeExercises
+ * @param {Object|null} exerciseOverrides - 日付キー→種目キー（管理画面での指定）
+ * @returns {{key: string|null, source: string|null}} どれにも当たらなければ key は null
+ */
+function resolveRaidExercise(config, exercises, exerciseOverrides) {
+    const pinned = (exerciseOverrides || {})[config.dateKey];
+    if (pinned && isRaidEligibleExercise(exercises, pinned)) {
+        return { key: pinned, source: 'pinned' };
+    }
+
+    const eligible = Object.keys(exercises || {}).filter(key => isRaidEligibleExercise(exercises, key));
+
+    const tagged = eligible.filter(key => hasRaidTag(exercises, key));
+    const byTag = pickRaidKeyByNameHints(config, exercises, tagged);
+    if (byTag) return { key: byTag, source: 'tag' };
+
+    const byName = pickRaidKeyByNameHints(config, exercises, eligible);
+    if (byName) return { key: byName, source: 'name' };
+
+    return { key: null, source: null };
+}
+
+/**
+ * 種目キーだけが要るとき用の薄いラッパ
+ * @param {Object} config
+ * @param {Object} exercises
+ * @param {Object|null} exerciseOverrides
+ * @returns {string|null}
+ */
+function resolveRaidExerciseKey(config, exercises, exerciseOverrides) {
+    return resolveRaidExercise(config, exercises, exerciseOverrides).key;
 }
 
 /**

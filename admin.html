@@ -310,6 +310,8 @@ const RAID_SCHEDULE = [
 ];
 const RAID_GOAL_MIN = 1;
 const RAID_GOAL_MAX = 1000000;
+// この種目はレイド向け、と種目側で宣言するためのタグ（app.js / web の RAID_TAG）
+const RAID_TAG = 'レイド';
 
 // ====================================================================
 // UTILS
@@ -586,13 +588,18 @@ function raidEligibleKeys() {
         .sort((a, b) => (_exercises[a].name || '').localeCompare(_exercises[b].name || '', 'ja'));
 }
 
+/** 「レイド」タグが付いているか */
+function hasRaidTag(key) {
+    const ex = _exercises[key];
+    return !!ex && Array.isArray(ex.tags) && ex.tags.indexOf(RAID_TAG) >= 0;
+}
+
 /**
- * 名前ヒントから自動で引き当てたときの種目キー（アプリ側 resolveRaidExerciseKey と同じ規則）。
+ * 候補の中から名前ヒントで1件選ぶ。
  * ⚠️ 部分一致の中では名前が短いものを優先する。「腕立て」で「腕立てジャンプ」が
  *    先に出てしまった実例があるため、素の種目（＝余計な語が無い）を選ぶ。
  */
-function autoResolveRaidKey(dayCfg) {
-    const keys = raidEligibleKeys();
+function pickRaidKeyByNameHints(dayCfg, keys) {
     const nameOf = k => _exercises[k].name || '';
     for (const hint of dayCfg.nameHints) {
         const needle = hint.toLowerCase();
@@ -604,11 +611,18 @@ function autoResolveRaidKey(dayCfg) {
     return null;
 }
 
-/** その日に実際に使われる種目キー（指定があればそれ、無ければ自動解決） */
-function effectiveRaidKey(dayCfg) {
-    const pinned = _raidExercises[dayCfg.dateKey];
-    if (pinned && _exercises[pinned] && !_exercises[pinned].barbarian) return pinned;
-    return autoResolveRaidKey(dayCfg);
+/**
+ * 種目の指定が無いときの自動解決（アプリ側 resolveRaidExercise と同じ規則）。
+ * 「レイド」タグ付きを先に見て、無ければ全種目から名前で引く。
+ * @returns {{key: string|null, source: string|null}}
+ */
+function autoResolveRaid(dayCfg) {
+    const eligible = raidEligibleKeys();
+    const byTag = pickRaidKeyByNameHints(dayCfg, eligible.filter(hasRaidTag));
+    if (byTag) return { key: byTag, source: 'tag' };
+    const byName = pickRaidKeyByNameHints(dayCfg, eligible);
+    if (byName) return { key: byName, source: 'name' };
+    return { key: null, source: null };
 }
 
 function renderRaid() {
@@ -619,11 +633,13 @@ function renderRaid() {
 
     const exPinnedCount = Object.keys(_raidExercises).length;
     const options = raidEligibleKeys();
+    const taggedCount = options.filter(hasRaidTag).length;
 
     let html = `<div class="info-panel">
         <div class="ip-row"><span class="ip-label">期間</span><span class="ip-val">${fmtRaidDate(RAID_SCHEDULE[0].dateKey)} 〜 ${fmtRaidDate(RAID_SCHEDULE[RAID_SCHEDULE.length - 1].dateKey)}（全${RAID_SCHEDULE.length}日）</span></div>
         <div class="ip-row"><span class="ip-label">目標の上書き</span><span class="ip-val">${overrideCount > 0 ? `${overrideCount}日ぶん設定中` : 'なし（すべて既定値）'}</span></div>
         <div class="ip-row"><span class="ip-label">種目の指定</span><span class="ip-val">${exPinnedCount > 0 ? `${exPinnedCount}日ぶん指定中` : 'なし（すべて自動）'}</span></div>
+        <div class="ip-row"><span class="ip-label">「${esc(RAID_TAG)}」タグ</span><span class="ip-val">${taggedCount > 0 ? `${taggedCount}種目に設定済み` : 'なし（名前から自動判定）'}</span></div>
         <div class="ip-row"><span class="ip-label">反映</span><span class="ip-val">保存後、各自がアプリを開き直した時点で反映されます</span></div>
     </div>`;
 
@@ -632,16 +648,18 @@ function renderRaid() {
         const isOverride = _raidGoals[d.dateKey] != null;
         const isToday = d.dateKey === today;
         const pinned = _raidExercises[d.dateKey] || '';
-        const autoKey = autoResolveRaidKey(d);
-        const autoLabel = autoKey
-            ? `自動：${esc(_exercises[autoKey].name || autoKey)}`
+        const auto = autoResolveRaid(d);
+        const autoLabel = auto.key
+            ? `自動：${esc(_exercises[auto.key].name || auto.key)}${auto.source === 'tag' ? '（タグ）' : '（名前）'}`
             : '自動：該当なし（通常ミッションになります）';
         const opts = [`<option value="" ${pinned ? '' : 'selected'}>${autoLabel}</option>`]
-            .concat(options.map(k => `<option value="${esc(k)}" ${pinned === k ? 'selected' : ''}>${esc(_exercises[k].name || k)}</option>`))
+            .concat(options.map(k => `<option value="${esc(k)}" ${pinned === k ? 'selected' : ''}>${hasRaidTag(k) ? '★ ' : ''}${esc(_exercises[k].name || k)}</option>`))
             .join('');
-        const warn = (!pinned && !autoKey)
+        const warn = (!pinned && !auto.key)
             ? ` <span style="color:var(--ng);font-size:.8em"><i class="fa-solid fa-triangle-exclamation"></i> 種目未定</span>`
-            : '';
+            : (!pinned && auto.source === 'name' && taggedCount > 0)
+                ? ` <span style="color:var(--warn);font-size:.8em"><i class="fa-solid fa-tag"></i> タグ未該当</span>`
+                : '';
         html += `<div class="cfg-row" style="align-items:center;flex-wrap:wrap;gap:8px;${isToday ? 'background:#fff8e1;border-radius:6px;padding:6px 8px' : ''}">
             <span style="min-width:96px;font-weight:700">Day ${d.day} <span style="color:var(--tx2);font-weight:400">${fmtRaidDate(d.dateKey)}</span>${isToday ? ' <span class="badge badge-sel">今日</span>' : ''}</span>
             <select id="raid-ex-${d.dateKey}" style="flex:1;min-width:150px;padding:6px 8px">${opts}</select>${warn}
@@ -656,8 +674,8 @@ function renderRaid() {
     </div>
     <div id="raid-result" class="cfg-result"></div>
     <p style="color:var(--tx2);font-size:.8em;margin-top:6px;line-height:1.6">
-        種目は既定では名前から自動で引き当てます（「腕立て」で「腕立てジャンプ」を拾わないよう、余計な語が無い＝名前が短い種目を優先）。
-        意図と違う種目になる場合はプルダウンで直接指定してください。<br>
+        種目の決まり方は <b>①この画面での指定 → ②「${esc(RAID_TAG)}」タグ付きの種目 → ③全種目から名前で推測</b> の順です。
+        種目編集で「${esc(RAID_TAG)}」タグを付けておくと、名前の推測に頼らず確実にその種目が候補になります（★印がタグ付き）。<br>
         既定値と同じ目標回数は保存しません（コード側の既定がそのまま使われます）。「種目未定」の日はレイドを行わず、通常のデイリーミッションになります。
     </p>`;
 
