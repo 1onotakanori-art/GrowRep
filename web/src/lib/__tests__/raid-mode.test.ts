@@ -14,6 +14,7 @@ import {
   isWeeklyPausedWeekStart,
   raidContributionRatio,
   resolveRaidExerciseKey,
+  sanitizeRaidExerciseOverrides,
   sanitizeRaidGoalOverrides,
 } from '../raid-mode';
 import { getDailyBoundariesJST } from '../daily-mission';
@@ -31,6 +32,16 @@ const EXERCISES: FreeExerciseMap = {
     tags: [],
     barbarian: true,
   },
+};
+
+/**
+ * 初日に「腕立てジャンプ」が選ばれてしまった実環境の再現。
+ * 派生種目のキーが素の種目より先に並ぶのが事故の条件だった。
+ */
+const EXERCISES_WITH_VARIANT: FreeExerciseMap = {
+  free_000: { name: '腕立てジャンプ', rule: '', icon: 'fa-dumbbell', tags: [] },
+  free_001: { name: '腕立て伏せ', rule: '', icon: 'fa-dumbbell', tags: [] },
+  free_002: { name: 'エアスクワット', rule: '', icon: 'fa-dumbbell', tags: [] },
 };
 
 describe('日程表', () => {
@@ -114,6 +125,61 @@ describe('resolveRaidExerciseKey', () => {
       ),
     ).toBeNull();
     expect(resolveRaidExerciseKey(RAID_SCHEDULE[0], {})).toBeNull();
+  });
+
+  it('派生種目より素の種目を選ぶ（腕立てジャンプ事故の再発防止）', () => {
+    // free_000（腕立てジャンプ）のほうがキー順で先だが、名前が長いので負ける
+    expect(resolveRaidExerciseKey(RAID_SCHEDULE[0], EXERCISES_WITH_VARIANT)).toBe(
+      'free_001',
+    );
+  });
+
+  it('部分一致が複数ある場合は名前が短いほうを優先する', () => {
+    const map: FreeExerciseMap = {
+      a_long: { name: 'スクワットジャンプ', rule: '', icon: '', tags: [] },
+      b_short: { name: 'スクワット', rule: '', icon: '', tags: [] },
+    };
+    expect(resolveRaidExerciseKey(RAID_SCHEDULE[1], map)).toBe('b_short');
+  });
+
+  it('名前の長さが並んだらキー昇順（全端末で同じ種目にするため）', () => {
+    const map: FreeExerciseMap = {
+      zz: { name: 'スクワットA', rule: '', icon: '', tags: [] },
+      aa: { name: 'スクワットB', rule: '', icon: '', tags: [] },
+    };
+    expect(resolveRaidExerciseKey(RAID_SCHEDULE[1], map)).toBe('aa');
+  });
+
+  it('管理画面での指定が名前ヒントより優先される', () => {
+    expect(
+      resolveRaidExerciseKey(RAID_SCHEDULE[0], EXERCISES_WITH_VARIANT, {
+        '2026-08-09': 'free_000',
+      }),
+    ).toBe('free_000');
+  });
+
+  it('指定された種目が消えていたら名前ヒントに落ちる', () => {
+    expect(
+      resolveRaidExerciseKey(RAID_SCHEDULE[0], EXERCISES_WITH_VARIANT, {
+        '2026-08-09': 'free_deleted',
+      }),
+    ).toBe('free_001');
+  });
+
+  it('指定された種目がバーバリアンなら使わない（合計で競えないため）', () => {
+    expect(
+      resolveRaidExerciseKey(RAID_SCHEDULE[0], EXERCISES, {
+        '2026-08-09': 'free_004',
+      }),
+    ).toBe('free_001');
+  });
+
+  it('別の日の指定は巻き込まれない', () => {
+    expect(
+      resolveRaidExerciseKey(RAID_SCHEDULE[0], EXERCISES_WITH_VARIANT, {
+        '2026-08-10': 'free_000',
+      }),
+    ).toBe('free_001');
   });
 
   it('キー順が違っても同じ種目に決まる（全端末で一致させるため）', () => {
@@ -207,6 +273,20 @@ describe('目標回数の上書き（管理画面）', () => {
     const r = applyRaidGoalOverride(day1, { '2026-08-10': 5000 });
     expect(r.goal).toBe(day1.goal);
     expect(r.goalSource).toBe('default');
+  });
+
+  it('種目の指定は日程表にある日・文字列だけ通す', () => {
+    expect(
+      sanitizeRaidExerciseOverrides({
+        '2026-08-09': 'free_001',
+        '2026-09-01': 'free_002',
+        '2026-08-10': '',
+        '2026-08-11': 123,
+        '2026-08-12': null,
+      }),
+    ).toEqual({ '2026-08-09': 'free_001' });
+    expect(sanitizeRaidExerciseOverrides(null)).toEqual({});
+    expect(sanitizeRaidExerciseOverrides('nope')).toEqual({});
   });
 });
 

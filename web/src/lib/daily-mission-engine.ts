@@ -36,9 +36,10 @@ import {
   getRaidDayConfig,
   isRaidMaintenanceDay,
   resolveRaidExerciseKey,
+  sanitizeRaidExerciseOverrides,
   sanitizeRaidGoalOverrides,
   RAID_CONFIG_DOC,
-  type RaidGoalOverrides,
+  type RaidOverrides,
 } from './raid-mode';
 import type { FreeExerciseMap, Post, UserData } from './types';
 
@@ -61,19 +62,23 @@ interface MissionDoc {
 }
 
 /**
- * 管理画面で設定された目標回数の上書きを読む。
- * 読めなければ空（＝コードの既定値）で進める。ここで失敗して
- * レイドごと落とすより、既定の目標で開催を続けたほうが害が小さい。
- * app.js: getRaidGoalOverrides
+ * 管理画面で設定された上書き（目標回数・種目）を読む。
+ * 読めなければ空（＝コードの既定）で進める。ここで失敗して
+ * レイドごと落とすより、既定の設定で開催を続けたほうが害が小さい。
+ * app.js: getRaidOverrides
  */
-export async function getRaidGoalOverrides(): Promise<RaidGoalOverrides> {
+export async function getRaidOverrides(): Promise<RaidOverrides> {
   try {
     const snap = await getDoc(doc(db, SETTINGS, RAID_CONFIG_DOC));
-    if (!snap.exists()) return {};
-    return sanitizeRaidGoalOverrides((snap.data() as { goals?: unknown }).goals);
+    if (!snap.exists()) return { goals: {}, exercises: {} };
+    const data = snap.data() as { goals?: unknown; exercises?: unknown };
+    return {
+      goals: sanitizeRaidGoalOverrides(data.goals),
+      exercises: sanitizeRaidExerciseOverrides(data.exercises),
+    };
   } catch (e) {
-    console.warn('[レイド] 目標回数の設定を読めませんでした（既定値で続行）:', e);
-    return {};
+    console.warn('[レイド] 管理画面の設定を読めませんでした（既定で続行）:', e);
+    return { goals: {}, exercises: {} };
   }
 }
 
@@ -161,14 +166,16 @@ export async function getOrCreateDailyMission(
   // 種目が引き当てられない（対象の種目が未登録）日は通常のミッションに戻す。
   const scheduled = getRaidDayConfig(dateKey);
   if (scheduled) {
-    const raidKey = resolveRaidExerciseKey(scheduled, freeExercises);
+    // 種目・目標回数とも管理画面で上書きできる。毎回読み直すので、
+    // 開催中に変更してもリロードだけで全員に反映される
+    const overrides = await getRaidOverrides();
+    const raidKey = resolveRaidExerciseKey(
+      scheduled,
+      freeExercises,
+      overrides.exercises,
+    );
     if (raidKey) {
-      // 目標回数は管理画面で上書きできる。毎回読み直すので、
-      // 開催中に変更してもリロードだけで全員に反映される
-      const raidConfig = applyRaidGoalOverride(
-        scheduled,
-        await getRaidGoalOverrides(),
-      );
+      const raidConfig = applyRaidGoalOverride(scheduled, overrides.goals);
       // 書き込みは日付が変わった1回だけ（recentKeys を毎回積み増さないため）
       if (saved.dateKey !== dateKey) {
         const prevKeys = Array.isArray(saved.recentKeys) ? saved.recentKeys : [];

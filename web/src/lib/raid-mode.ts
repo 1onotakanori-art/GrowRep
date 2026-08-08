@@ -45,6 +45,15 @@ export type RaidGoalSource = 'default' | 'override';
 /** 日付キー → 目標回数。管理画面で設定された日だけが入る。 */
 export type RaidGoalOverrides = Record<string, number>;
 
+/** 日付キー → 種目キー。管理画面で種目を明示指定した日だけが入る。 */
+export type RaidExerciseOverrides = Record<string, string>;
+
+/** 管理画面で設定できるレイドの上書き一式。 */
+export interface RaidOverrides {
+  goals: RaidGoalOverrides;
+  exercises: RaidExerciseOverrides;
+}
+
 /** レイド1日ぶんの設定。 */
 export interface RaidDayConfig {
   /** JST 日付キー 'YYYY-MM-DD' */
@@ -90,6 +99,26 @@ export function sanitizeRaidGoalOverrides(raw: unknown): RaidGoalOverrides {
 }
 
 /**
+ * Firestore から読んだ種目の指定を、信用できる形に整える。
+ * 日程表に無い日付・種目キーでない値は落とす。
+ * 「その種目が今も登録されているか」は resolveRaidExerciseKey 側で見る
+ * （消された種目を指していたら名前ヒントに落とすため）。
+ */
+export function sanitizeRaidExerciseOverrides(
+  raw: unknown,
+): RaidExerciseOverrides {
+  const out: RaidExerciseOverrides = {};
+  if (!raw || typeof raw !== 'object') return out;
+  const scheduled = new Set(RAID_SCHEDULE.map((d) => d.dateKey));
+  Object.entries(raw as Record<string, unknown>).forEach(([dateKey, value]) => {
+    if (!scheduled.has(dateKey)) return;
+    if (typeof value !== 'string' || value === '') return;
+    out[dateKey] = value;
+  });
+  return out;
+}
+
+/**
  * 管理画面での上書きを日程表に反映した設定を返す（非破壊）。
  * 上書きが無い日はコードの既定値をそのまま使う。
  */
@@ -114,7 +143,9 @@ export const RAID_SCHEDULE: RaidDayConfig[] = [
   {
     dateKey: '2026-08-09',
     day: 1,
-    nameHints: ['腕立て', 'プッシュアップ', 'push'],
+    // 「腕立て」だけだと派生種目（腕立てジャンプ等）も拾うので、
+    // 素の種目に付きやすい名前を先に見る
+    nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'],
     goal: 1000,
     label: '開幕戦。まずは全員で1000回。',
   },
@@ -163,7 +194,9 @@ export const RAID_SCHEDULE: RaidDayConfig[] = [
   {
     dateKey: '2026-08-16',
     day: 8,
-    nameHints: ['腕立て', 'プッシュアップ', 'push'],
+    // 「腕立て」だけだと派生種目（腕立てジャンプ等）も拾うので、
+    // 素の種目に付きやすい名前を先に見る
+    nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'],
     goal: 2000,
     label: '最終決戦。初日の倍を全員で。',
   },
@@ -182,26 +215,49 @@ export function getRaidDayConfig(dateKey: string): RaidDayConfig | null {
   return RAID_SCHEDULE.find((d) => d.dateKey === dateKey) || null;
 }
 
+/** その日にレイドで使える種目か（バーバリアンは短いほど良い＝合計で競えない）。 */
+function isRaidEligible(
+  freeExercises: FreeExerciseMap,
+  key: string,
+): boolean {
+  const ex = (freeExercises || {})[key];
+  return !!ex && !ex.barbarian;
+}
+
 /**
  * レイドの種目キーを登録種目から引き当てる。
- * nameHints を優先順に見て、最初に名前が部分一致した種目を返す。
- * キーは昇順で走査するので、どの端末でも同じ種目に決まる。
- * バーバリアン種目（短いほど良い＝合計で競えない）は対象外。
+ *
+ * 1. 管理画面でその日の種目が指定されていればそれを使う（最優先）。
+ * 2. 無ければ nameHints を優先順に見て、名前が部分一致した種目から選ぶ。
+ *
+ * ⚠️ 部分一致の中では**名前が短いものを優先**する。「腕立て」で引くと
+ *    「腕立てジャンプ」のような派生種目も一致してしまい、キー順で先に
+ *    出たほうが勝つと意図しない種目になる（実際に初日で踏んだ）。
+ *    余計な語が付いていない＝名前が短いほうが素の種目、という前提で選ぶ。
+ *    同名の長さが並んだらキー昇順にして、どの端末でも同じ種目に決める。
  * 一致するものが無ければ null（その日はレイドを行わない）。
  */
 export function resolveRaidExerciseKey(
   config: RaidDayConfig,
   freeExercises: FreeExerciseMap,
+  exerciseOverrides?: RaidExerciseOverrides | null,
 ): string | null {
-  const keys = Object.keys(freeExercises || {})
-    .filter((key) => freeExercises[key] && !freeExercises[key].barbarian)
-    .sort();
+  const pinned = (exerciseOverrides || {})[config.dateKey];
+  if (pinned && isRaidEligible(freeExercises, pinned)) return pinned;
+
+  const keys = Object.keys(freeExercises || {}).filter((key) =>
+    isRaidEligible(freeExercises, key),
+  );
+  const nameOf = (key: string) => freeExercises[key].name || '';
+
   for (const hint of config.nameHints) {
     const needle = hint.toLowerCase();
-    const hit = keys.find((key) =>
-      (freeExercises[key].name || '').toLowerCase().includes(needle),
-    );
-    if (hit) return hit;
+    const matches = keys
+      .filter((key) => nameOf(key).toLowerCase().includes(needle))
+      .sort(
+        (a, b) => nameOf(a).length - nameOf(b).length || a.localeCompare(b),
+      );
+    if (matches.length > 0) return matches[0];
   }
   return null;
 }

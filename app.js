@@ -7717,14 +7717,15 @@ const WEEKLY_PAUSE_RESUME_NOTE = '再開は 8/17(月) の週から。';
  * @type {Array<{dateKey: string, day: number, nameHints: string[], goal: number, label: string}>}
  */
 const RAID_SCHEDULE = [
-    { dateKey: '2026-08-09', day: 1, nameHints: ['腕立て', 'プッシュアップ', 'push'], goal: 1000, label: '開幕戦。まずは全員で1000回。' },
+    // 「腕立て」だけだと派生種目（腕立てジャンプ等）も拾うので、素の種目に付きやすい名前を先に見る
+    { dateKey: '2026-08-09', day: 1, nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'], goal: 1000, label: '開幕戦。まずは全員で1000回。' },
     { dateKey: '2026-08-10', day: 2, nameHints: ['スクワット', 'squat'], goal: 1500, label: '下半身デー。数で押し切ろう。' },
     { dateKey: '2026-08-11', day: 3, nameHints: ['腹筋', 'シットアップ', 'クランチ', 'アブ', 'sit'], goal: 1500, label: '体幹デー。すきま時間で積み上げ。' },
     { dateKey: '2026-08-12', day: 4, nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'], goal: 300, label: '難関。1回の重みが大きい日。' },
     { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス', 'dip'], goal: 600, label: '押す種目でもう一押し。' },
     { dateKey: '2026-08-14', day: 6, nameHints: ['バーピー', 'burpee'], goal: 800, label: '全身デー。息が上がる。' },
     { dateKey: '2026-08-15', day: 7, nameHints: ['ランジ', 'lunge'], goal: 1200, label: '最終日前夜。左右の合計でOK。' },
-    { dateKey: '2026-08-16', day: 8, nameHints: ['腕立て', 'プッシュアップ', 'push'], goal: 2000, label: '最終決戦。初日の倍を全員で。' }
+    { dateKey: '2026-08-16', day: 8, nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'], goal: 2000, label: '最終決戦。初日の倍を全員で。' }
 ];
 
 // レイド全体の日数
@@ -7775,19 +7776,44 @@ function applyRaidGoalOverride(config, overrides) {
 }
 
 /**
- * 管理画面で設定された目標回数の上書きを読む。
- * 読めなければ空（＝コードの既定値）で進める。ここで失敗して
- * レイドごと落とすより、既定の目標で開催を続けたほうが害が小さい
- * @returns {Promise<Object>}
+ * Firestoreから読んだ種目の指定を、信用できる形に整える。
+ * 日程表に無い日付・種目キーでない値は落とす。
+ * 「その種目が今も登録されているか」は resolveRaidExerciseKey 側で見る
+ * （消された種目を指していたら名前ヒントに落とすため）
+ * @param {*} raw - raid_config.exercises
+ * @returns {Object} 日付キー→種目キー
  */
-async function getRaidGoalOverrides() {
+function sanitizeRaidExerciseOverrides(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    const scheduled = new Set(RAID_SCHEDULE.map(d => d.dateKey));
+    Object.keys(raw).forEach(dateKey => {
+        if (!scheduled.has(dateKey)) return;
+        const value = raw[dateKey];
+        if (typeof value !== 'string' || value === '') return;
+        out[dateKey] = value;
+    });
+    return out;
+}
+
+/**
+ * 管理画面で設定された上書き（目標回数・種目）を読む。
+ * 読めなければ空（＝コードの既定）で進める。ここで失敗して
+ * レイドごと落とすより、既定の設定で開催を続けたほうが害が小さい
+ * @returns {Promise<{goals: Object, exercises: Object}>}
+ */
+async function getRaidOverrides() {
     try {
         const snap = await db.collection('settings_free').doc(RAID_CONFIG_DOC).get();
-        if (!snap.exists) return {};
-        return sanitizeRaidGoalOverrides((snap.data() || {}).goals);
+        if (!snap.exists) return { goals: {}, exercises: {} };
+        const data = snap.data() || {};
+        return {
+            goals: sanitizeRaidGoalOverrides(data.goals),
+            exercises: sanitizeRaidExerciseOverrides(data.exercises)
+        };
     } catch (e) {
-        console.warn('[レイド] 目標回数の設定を読めませんでした（既定値で続行）:', e);
-        return {};
+        console.warn('[レイド] 管理画面の設定を読めませんでした（既定で続行）:', e);
+        return { goals: {}, exercises: {} };
     }
 }
 
@@ -7810,22 +7836,45 @@ function getRaidDayConfig(dateKey) {
 }
 
 /**
+ * その日にレイドで使える種目か（バーバリアンは短いほど良い＝合計で競えない）
+ * @param {Object} exercises
+ * @param {string} key
+ * @returns {boolean}
+ */
+function isRaidEligibleExercise(exercises, key) {
+    const ex = (exercises || {})[key];
+    return !!ex && !ex.barbarian;
+}
+
+/**
  * レイドの種目キーを登録種目から引き当てる。
- * nameHints を優先順に見て、最初に名前が部分一致した種目を返す。
- * キーは昇順で走査するので、どの端末でも同じ種目に決まる。
- * バーバリアン種目（短いほど良い＝合計で競えない）は対象外。
+ *
+ * 1. 管理画面でその日の種目が指定されていればそれを使う（最優先）
+ * 2. 無ければ nameHints を優先順に見て、名前が部分一致した種目から選ぶ
+ *
+ * ⚠️ 部分一致の中では**名前が短いものを優先**する。「腕立て」で引くと
+ *    「腕立てジャンプ」のような派生種目も一致してしまい、キー順で先に
+ *    出たほうが勝つと意図しない種目になる（実際に初日で踏んだ）。
+ *    余計な語が付いていない＝名前が短いほうが素の種目、という前提で選ぶ。
+ *    同じ長さが並んだらキー昇順にして、どの端末でも同じ種目に決める。
  * @param {Object} config - RAID_SCHEDULE の1件
  * @param {Object} exercises - freeExercises
+ * @param {Object|null} exerciseOverrides - 日付キー→種目キー（管理画面での指定）
  * @returns {string|null} 一致が無ければ null（その日はレイドを行わない）
  */
-function resolveRaidExerciseKey(config, exercises) {
-    const keys = Object.keys(exercises || {})
-        .filter(key => exercises[key] && !exercises[key].barbarian)
-        .sort();
+function resolveRaidExerciseKey(config, exercises, exerciseOverrides) {
+    const pinned = (exerciseOverrides || {})[config.dateKey];
+    if (pinned && isRaidEligibleExercise(exercises, pinned)) return pinned;
+
+    const keys = Object.keys(exercises || {}).filter(key => isRaidEligibleExercise(exercises, key));
+    const nameOf = (key) => exercises[key].name || '';
+
     for (let i = 0; i < config.nameHints.length; i++) {
         const needle = config.nameHints[i].toLowerCase();
-        const hit = keys.find(key => (exercises[key].name || '').toLowerCase().includes(needle));
-        if (hit) return hit;
+        const matches = keys
+            .filter(key => nameOf(key).toLowerCase().includes(needle))
+            .sort((a, b) => nameOf(a).length - nameOf(b).length || a.localeCompare(b));
+        if (matches.length > 0) return matches[0];
     }
     return null;
 }
@@ -8497,11 +8546,12 @@ async function getOrCreateDailyMission(exercises, now = new Date()) {
     // 種目が引き当てられない（対象の種目が未登録）日は通常のミッションに戻す
     const scheduledRaid = getRaidDayConfig(dateKey);
     if (scheduledRaid) {
-        const raidKey = resolveRaidExerciseKey(scheduledRaid, exercises);
+        // 種目・目標回数とも管理画面で上書きできる。毎回読み直すので、
+        // 開催中に変更してもリロードだけで全員に反映される
+        const raidOverrides = await getRaidOverrides();
+        const raidKey = resolveRaidExerciseKey(scheduledRaid, exercises, raidOverrides.exercises);
         if (raidKey) {
-            // 目標回数は管理画面で上書きできる。毎回読み直すので、
-            // 開催中に変更してもリロードだけで全員に反映される
-            const raidConfig = applyRaidGoalOverride(scheduledRaid, await getRaidGoalOverrides());
+            const raidConfig = applyRaidGoalOverride(scheduledRaid, raidOverrides.goals);
             // 書き込みは日付が変わった1回だけ（recentKeys を毎回積み増さないため）
             if (saved.dateKey !== dateKey) {
                 const prevKeys = Array.isArray(saved.recentKeys) ? saved.recentKeys : [];
