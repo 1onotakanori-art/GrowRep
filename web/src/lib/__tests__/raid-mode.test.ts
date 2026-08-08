@@ -12,7 +12,10 @@ import {
   getRaidDayConfig,
   isRaidMaintenanceDay,
   isWeeklyPausedWeekStart,
+  RAID_TAG,
+  hasRaidTag,
   raidContributionRatio,
+  resolveRaidExercise,
   resolveRaidExerciseKey,
   sanitizeRaidExerciseOverrides,
   sanitizeRaidGoalOverrides,
@@ -192,6 +195,91 @@ describe('resolveRaidExerciseKey', () => {
     expect(resolveRaidExerciseKey(RAID_SCHEDULE[0], reordered)).toBe(
       resolveRaidExerciseKey(RAID_SCHEDULE[0], EXERCISES),
     );
+  });
+});
+
+describe('「レイド」タグ', () => {
+  /** 派生種目のほうにタグを付けた状態（タグが名前の推測に勝つか） */
+  const TAGGED_VARIANT: FreeExerciseMap = {
+    free_000: {
+      name: '腕立てジャンプ',
+      rule: '',
+      icon: '',
+      tags: [RAID_TAG],
+    },
+    free_001: { name: '腕立て伏せ', rule: '', icon: '', tags: [] },
+  };
+
+  it('タグの付いた種目が名前の推測より優先される', () => {
+    const r = resolveRaidExercise(RAID_SCHEDULE[0], TAGGED_VARIANT);
+    expect(r.key).toBe('free_000');
+    expect(r.source).toBe('tag');
+  });
+
+  it('タグ付きが1つも無ければ名前で引く（従来どおり）', () => {
+    const r = resolveRaidExercise(RAID_SCHEDULE[0], EXERCISES_WITH_VARIANT);
+    expect(r.key).toBe('free_001');
+    expect(r.source).toBe('name');
+  });
+
+  it('タグ付きがあってもその日のヒントに合わなければ名前で引く', () => {
+    // スクワットの日。タグは腕立てにしか付いていない
+    const r = resolveRaidExercise(RAID_SCHEDULE[1], {
+      ...TAGGED_VARIANT,
+      free_002: { name: 'エアスクワット', rule: '', icon: '', tags: [] },
+    });
+    expect(r.key).toBe('free_002');
+    expect(r.source).toBe('name');
+  });
+
+  it('タグ付きが複数あっても名前が短いほうを選ぶ', () => {
+    const r = resolveRaidExercise(RAID_SCHEDULE[0], {
+      free_000: { name: '腕立てジャンプ', rule: '', icon: '', tags: [RAID_TAG] },
+      free_001: { name: '腕立て伏せ', rule: '', icon: '', tags: [RAID_TAG] },
+    });
+    expect(r.key).toBe('free_001');
+    expect(r.source).toBe('tag');
+  });
+
+  it('タグが付いていてもバーバリアン種目は使わない', () => {
+    const r = resolveRaidExercise(RAID_SCHEDULE[0], {
+      free_000: {
+        name: '腕立てタイムアタック',
+        rule: '',
+        icon: '',
+        tags: [RAID_TAG],
+        barbarian: true,
+      },
+      free_001: { name: '腕立て伏せ', rule: '', icon: '', tags: [] },
+    });
+    expect(r.key).toBe('free_001');
+    expect(r.source).toBe('name');
+  });
+
+  it('管理画面での指定はタグより優先される', () => {
+    const r = resolveRaidExercise(RAID_SCHEDULE[0], TAGGED_VARIANT, {
+      '2026-08-09': 'free_001',
+    });
+    expect(r.key).toBe('free_001');
+    expect(r.source).toBe('pinned');
+  });
+
+  it('該当が無ければ key も source も null', () => {
+    const r = resolveRaidExercise(RAID_SCHEDULE[0], {});
+    expect(r.key).toBeNull();
+    expect(r.source).toBeNull();
+  });
+
+  it('hasRaidTag は tags が無い/配列でない種目でも壊れない', () => {
+    expect(hasRaidTag(TAGGED_VARIANT, 'free_000')).toBe(true);
+    expect(hasRaidTag(TAGGED_VARIANT, 'free_001')).toBe(false);
+    expect(hasRaidTag(TAGGED_VARIANT, 'missing')).toBe(false);
+    expect(
+      hasRaidTag(
+        { x: { name: 'a', rule: '', icon: '' } as never },
+        'x',
+      ),
+    ).toBe(false);
   });
 });
 

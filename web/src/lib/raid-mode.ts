@@ -215,6 +215,12 @@ export function getRaidDayConfig(dateKey: string): RaidDayConfig | null {
   return RAID_SCHEDULE.find((d) => d.dateKey === dateKey) || null;
 }
 
+/**
+ * この種目はレイド向け、と種目側で宣言するためのタグ。
+ * 名前からの推測より確実なので、付いていればこちらを優先する。
+ */
+export const RAID_TAG = 'レイド';
+
 /** その日にレイドで使える種目か（バーバリアンは短いほど良い＝合計で競えない）。 */
 function isRaidEligible(
   freeExercises: FreeExerciseMap,
@@ -224,32 +230,38 @@ function isRaidEligible(
   return !!ex && !ex.barbarian;
 }
 
+/** 「レイド」タグが付いているか。 */
+export function hasRaidTag(
+  freeExercises: FreeExerciseMap,
+  key: string,
+): boolean {
+  const ex = (freeExercises || {})[key];
+  return !!ex && Array.isArray(ex.tags) && ex.tags.includes(RAID_TAG);
+}
+
+/** その日の種目がどう決まったか。 */
+export type RaidExerciseSource = 'pinned' | 'tag' | 'name';
+
+export interface ResolvedRaidExercise {
+  key: string | null;
+  /** key が null のときは null */
+  source: RaidExerciseSource | null;
+}
+
 /**
- * レイドの種目キーを登録種目から引き当てる。
- *
- * 1. 管理画面でその日の種目が指定されていればそれを使う（最優先）。
- * 2. 無ければ nameHints を優先順に見て、名前が部分一致した種目から選ぶ。
- *
+ * 候補の中から名前ヒントで1件選ぶ。
  * ⚠️ 部分一致の中では**名前が短いものを優先**する。「腕立て」で引くと
  *    「腕立てジャンプ」のような派生種目も一致してしまい、キー順で先に
  *    出たほうが勝つと意図しない種目になる（実際に初日で踏んだ）。
  *    余計な語が付いていない＝名前が短いほうが素の種目、という前提で選ぶ。
- *    同名の長さが並んだらキー昇順にして、どの端末でも同じ種目に決める。
- * 一致するものが無ければ null（その日はレイドを行わない）。
+ *    名前の長さが並んだらキー昇順にして、どの端末でも同じ種目に決める。
  */
-export function resolveRaidExerciseKey(
+function pickByNameHints(
   config: RaidDayConfig,
   freeExercises: FreeExerciseMap,
-  exerciseOverrides?: RaidExerciseOverrides | null,
+  keys: string[],
 ): string | null {
-  const pinned = (exerciseOverrides || {})[config.dateKey];
-  if (pinned && isRaidEligible(freeExercises, pinned)) return pinned;
-
-  const keys = Object.keys(freeExercises || {}).filter((key) =>
-    isRaidEligible(freeExercises, key),
-  );
   const nameOf = (key: string) => freeExercises[key].name || '';
-
   for (const hint of config.nameHints) {
     const needle = hint.toLowerCase();
     const matches = keys
@@ -260,6 +272,50 @@ export function resolveRaidExerciseKey(
     if (matches.length > 0) return matches[0];
   }
   return null;
+}
+
+/**
+ * レイドの種目を登録種目から引き当てる。優先順は次のとおり。
+ *
+ * 1. `pinned` 管理画面でその日の種目が指定されていればそれ（最優先）。
+ * 2. `tag`    「レイド」タグが付いた種目に絞って名前ヒントで選ぶ。
+ *             名前からの推測より、種目側の宣言のほうが確実なため。
+ * 3. `name`   タグ付きに該当が無ければ、全種目から名前ヒントで選ぶ。
+ *             タグを1つも付けていない環境でも動かすためのフォールバック。
+ *
+ * どれにも当たらなければ key は null（その日はレイドを行わない）。
+ */
+export function resolveRaidExercise(
+  config: RaidDayConfig,
+  freeExercises: FreeExerciseMap,
+  exerciseOverrides?: RaidExerciseOverrides | null,
+): ResolvedRaidExercise {
+  const pinned = (exerciseOverrides || {})[config.dateKey];
+  if (pinned && isRaidEligible(freeExercises, pinned)) {
+    return { key: pinned, source: 'pinned' };
+  }
+
+  const eligible = Object.keys(freeExercises || {}).filter((key) =>
+    isRaidEligible(freeExercises, key),
+  );
+
+  const tagged = eligible.filter((key) => hasRaidTag(freeExercises, key));
+  const byTag = pickByNameHints(config, freeExercises, tagged);
+  if (byTag) return { key: byTag, source: 'tag' };
+
+  const byName = pickByNameHints(config, freeExercises, eligible);
+  if (byName) return { key: byName, source: 'name' };
+
+  return { key: null, source: null };
+}
+
+/** 種目キーだけが要るとき用の薄いラッパ。 */
+export function resolveRaidExerciseKey(
+  config: RaidDayConfig,
+  freeExercises: FreeExerciseMap,
+  exerciseOverrides?: RaidExerciseOverrides | null,
+): string | null {
+  return resolveRaidExercise(config, freeExercises, exerciseOverrides).key;
 }
 
 /** 週の起点（日曜17:00 JST）がレイドによる週間チャレンジ休止週か。 */
