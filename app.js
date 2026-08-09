@@ -30,7 +30,8 @@ function getCollectionName(baseCollection) {
     if (currentMode === 'interval') {
         return `${baseCollection}_interval`;
     }
-    if (currentMode === 'free' || currentMode === 'weekly') {
+    // レイドはフリーモードの投稿（posts_free）をそのまま使う
+    if (currentMode === 'free' || currentMode === 'weekly' || currentMode === 'raid') {
         return `${baseCollection}_free`;
     }
     return baseCollection;
@@ -1673,6 +1674,10 @@ function updateTabsForMode() {
         if (btnMode) {
             // data-mode属性がある場合、そのモードでのみ表示
             btn.style.display = btnMode === currentMode ? 'block' : 'none';
+        } else if (currentMode === 'raid') {
+            // レイドはレイド専用タブだけの軽いモード。
+            // 汎用タブ（投稿・掲示板・ランキング等）はフリー/週間側で見てもらう
+            btn.style.display = 'none';
         } else {
             // data-mode属性がない場合、常に表示
             btn.style.display = 'block';
@@ -1692,15 +1697,21 @@ function updateTabsForMode() {
         }
     });
     
-    // 投稿タブに戻す（モード専用タブが表示できなくなった場合）
+    // 既定のタブに戻す（モード専用タブが表示できなくなった場合）。
+    // レイドは投稿タブを出さないので、代わりに今日のレイドへ戻す
     const fallbackToPostTab = () => {
+        const fallbackTab = currentMode === 'raid' ? 'daily' : 'post';
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        document.querySelector('.tab-btn[data-tab="post"]').classList.add('active');
-        document.getElementById('post-tab').classList.add('active');
+        const btn = document.querySelector(`.tab-btn[data-tab="${fallbackTab}"]:not([style*="display: none"])`)
+            || document.querySelector(`.tab-btn[data-tab="${fallbackTab}"]`);
+        if (btn) btn.classList.add('active');
+        const content = document.getElementById(`${fallbackTab}-tab`);
+        if (content) content.classList.add('active');
+        if (fallbackTab === 'daily') renderDailyMissionTab(false);
     };
 
-    // 現在表示中のタブがモード専用かつ表示できない場合、投稿タブに戻る
+    // 現在表示中のタブがモード専用かつ表示できない場合、既定のタブに戻る
     const activeTab = document.querySelector('.tab-content.active');
     if (activeTab) {
         const activeMode = activeTab.dataset.mode;
@@ -1709,11 +1720,19 @@ function updateTabsForMode() {
         }
     }
 
-    // デイリーミッションタブは free / weekly で共有（data-mode を持たないため個別に判定）。
-    // 対応外のモードに切り替えたら投稿タブに戻す。
+    // デイリーミッションタブは free / weekly / raid で共有（data-mode を持たないため個別に判定）。
+    // 対応外のモードに切り替えたら既定のタブに戻す。
     const dailyTab = document.getElementById('daily-tab');
-    if (dailyTab && dailyTab.classList.contains('active') && currentMode !== 'free' && currentMode !== 'weekly') {
+    if (dailyTab && dailyTab.classList.contains('active')
+        && currentMode !== 'free' && currentMode !== 'weekly' && currentMode !== 'raid') {
         fallbackToPostTab();
+    }
+
+    // レイドで汎用タブを開いたままモードを切り替えた場合も戻す
+    if (currentMode === 'raid') {
+        const active = document.querySelector('.tab-content.active');
+        const allowed = ['daily-tab', 'raid-score-tab'];
+        if (active && allowed.indexOf(active.id) < 0) fallbackToPostTab();
     }
 
     // モード情報を更新
@@ -1764,6 +1783,11 @@ function updateModeInfo() {
             derby: '週間チャレンジの得点を1ヶ月合計した月間ランキング',
             timer: '指定した秒数ごとに音が鳴り、カウントアップされます',
             daily: '毎日入れ替わる共通種目のミッション（目標回数は人それぞれ／その日の合計で判定）'
+        },
+        'raid': {
+            daily: '今日の種目を全員の合計で目標まで積み上げる（0:00に種目発表／入力は7:00から）',
+            'raid-score': 'その日の貢献度（％）を点にして、開催期間ぶん積み上げた成績表',
+            timer: '指定した秒数ごとに音が鳴り、カウントアップされます'
         }
     };
 
@@ -1771,6 +1795,7 @@ function updateModeInfo() {
     const modeClass = currentMode === 'normal' ? 'normal'
                     : currentMode === 'interval' ? 'interval-mode'
                     : currentMode === 'weekly' ? 'weekly-mode'
+                    : currentMode === 'raid' ? 'raid-mode'
                     : 'free-mode';
     
     // 各タブのモード情報を更新
@@ -1784,7 +1809,8 @@ function updateModeInfo() {
         'timer-mode-info': currentTexts.timer,
         'champions-mode-info': currentTexts.champions,
         'derby-mode-info': currentTexts.derby,
-        'daily-mode-info': currentTexts.daily
+        'daily-mode-info': currentTexts.daily,
+        'raid-score-mode-info': currentTexts['raid-score']
     };
     
     Object.entries(modeInfoElements).forEach(([id, text]) => {
@@ -1822,9 +1848,9 @@ async function changeMode(newMode) {
     modeSelect.value = newMode;
     
     // 背景色クラスを切り替え（トランジション付き）（bodyとhtmlの両方）
-    document.body.classList.remove('mode-normal', 'mode-interval', 'mode-free', 'mode-weekly');
+    document.body.classList.remove('mode-normal', 'mode-interval', 'mode-free', 'mode-weekly', 'mode-raid');
     document.body.classList.add(`mode-${newMode}`);
-    document.documentElement.classList.remove('mode-normal', 'mode-interval', 'mode-free', 'mode-weekly');
+    document.documentElement.classList.remove('mode-normal', 'mode-interval', 'mode-free', 'mode-weekly', 'mode-raid');
     document.documentElement.classList.add(`mode-${newMode}`);
     
     // タブの表示を更新
@@ -1838,6 +1864,18 @@ async function changeMode(newMode) {
         try {
             console.log(`${newMode}モードのデータを読み込み中...`);
             console.log(`使用コレクション: ${getCollectionName('posts')}, ${getCollectionName('settings')}`);
+
+            // レイドは専用タブだけの軽いモード。汎用タブを出さないので
+            // 投稿一覧・ランキングの読み込みも走らせない
+            if (newMode === 'raid') {
+                await renderDailyMissionTab(true);
+                const activeRaidTab = document.querySelector('.tab-content.active');
+                if (activeRaidTab && activeRaidTab.id === 'raid-score-tab') {
+                    await renderRaidScoreTab(true);
+                }
+                console.log('レイドモードへの切り替え完了');
+                return;
+            }
 
             // モード別UI初期化
             if (newMode === 'free') {
@@ -1950,6 +1988,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
             renderDailyMissionTab(false);
         }
 
+        // 積み上げ得点タブ（レイド）
+        if (tabName === 'raid-score') {
+            renderRaidScoreTab(false);
+        }
+
         // 歴代チャンプタブの場合はデータ読み込み
         if (tabName === 'champions') {
             loadChampionsHistory();
@@ -1978,13 +2021,21 @@ document.getElementById('refresh-all-btn').addEventListener('click', async funct
         // 現在アクティブなタブを取得
         const activeTab = document.querySelector('.tab-content.active');
         const tabId = activeTab ? activeTab.id : null;
-        
+
+        // レイドは専用タブだけなので、掲示板・ランキングは触らない
+        if (mode === 'raid') {
+            raidScoreboardCache = null;
+            await renderDailyMissionTab(true);
+            if (tabId === 'raid-score-tab') await renderRaidScoreTab(true);
+            return;
+        }
+
         // 常に掲示板とランキングを更新
         await Promise.all([
             loadPosts(true),
             loadRanking(true)
         ]);
-        
+
         // タブごとの追加更新処理
         switch(tabId) {
             case 'progress-tab':
@@ -7736,6 +7787,53 @@ const RAID_SCHEDULE = [
 // レイド全体の日数
 const RAID_TOTAL_DAYS = RAID_SCHEDULE.length;
 
+// --------------------------------------------------------------------
+// 0時発表 → 7時入力開始
+// --------------------------------------------------------------------
+
+// 入力を受け付け始める時刻（JST）。それまでは種目だけ見えている
+const RAID_INPUT_OPEN_HOUR_JST = 7;
+// この日以降は「0時発表・7時入力開始」で運用する。
+// 初日（8/9）はすでに走り出しているので、途中で入力を止めない
+const RAID_INPUT_GATE_FROM_DATE_KEY = '2026-08-10';
+// なぜ発表と入力開始をずらすのか。画面にそのまま出す説明
+const RAID_INPUT_GATE_NOTE = '種目は0:00に発表、入力できるのは7:00からです。前の晩のうちに今日なにをやるか分かるようにしつつ、'
+    + '深夜のうちに先に積んだ人が有利にならないよう、朝いちで全員が同じスタートラインに立つためです。';
+
+/**
+ * その日が「7時から入力」の対象か（初日は対象外）
+ * @param {string} dateKey
+ * @returns {boolean}
+ */
+function isRaidInputGatedDay(dateKey) {
+    return dateKey >= RAID_INPUT_GATE_FROM_DATE_KEY;
+}
+
+/**
+ * その日の入力開始時刻（7:00 JST）をUTCのDateで返す
+ * @param {string} dateKey
+ * @returns {Date}
+ */
+function getRaidInputOpenAt(dateKey) {
+    const { start } = getDailyBoundariesJST(dateKey);
+    return new Date(start.getTime() + RAID_INPUT_OPEN_HOUR_JST * 60 * 60 * 1000);
+}
+
+/**
+ * いま入力を受け付けてよいか。ゲート対象外の日（初日）は常に true
+ * @param {string} dateKey
+ * @param {Date} now
+ * @returns {boolean}
+ */
+function isRaidInputOpen(dateKey, now = new Date()) {
+    if (!isRaidInputGatedDay(dateKey)) return true;
+    return now.getTime() >= getRaidInputOpenAt(dateKey).getTime();
+}
+
+// 1日ぶんの持ち点。その日の合計に対する貢献度（％）をそのまま点にするので、
+// 参加者の点を全部足すとちょうどこの数になる（誰も投稿しなければ0）
+const RAID_POINTS_PER_DAY = 100;
+
 // 管理者が目標回数を上書きする Firestore ドキュメント（settings_free/）
 // ⚠️ admin.html の「夏休みレイド」セクションと同じドキュメント名・形状にすること
 const RAID_CONFIG_DOC = 'raid_config';
@@ -7994,6 +8092,217 @@ function raidContributionRatio(value, maxValue) {
     return Math.min(1, Math.max(0, value / maxValue));
 }
 
+// --------------------------------------------------------------------
+// 週の積み上げ得点（レイドモードの成績表）
+// --------------------------------------------------------------------
+
+/**
+ * 投稿を「レイドの日 × ユーザー」で合計する。
+ * その日の種目に一致する投稿だけを数える（種目が決まっていない日は空）
+ * @param {Array<{userId:string, exerciseType:string, value:number, date:Date}>} posts
+ * @param {Object} dayExerciseKeys - 日付キー→その日の種目キー
+ * @returns {Object} 日付キー→userId→合計回数
+ */
+function bucketRaidTotals(posts, dayExerciseKeys) {
+    const out = {};
+    (posts || []).forEach(post => {
+        if (!post || !post.date) return;
+        const dateKey = getDailyDateKeyJST(post.date);
+        const exerciseKey = dayExerciseKeys[dateKey];
+        if (!exerciseKey || post.exerciseType !== exerciseKey) return;
+        const v = Number(post.value) || 0;
+        if (v <= 0) return;
+        if (!out[dateKey]) out[dateKey] = {};
+        out[dateKey][post.userId] = (out[dateKey][post.userId] || 0) + v;
+    });
+    return out;
+}
+
+/**
+ * 表示名の解決（一覧に無いユーザーでも空欄にしない）
+ * @param {Object} usersMap
+ * @param {string} userId
+ * @returns {string}
+ */
+function raidUserName(usersMap, userId) {
+    const u = (usersMap || {})[userId] || {};
+    return u.userName || u.email || '名無しさん';
+}
+
+/**
+ * 1日ぶんの結果を組み立てる。
+ * 点は「その日の合計に対する貢献度」なので、参加者の点の合計は
+ * 誰か1人でも投稿していれば必ず RAID_POINTS_PER_DAY になる
+ * @param {Object} config - RAID_SCHEDULE の1件（目標は上書き適用後）
+ * @param {string|null} exerciseKey
+ * @param {Object} totals - userId→合計回数
+ * @param {Object} usersMap
+ * @param {string} myUserId
+ * @returns {Object}
+ */
+function buildRaidDayResult(config, exerciseKey, totals, usersMap, myUserId) {
+    const rows = Object.keys(totals || {})
+        .map(userId => ({ userId: userId, value: Number(totals[userId]) || 0 }))
+        .filter(r => r.value > 0);
+    const totalValue = rows.reduce((sum, r) => sum + r.value, 0);
+
+    const entries = rows.map(r => {
+        const share = totalValue > 0 ? r.value / totalValue : 0;
+        return {
+            userId: r.userId,
+            userName: raidUserName(usersMap, r.userId),
+            value: r.value,
+            share: share,
+            points: share * RAID_POINTS_PER_DAY,
+            isMe: r.userId === myUserId
+        };
+    }).sort((a, b) => b.points - a.points
+        || a.userName.localeCompare(b.userName)
+        || a.userId.localeCompare(b.userId));
+
+    return {
+        dateKey: config.dateKey,
+        day: config.day,
+        exerciseKey: exerciseKey,
+        goal: config.goal,
+        totalValue: totalValue,
+        cleared: config.goal > 0 && totalValue >= config.goal,
+        entries: entries
+    };
+}
+
+/**
+ * 日ごとの結果を足し上げて成績表にする。
+ * 同点は同順位（1,2,2,4…）。並び順は点の高い順で、
+ * 同点なら名前・IDで安定させる（どの端末でも同じ並びにするため）
+ * @param {Array<Object>} dayResults
+ * @param {Object} usersMap
+ * @param {string} myUserId
+ * @returns {Array<Object>}
+ */
+function buildRaidStandings(dayResults, usersMap, myUserId) {
+    const acc = {};
+    (dayResults || []).forEach(day => {
+        day.entries.forEach(e => {
+            if (!acc[e.userId]) {
+                acc[e.userId] = {
+                    userId: e.userId,
+                    userName: raidUserName(usersMap, e.userId),
+                    totalPoints: 0,
+                    activeDays: 0,
+                    perDay: {},
+                    rank: 0,
+                    isMe: e.userId === myUserId
+                };
+            }
+            const row = acc[e.userId];
+            row.totalPoints += e.points;
+            row.activeDays += 1;
+            row.perDay[day.dateKey] = e.points;
+        });
+    });
+
+    const list = Object.values(acc).sort((a, b) => b.totalPoints - a.totalPoints
+        || a.userName.localeCompare(b.userName)
+        || a.userId.localeCompare(b.userId));
+
+    // 同点は同順位。次の順位は人数ぶん飛ばす（競技順位）
+    let rank = 0;
+    let prev = null;
+    list.forEach((row, i) => {
+        if (prev === null || Math.abs(row.totalPoints - prev) > 1e-9) {
+            rank = i + 1;
+        }
+        prev = row.totalPoints;
+        row.rank = rank;
+    });
+    return list;
+}
+
+/**
+ * 点の表示。小数1桁（整数なら小数を出さない）
+ * @param {number} points
+ * @returns {string}
+ */
+function formatRaidPoints(points) {
+    const n = Number(points) || 0;
+    const rounded = Math.round(n * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+/**
+ * レイド期間の投稿をまとめて取り、日ごとの結果と積み上げ得点を作る。
+ * 期間ぶんを1クエリで引いて手元で日別に振り分けるので、
+ * 日数が増えても読み取りは1回のまま（複合インデックスも要らない）
+ * @param {Date} now
+ * @returns {Promise<{days: Array<Object>, standings: Array<Object>, playedDays: number}>}
+ */
+async function loadRaidScoreboard(now = new Date()) {
+    const todayKey = getDailyDateKeyJST(now);
+    // まだ来ていない日は集計しない（0点の行が並ぶだけなので）
+    const played = RAID_SCHEDULE.filter(d => d.dateKey <= todayKey);
+    if (played.length === 0) {
+        return { days: [], standings: [], playedDays: 0 };
+    }
+
+    if (!freeExercisesLoaded) {
+        await loadFreeExercises();
+    }
+
+    const overrides = await getRaidOverrides();
+    const exerciseKeyByDate = {};
+    const resolved = played.map(config => {
+        const key = resolveRaidExerciseKey(config, freeExercises, overrides.exercises);
+        if (key) exerciseKeyByDate[config.dateKey] = key;
+        return { config: applyRaidGoalOverride(config, overrides.goals), key: key };
+    });
+
+    // 期間の投稿を1クエリで取得（timestampの単一フィールド範囲検索のみ）
+    const rangeStart = getDailyBoundariesJST(played[0].dateKey).start;
+    const rangeEnd = getDailyBoundariesJST(played[played.length - 1].dateKey).end;
+    let posts = [];
+    try {
+        const snap = await db.collection('posts_free')
+            .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(rangeStart))
+            .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(rangeEnd))
+            .get();
+        posts = snap.docs.map(d => {
+            const p = d.data() || {};
+            return {
+                userId: p.userId,
+                exerciseType: p.exerciseType,
+                value: Number(p.value) || 0,
+                // timestamp未確定（serverTimestamp反映待ち）の投稿は日を決められない
+                date: p.timestamp && p.timestamp.toDate ? p.timestamp.toDate() : null
+            };
+        }).filter(p => !!p.date);
+    } catch (e) {
+        console.warn('[レイド] 得点の集計に失敗:', e);
+    }
+
+    const totalsByDay = bucketRaidTotals(posts, exerciseKeyByDate);
+
+    let usersMap = {};
+    try {
+        usersMap = await getUsersMap();
+    } catch (e) {
+        console.warn('[レイド] ユーザー一覧の取得に失敗:', e);
+    }
+    const users = Object.assign({}, usersMap);
+    const myUserId = currentUser ? currentUser.uid : '';
+    if (myUserId && !users[myUserId]) users[myUserId] = {};
+
+    const days = resolved.map(r => buildRaidDayResult(
+        r.config, r.key, totalsByDay[r.config.dateKey] || {}, users, myUserId
+    ));
+
+    return {
+        days: days.slice().reverse(),
+        standings: buildRaidStandings(days, users, myUserId),
+        playedDays: days.length
+    };
+}
+
 // ====================================================================
 // デイリーミッション機能
 // ⚠️ web/src/lib/daily-mission.ts / daily-mission-engine.ts の「ミラー」。
@@ -8028,8 +8337,10 @@ const DAILY_PEAK_BEST_RATIO = 1.0;
 let dailyMissionState = null;
 // 起動時の自動遷移を一度だけ行うためのフラグ
 let dailyMissionAutoNavDone = false;
-// メンテナンス告知のカウントダウン用インターバルID（カードが消えたら止める）
+// メンテナンス告知・入力解禁のカウントダウン用インターバルID（対象が消えたら止める）
 let raidCountdownTimer = null;
+// 積み上げ得点の集計結果キャッシュ（タブを開き直すたびに再集計しない）
+let raidScoreboardCache = null;
 
 /**
  * JSTの暦日を YYYY-MM-DD で返す
@@ -9084,17 +9395,21 @@ function renderRaidMaintenanceCard(dateKey) {
 }
 
 /**
- * メンテナンス告知のカウントダウンを1秒ごとに更新する。
- * カードが消えたら（タブ切り替え・日付変更）自動で止まる。
+ * 指定時刻までのカウントダウンを1秒ごとに更新する。
+ * 対象の要素が消えたら（タブ切り替え・日付変更）自動で止まる。
+ * 0になったら onZero を1度だけ呼ぶ（入力解禁の画面差し替え用）。
+ * @param {number} targetMs - 目標時刻（epoch ms）
+ * @param {string} elementId - 書き込む要素のID
+ * @param {Function} [onZero]
  */
-function startRaidCountdown() {
+function startRaidCountdown(targetMs, elementId = 'raid-countdown', onZero) {
     if (raidCountdownTimer) {
         clearInterval(raidCountdownTimer);
         raidCountdownTimer = null;
     }
-    const targetMs = getDailyBoundariesJST(RAID_START_DATE_KEY).start.getTime();
+    let fired = false;
     const tick = () => {
-        const el = document.getElementById('raid-countdown');
+        const el = document.getElementById(elementId);
         if (!el) {
             clearInterval(raidCountdownTimer);
             raidCountdownTimer = null;
@@ -9105,9 +9420,53 @@ function startRaidCountdown() {
         const m = Math.floor((diff % 3600000) / 60000);
         const s = Math.floor((diff % 60000) / 1000);
         el.textContent = `${h}時間${String(m).padStart(2, '0')}分${String(s).padStart(2, '0')}秒`;
+        if (diff <= 0 && !fired) {
+            fired = true;
+            clearInterval(raidCountdownTimer);
+            raidCountdownTimer = null;
+            if (typeof onZero === 'function') onZero();
+        }
     };
     tick();
     raidCountdownTimer = setInterval(tick, 1000);
+}
+
+/**
+ * レイドの投稿セクション（入力解禁前はロック表示）のHTMLを組み立てる
+ * ⚠️ web版 DailyMissionView.tsx の投稿ブロックと同じ構成にすること
+ * @param {string} dateKey
+ * @param {string} unit
+ * @returns {string} HTML
+ */
+function renderRaidPostSection(dateKey, unit) {
+    if (!isRaidInputOpen(dateKey)) {
+        return `
+            <div class="daily-mission-post raid-locked-post">
+                <h3><i class="fa-solid fa-lock"></i> 入力開始まで</h3>
+                <div class="raid-countdown-box">
+                    <span class="raid-countdown-label"><i class="fa-solid fa-clock"></i> 7:00 まで</span>
+                    <span class="raid-countdown" id="raid-open-countdown">まもなく</span>
+                </div>
+                <p class="daily-mission-note">${escapeHtml(RAID_INPUT_GATE_NOTE)}</p>
+            </div>
+        `;
+    }
+    const gateNote = isRaidInputGatedDay(dateKey)
+        ? `<p class="daily-mission-note raid-gate-note"><i class="fa-solid fa-circle-info"></i> ${escapeHtml(RAID_INPUT_GATE_NOTE)}</p>`
+        : '';
+    return `
+        <div class="daily-mission-post">
+            <h3><i class="fa-solid fa-pen-to-square"></i> 記録を投稿</h3>
+            <div class="daily-mission-input-row">
+                <input type="number" id="daily-mission-value" placeholder="${escapeHtml(unit)}数" min="1" max="10000">
+                <span class="daily-mission-unit">${escapeHtml(unit)}</span>
+                <button type="button" class="btn-primary" id="daily-mission-submit">投稿する</button>
+            </div>
+            <p class="daily-mission-note">何回かに分けてもOK。投稿するとすぐレイドの合計に加算されます（フリーモードの記録としても集計されます）。</p>
+            ${gateNote}
+            <p id="daily-mission-error" class="error-message"></p>
+        </div>
+    `;
 }
 
 /**
@@ -9212,7 +9571,7 @@ async function renderDailyMissionTab(forceRefresh = false) {
     // レイド開始前のメンテナンス日はミッションを出さず、告知だけ表示する
     if (dailyMissionState.maintenance) {
         container.innerHTML = renderRaidMaintenanceCard(dailyMissionState.dateKey);
-        startRaidCountdown();
+        startRaidCountdown(getDailyBoundariesJST(RAID_START_DATE_KEY).start.getTime());
         return;
     }
 
@@ -9233,18 +9592,18 @@ async function renderDailyMissionTab(forceRefresh = false) {
 
             ${renderRaidContributionCard(raid, unit)}
 
-            <div class="daily-mission-post">
-                <h3><i class="fa-solid fa-pen-to-square"></i> 記録を投稿</h3>
-                <div class="daily-mission-input-row">
-                    <input type="number" id="daily-mission-value" placeholder="${escapeHtml(unit)}数" min="1" max="10000">
-                    <span class="daily-mission-unit">${escapeHtml(unit)}</span>
-                    <button type="button" class="btn-primary" id="daily-mission-submit">投稿する</button>
-                </div>
-                <p class="daily-mission-note">何回かに分けてもOK。投稿するとすぐレイドの合計に加算されます（フリーモードの記録としても集計されます）。</p>
-                <p id="daily-mission-error" class="error-message"></p>
-            </div>
+            ${renderRaidPostSection(dailyMissionState.dateKey, unit)}
         `;
-        bindDailyMissionPostForm();
+        if (isRaidInputOpen(dailyMissionState.dateKey)) {
+            bindDailyMissionPostForm();
+        } else {
+            // 7:00になったら自動で入力フォームに差し替える（リロード不要）
+            startRaidCountdown(
+                getRaidInputOpenAt(dailyMissionState.dateKey).getTime(),
+                'raid-open-countdown',
+                () => renderDailyMissionTab(true)
+            );
+        }
         return;
     }
     const percent = Math.min(100, Math.round((totalValue / target) * 100));
@@ -9307,6 +9666,93 @@ async function renderDailyMissionTab(forceRefresh = false) {
 }
 
 /**
+ * 積み上げ得点タブを描画する
+ * ⚠️ web版 RaidScoreView.tsx と同じ構成にすること
+ * @param {boolean} forceRefresh - Firestoreから再取得する
+ */
+async function renderRaidScoreTab(forceRefresh = false) {
+    const container = document.getElementById('raid-score-content');
+    if (!container) return;
+
+    if (forceRefresh || !raidScoreboardCache) {
+        container.innerHTML = '<p style="text-align:center;color:#999;padding:24px;"><i class="fa-solid fa-circle-notch fa-spin"></i> 集計中...</p>';
+        try {
+            raidScoreboardCache = await loadRaidScoreboard();
+        } catch (e) {
+            console.error('[レイド] 得点の読み込みエラー:', e);
+            container.innerHTML = '<p style="text-align:center;color:#999;padding:24px;">読み込みに失敗しました。更新ボタンをお試しください。</p>';
+            return;
+        }
+    }
+
+    const board = raidScoreboardCache;
+    if (!board || board.playedDays === 0) {
+        container.innerHTML = '<p style="text-align:center;color:#999;padding:24px;"><i class="fa-solid fa-dragon"></i> レイドはまだ始まっていません。</p>';
+        return;
+    }
+
+    const maxPoints = board.standings.length > 0 ? board.standings[0].totalPoints : 0;
+    const standingsHtml = board.standings.length === 0
+        ? '<p style="text-align:center;color:#999;padding:16px;">まだ誰も投稿していません。</p>'
+        : board.standings.map(s => {
+            const width = (raidContributionRatio(s.totalPoints, maxPoints) * 100).toFixed(1);
+            const medal = s.rank === 1 ? '🥇' : s.rank === 2 ? '🥈' : s.rank === 3 ? '🥉' : '';
+            return `<li class="raid-rank-row${s.isMe ? ' is-me' : ''}">
+                <span class="raid-rank-no">${medal || s.rank}</span>
+                <span class="raid-rank-name">${escapeHtml(s.userName)}<span class="raid-rank-days">${s.activeDays}日参加</span></span>
+                <span class="raid-rank-bar"><span class="raid-rank-bar-fill" style="width:${width}%"></span></span>
+                <span class="raid-rank-pt">${formatRaidPoints(s.totalPoints)}<span class="raid-rank-pt-unit">点</span></span>
+            </li>`;
+        }).join('');
+
+    const daysHtml = board.days.map(d => {
+        const ex = d.exerciseKey ? (freeExercises[d.exerciseKey] || {}) : {};
+        const unit = guessExerciseUnit(ex.name || '');
+        const topHtml = d.entries.length === 0
+            ? '<span class="raid-day-empty">投稿なし</span>'
+            : d.entries.slice(0, 3).map(e =>
+                `<span class="raid-day-top${e.isMe ? ' is-me' : ''}">${escapeHtml(truncateLabelName(e.userName))} ${formatRaidPoints(e.points)}点</span>`
+            ).join('');
+        return `<div class="raid-day-card${d.cleared ? ' cleared' : ''}">
+            <div class="raid-day-head">
+                <span class="raid-day-label">Day ${d.day} <span class="raid-day-date">${escapeHtml(formatDailyDateLabel(d.dateKey))}</span></span>
+                <span class="raid-day-status">${d.cleared ? '<i class="fa-solid fa-circle-check"></i> 討伐' : `${Math.min(100, Math.round(d.goal > 0 ? d.totalValue / d.goal * 100 : 0))}%`}</span>
+            </div>
+            <div class="raid-day-body">
+                <span class="raid-day-ex"><i class="fa-solid ${escapeHtml(ex.icon || 'fa-dumbbell')}"></i> ${escapeHtml(ex.name || '種目未定')}</span>
+                <span class="raid-day-total">${formatDailyCount(d.totalValue)} / ${formatDailyCount(d.goal)}${escapeHtml(unit)}</span>
+            </div>
+            <div class="raid-day-tops">${topHtml}</div>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="raid-score-lead">
+            <span class="raid-lead-badge"><i class="fa-solid fa-dragon"></i> ${escapeHtml(RAID_MODE_LABEL)}</span>
+            その日の合計に占める貢献度（％）をそのまま点にして、開催期間ぶん積み上げます。
+            1日の持ち点は${RAID_POINTS_PER_DAY}点で、参加した人で分け合う形です。
+            たくさんやった人ほど点は増えますが、少人数の日に参加するほど1回あたりの重みも大きくなります。
+        </div>
+
+        <div class="daily-dist-card">
+            <div class="daily-dist-head">
+                <span><i class="fa-solid fa-ranking-star"></i> 積み上げ得点</span>
+                <span class="daily-dist-count">${board.playedDays}/${RAID_TOTAL_DAYS} 日終了</span>
+            </div>
+            <ul class="raid-rank-list">${standingsHtml}</ul>
+        </div>
+
+        <div class="daily-dist-card">
+            <div class="daily-dist-head">
+                <span><i class="fa-solid fa-calendar-day"></i> 日ごとの結果</span>
+            </div>
+            <div class="raid-day-list">${daysHtml}</div>
+            <p class="daily-dist-note">各日の上位3人と、その日の点を表示しています。</p>
+        </div>
+    `;
+}
+
+/**
  * デイリーミッション（レイド含む）の投稿フォームにハンドラを付ける
  */
 function bindDailyMissionPostForm() {
@@ -9336,6 +9782,13 @@ async function submitDailyMissionPost() {
         return;
     }
 
+    // 画面を開いたまま日付をまたいだ場合などに備え、送信時にも解禁を確認する
+    if (dailyMissionState.raid && !isRaidInputOpen(dailyMissionState.dateKey)) {
+        errorEl.textContent = 'レイドの入力は7:00からです。';
+        renderDailyMissionTab(false);
+        return;
+    }
+
     try {
         await db.collection('posts_free').add({
             userId: currentUser.uid,
@@ -9347,6 +9800,8 @@ async function submitDailyMissionPost() {
             comments: []
         });
 
+        // 積み上げ得点も投稿で変わるので破棄する
+        raidScoreboardCache = null;
         // posts_free は free/weekly の両モードが共有するため両方のキャッシュを破棄
         ['free', 'weekly'].forEach(mode => {
             rankingCache[mode] = null;
@@ -9417,7 +9872,7 @@ function switchToDailyMissionTab() {
  */
 async function maybeOpenDailyMissionOnStart() {
     if (dailyMissionAutoNavDone) return;
-    if (currentMode !== 'free' && currentMode !== 'weekly') return;
+    if (currentMode !== 'free' && currentMode !== 'weekly' && currentMode !== 'raid') return;
     dailyMissionAutoNavDone = true;
 
     try {

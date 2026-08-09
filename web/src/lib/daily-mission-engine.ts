@@ -32,14 +32,20 @@ import {
 } from './daily-mission';
 import {
   applyRaidGoalOverride,
+  bucketRaidTotals,
+  buildRaidDayResult,
   buildRaidProgress,
+  buildRaidStandings,
   getRaidDayConfig,
   isRaidMaintenanceDay,
   resolveRaidExerciseKey,
   sanitizeRaidExerciseOverrides,
   sanitizeRaidGoalOverrides,
   RAID_CONFIG_DOC,
+  RAID_SCHEDULE,
+  type RaidDayResult,
   type RaidOverrides,
+  type RaidStanding,
 } from './raid-mode';
 import type { FreeExerciseMap, Post, UserData } from './types';
 
@@ -421,5 +427,101 @@ export async function loadDailyMissionState(
     participants,
     raid: null,
     maintenance: false,
+  };
+}
+
+// ---------------------------------------------------------------------
+// レイドの積み上げ得点（レイドモードの成績表）
+// ---------------------------------------------------------------------
+
+export interface RaidScoreboard {
+  /** 開催済みの日だけ（今日を含む）。新しい日が先頭 */
+  days: RaidDayResult[];
+  standings: RaidStanding[];
+  /** 開催済み日数 */
+  playedDays: number;
+}
+
+/**
+ * レイド期間の投稿をまとめて取り、日ごとの結果と積み上げ得点を作る。
+ * 期間ぶんを1クエリで引いて手元で日別に振り分けるので、
+ * 日数が増えても読み取りは1回のまま（複合インデックスも要らない）。
+ * app.js: loadRaidScoreboard
+ */
+export async function loadRaidScoreboard(
+  userId: string,
+  freeExercises: FreeExerciseMap,
+  usersMap: Record<string, UserData> = {},
+  now: Date = new Date(),
+): Promise<RaidScoreboard> {
+  const todayKey = getDailyDateKeyJST(now);
+  // まだ来ていない日は集計しない（0点の行が並ぶだけなので）
+  const played = RAID_SCHEDULE.filter((d) => d.dateKey <= todayKey);
+  if (played.length === 0) {
+    return { days: [], standings: [], playedDays: 0 };
+  }
+
+  const overrides = await getRaidOverrides();
+  const exerciseKeyByDate: Record<string, string> = {};
+  const resolved = played.map((config) => {
+    const key = resolveRaidExerciseKey(
+      config,
+      freeExercises,
+      overrides.exercises,
+    );
+    if (key) exerciseKeyByDate[config.dateKey] = key;
+    return { config: applyRaidGoalOverride(config, overrides.goals), key };
+  });
+
+  // 期間の投稿を1クエリで取得（timestamp の単一フィールド範囲検索のみ）
+  const rangeStart = getDailyBoundariesJST(played[0].dateKey).start;
+  const rangeEnd = getDailyBoundariesJST(played[played.length - 1].dateKey).end;
+  let posts: Array<{
+    userId: string;
+    exerciseType: string;
+    value: number;
+    date: Date;
+  }> = [];
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, POSTS),
+        where('timestamp', '>=', Timestamp.fromDate(rangeStart)),
+        where('timestamp', '<', Timestamp.fromDate(rangeEnd)),
+      ),
+    );
+    posts = snap.docs
+      .map((d) => d.data() as Post)
+      .map((p) => ({
+        userId: p.userId,
+        exerciseType: p.exerciseType,
+        value: Number(p.value) || 0,
+        // timestamp 未確定（serverTimestamp 反映待ち）の投稿は日を決められない
+        date: p.timestamp?.toDate?.() as Date,
+      }))
+      .filter((p) => !!p.date);
+  } catch (e) {
+    console.warn('[レイド] 得点の集計に失敗:', e);
+  }
+
+  const totalsByDay = bucketRaidTotals(posts, exerciseKeyByDate);
+
+  const users: Record<string, UserData> = { ...usersMap };
+  if (!users[userId]) users[userId] = {};
+
+  const days = resolved.map(({ config, key }) =>
+    buildRaidDayResult(
+      config,
+      key,
+      totalsByDay[config.dateKey] || {},
+      users,
+      userId,
+    ),
+  );
+
+  return {
+    days: [...days].reverse(),
+    standings: buildRaidStandings(days, users, userId),
+    playedDays: days.length,
   };
 }

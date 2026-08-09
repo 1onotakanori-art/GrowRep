@@ -12,6 +12,7 @@ import RankingView from '../views/RankingView';
 import MyPageView from '../views/MyPageView';
 import ChallengeView from '../views/ChallengeView';
 import ExercisesView from '../views/ExercisesView';
+import RaidScoreView from '../views/RaidScoreView';
 import styles from './AppShell.module.css';
 
 function ShellInner() {
@@ -40,7 +41,13 @@ function ShellInner() {
         {nav === 'post' && <PostView />}
         {nav === 'ranking' && <RankingView />}
         {nav === 'center' &&
-          (mode === 'weekly' ? <ChallengeView /> : <ExercisesView />)}
+          (mode === 'weekly' ? (
+            <ChallengeView />
+          ) : mode === 'raid' ? (
+            <RaidScoreView />
+          ) : (
+            <ExercisesView />
+          ))}
         {nav === 'mypage' && (
           <MyPageView onOpenProfile={() => setProfileOpen(true)} />
         )}

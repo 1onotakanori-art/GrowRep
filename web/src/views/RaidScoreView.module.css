@@ -1,0 +1,226 @@
+.count {
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.lead {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.7;
+  margin-bottom: var(--sp-4);
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, #7c3aed, #db2777);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-4) 10px;
+  margin-bottom: var(--sp-4);
+}
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.cardHead i {
+  color: var(--accent);
+  margin-right: 5px;
+}
+.empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.note {
+  margin-top: 8px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.5;
+}
+
+/* 総合ランキング */
+.rankList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 4px;
+  list-style: none;
+}
+.rankRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.rankMe {
+  font-weight: 800;
+  color: var(--text);
+}
+.rankNo {
+  flex: 0 0 24px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-3);
+}
+.rankMe .rankNo {
+  color: #7c3aed;
+}
+.rankName {
+  flex: 0 0 30%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rankDays {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+.rankBarWrap {
+  flex: 1;
+  min-width: 0;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.rankBar {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, #7c3aed, #db2777);
+  transition: width 0.4s ease;
+}
+.rankPt {
+  flex: 0 0 auto;
+  min-width: 52px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 800;
+  color: #7c3aed;
+  font-variant-numeric: tabular-nums;
+}
+.rankPtUnit {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-3);
+  margin-left: 1px;
+}
+
+/* 日ごとの結果 */
+.dayList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 4px;
+}
+.dayCard {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--border);
+}
+.dayDone {
+  border-left-color: var(--success);
+}
+.dayHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.dayLabel {
+  font-size: 12px;
+  font-weight: 800;
+}
+.dayDate {
+  font-weight: 600;
+  color: var(--text-3);
+  margin-left: 3px;
+}
+.dayStatus {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.dayDone .dayStatus {
+  color: var(--success);
+}
+.dayBody {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.dayEx {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dayEx i {
+  color: #7c3aed;
+  margin-right: 4px;
+}
+.dayTotal {
+  white-space: nowrap;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.dayTops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+.dayTop {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.dayTopMe {
+  border-color: #c4b5fd;
+  background: rgba(124, 58, 237, 0.12);
+  color: #7c3aed;
+}
+.dayEmpty {
+  font-size: 10px;
+  color: var(--text-3);
+}

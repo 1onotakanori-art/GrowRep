@@ -8,7 +8,11 @@
 // 通常のデイリーミッション（一人ひとり別の目標回数を抽選）とは違い、
 // 個人目標の抽選は行わず、チーム合計だけを見る。
 // =====================================================================
-import { getDailyDateKeyJST, isDailyActiveUser } from './daily-mission';
+import {
+  getDailyBoundariesJST,
+  getDailyDateKeyJST,
+  isDailyActiveUser,
+} from './daily-mission';
 import type { FreeExerciseMap } from './types';
 
 /** バナーやバッジに出す催しの名前。 */
@@ -204,6 +208,57 @@ export const RAID_SCHEDULE: RaidDayConfig[] = [
 
 /** レイド全体の日数。 */
 export const RAID_TOTAL_DAYS = RAID_SCHEDULE.length;
+
+// ---------------------------------------------------------------------
+// 0時発表 → 7時入力開始
+// ---------------------------------------------------------------------
+
+/** 入力を受け付け始める時刻（JST）。それまでは種目だけ見えている。 */
+export const RAID_INPUT_OPEN_HOUR_JST = 7;
+
+/**
+ * この日以降は「0時発表・7時入力開始」で運用する。
+ * 初日（8/9）はすでに走り出しているので、途中で入力を止めない。
+ */
+export const RAID_INPUT_GATE_FROM_DATE_KEY = '2026-08-10';
+
+/** なぜ発表と入力開始をずらすのか。画面にそのまま出す説明。 */
+export const RAID_INPUT_GATE_NOTE =
+  '種目は0:00に発表、入力できるのは7:00からです。前の晩のうちに今日なにをやるか分かるようにしつつ、'
+  + '深夜のうちに先に積んだ人が有利にならないよう、朝いちで全員が同じスタートラインに立つためです。';
+
+/** その日が「7時から入力」の対象か（初日は対象外）。 */
+export function isRaidInputGatedDay(dateKey: string): boolean {
+  return dateKey >= RAID_INPUT_GATE_FROM_DATE_KEY;
+}
+
+/** その日の入力開始時刻（7:00 JST）を UTC の Date で返す。 */
+export function getRaidInputOpenAt(dateKey: string): Date {
+  const { start } = getDailyBoundariesJST(dateKey);
+  return new Date(start.getTime() + RAID_INPUT_OPEN_HOUR_JST * 60 * 60 * 1000);
+}
+
+/**
+ * いま入力を受け付けてよいか。
+ * ゲート対象外の日（初日）は常に true。
+ */
+export function isRaidInputOpen(
+  dateKey: string,
+  now: Date = new Date(),
+): boolean {
+  if (!isRaidInputGatedDay(dateKey)) return true;
+  return now.getTime() >= getRaidInputOpenAt(dateKey).getTime();
+}
+
+// ---------------------------------------------------------------------
+// 貢献度の点数化
+// ---------------------------------------------------------------------
+
+/**
+ * 1日ぶんの持ち点。その日の合計に対する貢献度（％）をそのまま点にするので、
+ * 参加者の点を全部足すとちょうどこの数になる（誰も投稿しなければ0）。
+ */
+export const RAID_POINTS_PER_DAY = 100;
 
 /** その日がレイド開始前のメンテナンス日か。 */
 export function isRaidMaintenanceDay(dateKey: string): boolean {
@@ -429,4 +484,194 @@ export function buildRaidProgress({
 export function raidContributionRatio(value: number, maxValue: number): number {
   if (!(maxValue > 0)) return 0;
   return Math.min(1, Math.max(0, value / maxValue));
+}
+
+// ---------------------------------------------------------------------
+// 週の積み上げ得点（レイドモードの成績表）
+// ---------------------------------------------------------------------
+
+/** 集計に渡す投稿。Firestore の型に依存しないよう Date で受ける。 */
+export interface RaidPost {
+  userId: string;
+  exerciseType: string;
+  value: number;
+  /** 投稿時刻。JST の暦日でどの日のぶんか決める */
+  date: Date;
+}
+
+export interface RaidDayEntry {
+  userId: string;
+  userName: string;
+  /** その日の合計回数 */
+  value: number;
+  /** その日の全体に占める割合（0〜1） */
+  share: number;
+  /** 貢献度をそのまま点にしたもの（share × RAID_POINTS_PER_DAY） */
+  points: number;
+  isMe: boolean;
+}
+
+export interface RaidDayResult {
+  dateKey: string;
+  day: number;
+  /** その日の種目。引き当てられなければ null（レイドを行わない日） */
+  exerciseKey: string | null;
+  goal: number;
+  totalValue: number;
+  cleared: boolean;
+  /** 点の高い順。0回の人は含めない（成績表なので参加者だけ並べる） */
+  entries: RaidDayEntry[];
+}
+
+export interface RaidStanding {
+  userId: string;
+  userName: string;
+  /** 期間中の合計点 */
+  totalPoints: number;
+  /** 1回以上投稿した日数 */
+  activeDays: number;
+  /** 日付キー → その日の点（0点の日は入らない） */
+  perDay: Record<string, number>;
+  /** 同点は同順位（競技順位） */
+  rank: number;
+  isMe: boolean;
+}
+
+/**
+ * 投稿を「レイドの日 × ユーザー」で合計する。
+ * その日の種目に一致する投稿だけを数える（種目が決まっていない日は空）。
+ * @param dayExerciseKeys 日付キー → その日の種目キー
+ * @returns 日付キー → userId → 合計回数
+ */
+export function bucketRaidTotals(
+  posts: RaidPost[],
+  dayExerciseKeys: Record<string, string>,
+): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  (posts || []).forEach((post) => {
+    if (!post || !post.date) return;
+    const dateKey = getDailyDateKeyJST(post.date);
+    const exerciseKey = dayExerciseKeys[dateKey];
+    if (!exerciseKey || post.exerciseType !== exerciseKey) return;
+    const v = Number(post.value) || 0;
+    if (v <= 0) return;
+    if (!out[dateKey]) out[dateKey] = {};
+    out[dateKey][post.userId] = (out[dateKey][post.userId] || 0) + v;
+  });
+  return out;
+}
+
+/** 表示名の解決（一覧に無いユーザーでも空欄にしない）。 */
+function raidUserName(
+  usersMap: Record<string, { userName?: string; email?: string }>,
+  userId: string,
+): string {
+  const u = (usersMap || {})[userId] || {};
+  return u.userName || u.email || '名無しさん';
+}
+
+/**
+ * 1日ぶんの結果を組み立てる。
+ * 点は「その日の合計に対する貢献度」なので、参加者の点の合計は
+ * 誰か1人でも投稿していれば必ず RAID_POINTS_PER_DAY になる。
+ */
+export function buildRaidDayResult(
+  config: RaidDayConfig,
+  exerciseKey: string | null,
+  totals: Record<string, number>,
+  usersMap: Record<string, { userName?: string; email?: string }>,
+  myUserId: string,
+): RaidDayResult {
+  const rows = Object.keys(totals || {})
+    .map((userId) => ({ userId, value: Number(totals[userId]) || 0 }))
+    .filter((r) => r.value > 0);
+  const totalValue = rows.reduce((sum, r) => sum + r.value, 0);
+
+  const entries: RaidDayEntry[] = rows
+    .map((r) => {
+      const share = totalValue > 0 ? r.value / totalValue : 0;
+      return {
+        userId: r.userId,
+        userName: raidUserName(usersMap, r.userId),
+        value: r.value,
+        share,
+        points: share * RAID_POINTS_PER_DAY,
+        isMe: r.userId === myUserId,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.points - a.points ||
+        a.userName.localeCompare(b.userName) ||
+        a.userId.localeCompare(b.userId),
+    );
+
+  return {
+    dateKey: config.dateKey,
+    day: config.day,
+    exerciseKey,
+    goal: config.goal,
+    totalValue,
+    cleared: config.goal > 0 && totalValue >= config.goal,
+    entries,
+  };
+}
+
+/**
+ * 日ごとの結果を足し上げて成績表にする。
+ * 同点は同順位（1,2,2,4…）。並び順は点の高い順で、
+ * 同点なら名前・IDで安定させる（どの端末でも同じ並びにするため）。
+ */
+export function buildRaidStandings(
+  dayResults: RaidDayResult[],
+  usersMap: Record<string, { userName?: string; email?: string }>,
+  myUserId: string,
+): RaidStanding[] {
+  const acc: Record<string, RaidStanding> = {};
+
+  (dayResults || []).forEach((day) => {
+    day.entries.forEach((e) => {
+      if (!acc[e.userId]) {
+        acc[e.userId] = {
+          userId: e.userId,
+          userName: raidUserName(usersMap, e.userId),
+          totalPoints: 0,
+          activeDays: 0,
+          perDay: {},
+          rank: 0,
+          isMe: e.userId === myUserId,
+        };
+      }
+      const row = acc[e.userId];
+      row.totalPoints += e.points;
+      row.activeDays += 1;
+      row.perDay[day.dateKey] = e.points;
+    });
+  });
+
+  const list = Object.values(acc).sort(
+    (a, b) =>
+      b.totalPoints - a.totalPoints ||
+      a.userName.localeCompare(b.userName) ||
+      a.userId.localeCompare(b.userId),
+  );
+
+  // 同点は同順位。次の順位は人数ぶん飛ばす（競技順位）
+  let rank = 0;
+  let prev: number | null = null;
+  list.forEach((row, i) => {
+    if (prev === null || Math.abs(row.totalPoints - prev) > 1e-9) {
+      rank = i + 1;
+    }
+    prev = row.totalPoints;
+    row.rank = rank;
+  });
+  return list;
+}
+
+/** 点の表示。小数1桁（整数なら小数を出さない）。 */
+export function formatRaidPoints(points: number): string {
+  const n = Number(points) || 0;
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }

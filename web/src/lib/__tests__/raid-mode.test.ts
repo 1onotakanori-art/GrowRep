@@ -12,8 +12,17 @@ import {
   getRaidDayConfig,
   isRaidMaintenanceDay,
   isWeeklyPausedWeekStart,
+  RAID_INPUT_GATE_FROM_DATE_KEY,
+  RAID_POINTS_PER_DAY,
   RAID_TAG,
+  bucketRaidTotals,
+  buildRaidDayResult,
+  buildRaidStandings,
+  formatRaidPoints,
+  getRaidInputOpenAt,
   hasRaidTag,
+  isRaidInputGatedDay,
+  isRaidInputOpen,
   raidContributionRatio,
   resolveRaidExercise,
   resolveRaidExerciseKey,
@@ -463,5 +472,165 @@ describe('raidContributionRatio', () => {
     expect(raidContributionRatio(100, 100)).toBe(1);
     expect(raidContributionRatio(150, 100)).toBe(1);
     expect(raidContributionRatio(10, 0)).toBe(0);
+  });
+});
+
+describe('0時発表 → 7時入力開始', () => {
+  it('初日はゲート対象外（走り出しているので途中で止めない）', () => {
+    expect(isRaidInputGatedDay('2026-08-09')).toBe(false);
+    expect(isRaidInputGatedDay(RAID_INPUT_GATE_FROM_DATE_KEY)).toBe(true);
+    expect(isRaidInputGatedDay('2026-08-16')).toBe(true);
+  });
+
+  it('入力開始は JST 7:00（= UTC 22:00 前日）', () => {
+    expect(getRaidInputOpenAt('2026-08-10').toISOString()).toBe(
+      '2026-08-09T22:00:00.000Z',
+    );
+  });
+
+  it('初日は時刻によらず常に入力できる', () => {
+    expect(isRaidInputOpen('2026-08-09', new Date('2026-08-08T15:00:00Z'))).toBe(
+      true,
+    );
+  });
+
+  it('ゲート対象日は7:00をまたぐと開く', () => {
+    // JST 6:59:59（= UTC 21:59:59 前日）
+    expect(
+      isRaidInputOpen('2026-08-10', new Date('2026-08-09T21:59:59Z')),
+    ).toBe(false);
+    // JST 7:00:00 ちょうど
+    expect(
+      isRaidInputOpen('2026-08-10', new Date('2026-08-09T22:00:00Z')),
+    ).toBe(true);
+    // JST 12:00
+    expect(
+      isRaidInputOpen('2026-08-10', new Date('2026-08-10T03:00:00Z')),
+    ).toBe(true);
+  });
+});
+
+describe('積み上げ得点', () => {
+  const USERS = {
+    u1: { userName: 'あ' },
+    u2: { userName: 'い' },
+    u3: { userName: 'う' },
+  };
+  const day1 = RAID_SCHEDULE[0]; // 2026-08-09 / goal 1000
+  const day2 = RAID_SCHEDULE[1]; // 2026-08-10 / goal 1500
+
+  describe('bucketRaidTotals', () => {
+    const keys = { '2026-08-09': 'ex_a', '2026-08-10': 'ex_b' };
+
+    it('日ごと・ユーザーごとに、その日の種目だけ足す', () => {
+      const totals = bucketRaidTotals(
+        [
+          { userId: 'u1', exerciseType: 'ex_a', value: 30, date: new Date('2026-08-09T03:00:00Z') },
+          { userId: 'u1', exerciseType: 'ex_a', value: 20, date: new Date('2026-08-09T09:00:00Z') },
+          { userId: 'u2', exerciseType: 'ex_a', value: 50, date: new Date('2026-08-09T09:00:00Z') },
+          // その日の種目ではない → 数えない
+          { userId: 'u1', exerciseType: 'ex_b', value: 99, date: new Date('2026-08-09T09:00:00Z') },
+          { userId: 'u1', exerciseType: 'ex_b', value: 10, date: new Date('2026-08-10T03:00:00Z') },
+        ],
+        keys,
+      );
+      expect(totals['2026-08-09']).toEqual({ u1: 50, u2: 50 });
+      expect(totals['2026-08-10']).toEqual({ u1: 10 });
+    });
+
+    it('JSTの日境界で振り分ける（UTC 15:00 = 翌日 0:00 JST）', () => {
+      const totals = bucketRaidTotals(
+        [
+          { userId: 'u1', exerciseType: 'ex_a', value: 5, date: new Date('2026-08-09T14:59:59Z') },
+          { userId: 'u1', exerciseType: 'ex_b', value: 7, date: new Date('2026-08-09T15:00:00Z') },
+        ],
+        keys,
+      );
+      expect(totals['2026-08-09']).toEqual({ u1: 5 });
+      expect(totals['2026-08-10']).toEqual({ u1: 7 });
+    });
+
+    it('0以下・日程外・種目未定の日は無視する', () => {
+      const totals = bucketRaidTotals(
+        [
+          { userId: 'u1', exerciseType: 'ex_a', value: 0, date: new Date('2026-08-09T03:00:00Z') },
+          { userId: 'u1', exerciseType: 'ex_a', value: -3, date: new Date('2026-08-09T03:00:00Z') },
+          { userId: 'u1', exerciseType: 'ex_c', value: 9, date: new Date('2026-08-11T03:00:00Z') },
+        ],
+        keys,
+      );
+      expect(totals).toEqual({});
+    });
+  });
+
+  describe('buildRaidDayResult', () => {
+    it('貢献度をそのまま点にし、参加者の点の合計は1日の持ち点になる', () => {
+      const r = buildRaidDayResult(day1, 'ex_a', { u1: 250, u2: 750 }, USERS, 'u1');
+      expect(r.totalValue).toBe(1000);
+      expect(r.cleared).toBe(true);
+      const sum = r.entries.reduce((s, e) => s + e.points, 0);
+      expect(sum).toBeCloseTo(RAID_POINTS_PER_DAY, 10);
+      expect(r.entries[0].userId).toBe('u2');
+      expect(r.entries[0].points).toBeCloseTo(75, 10);
+      expect(r.entries[1].points).toBeCloseTo(25, 10);
+      expect(r.entries[1].isMe).toBe(true);
+    });
+
+    it('0回の人は成績表に並べない', () => {
+      const r = buildRaidDayResult(day1, 'ex_a', { u1: 10, u2: 0 }, USERS, 'u1');
+      expect(r.entries.map((e) => e.userId)).toEqual(['u1']);
+      expect(r.entries[0].points).toBeCloseTo(100, 10);
+    });
+
+    it('誰も投稿していない日は空・未討伐', () => {
+      const r = buildRaidDayResult(day1, 'ex_a', {}, USERS, 'u1');
+      expect(r.entries).toEqual([]);
+      expect(r.totalValue).toBe(0);
+      expect(r.cleared).toBe(false);
+    });
+  });
+
+  describe('buildRaidStandings', () => {
+    it('日ごとの点を足し上げ、参加日数も数える', () => {
+      const d1 = buildRaidDayResult(day1, 'ex_a', { u1: 250, u2: 750 }, USERS, 'u1');
+      const d2 = buildRaidDayResult(day2, 'ex_b', { u1: 900, u3: 100 }, USERS, 'u1');
+      const s = buildRaidStandings([d1, d2], USERS, 'u1');
+
+      const byId = Object.fromEntries(s.map((r) => [r.userId, r]));
+      expect(byId.u1.totalPoints).toBeCloseTo(25 + 90, 10);
+      expect(byId.u1.activeDays).toBe(2);
+      expect(byId.u2.totalPoints).toBeCloseTo(75, 10);
+      expect(byId.u2.activeDays).toBe(1);
+      expect(byId.u3.totalPoints).toBeCloseTo(10, 10);
+      expect(byId.u1.isMe).toBe(true);
+      expect(byId.u1.perDay['2026-08-09']).toBeCloseTo(25, 10);
+    });
+
+    it('点の高い順に並び、順位が入る', () => {
+      const d1 = buildRaidDayResult(day1, 'ex_a', { u1: 250, u2: 750 }, USERS, 'u1');
+      const d2 = buildRaidDayResult(day2, 'ex_b', { u1: 900, u3: 100 }, USERS, 'u1');
+      const s = buildRaidStandings([d1, d2], USERS, 'u1');
+      expect(s.map((r) => r.userId)).toEqual(['u1', 'u2', 'u3']);
+      expect(s.map((r) => r.rank)).toEqual([1, 2, 3]);
+    });
+
+    it('同点は同順位で、次の順位は人数ぶん飛ぶ', () => {
+      const d = buildRaidDayResult(day1, 'ex_a', { u1: 50, u2: 50, u3: 10 }, USERS, 'u1');
+      const s = buildRaidStandings([d], USERS, 'u1');
+      expect(s.map((r) => r.rank)).toEqual([1, 1, 3]);
+    });
+
+    it('投稿が無ければ空', () => {
+      expect(buildRaidStandings([], USERS, 'u1')).toEqual([]);
+    });
+  });
+
+  describe('formatRaidPoints', () => {
+    it('整数は小数を出さず、端数は1桁', () => {
+      expect(formatRaidPoints(25)).toBe('25');
+      expect(formatRaidPoints(33.333)).toBe('33.3');
+      expect(formatRaidPoints(66.666)).toBe('66.7');
+      expect(formatRaidPoints(0)).toBe('0');
+    });
   });
 });
