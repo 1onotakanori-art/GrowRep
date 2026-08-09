@@ -4281,6 +4281,30 @@ body.dark-mode .daily-team-card.cleared .daily-team-total-value { color: #43e97b
 .raid-card .daily-team-total {
     padding-top: 4px;
 }
+/* 目標が人数で決まることの説明 */
+.raid-goal-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin-bottom: 16px;
+    padding: 9px 11px;
+    border-radius: 8px;
+    background: #f7f8fa;
+    font-size: 11px;
+    color: #666;
+    line-height: 1.6;
+}
+.raid-goal-note i {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: #7c3aed;
+}
+.raid-day-formula {
+    font-weight: 600;
+    color: #aaa;
+}
+body.dark-mode .raid-goal-note { background: #1f2937; color: #bbb; }
+body.dark-mode .raid-goal-note i { color: #a78bfa; }
 /* 討伐完了したら合計も緑に（緑ルールは .daily-team-card 側にしか無いため） */
 .raid-card.cleared .daily-team-total-value {
     color: #38c172;

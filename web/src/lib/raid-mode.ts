@@ -52,10 +52,12 @@ export type RaidGoalOverrides = Record<string, number>;
 /** 日付キー → 種目キー。管理画面で種目を明示指定した日だけが入る。 */
 export type RaidExerciseOverrides = Record<string, string>;
 
-/** 管理画面で設定できるレイドの上書き一式。 */
+/** レイドの設定一式（管理画面での上書き＋開催中に記録した人数）。 */
 export interface RaidOverrides {
   goals: RaidGoalOverrides;
   exercises: RaidExerciseOverrides;
+  /** 日付キー → その日のログイン人数（アプリが自動で記録する） */
+  memberCounts: RaidMemberCounts;
 }
 
 /** レイド1日ぶんの設定。 */
@@ -70,12 +72,103 @@ export interface RaidDayConfig {
    * キー直指定ではなく名前で引き当てる。
    */
   nameHints: string[];
-  /** その日みんなで積み上げる合計の目標（上書き適用後の実効値）。 */
-  goal: number;
+  /**
+   * その日みんなで積み上げる合計の固定目標。
+   * perPerson を使う日（2日目以降）は持たない。
+   */
+  goal?: number;
+  /**
+   * 1人あたりの目標回数。その日のログイン人数を掛けたものが当日の目標になる。
+   * 人が集まるほど目標も上がる＝集まった価値がそのまま数字に出るようにするため。
+   */
+  perPerson?: number;
   /** カードに出す一言。 */
   label: string;
-  /** goal がどこから来たか。applyRaidGoalOverride を通したときだけ入る。 */
+  /** 目標の数字がどこから来たか。applyRaidGoalOverride を通したときだけ入る。 */
   goalSource?: RaidGoalSource;
+}
+
+/**
+ * その日の設定値（固定目標なら goal、人数割なら perPerson）。
+ * 管理画面はこの数字を編集し、上書きも同じ意味で保存する。
+ */
+export function raidConfiguredValue(config: RaidDayConfig): number {
+  return (config.perPerson != null ? config.perPerson : config.goal) || 0;
+}
+
+/** その日が「ログイン人数 × 1人あたり」で目標を出す日か。 */
+export function isPerPersonRaidDay(config: RaidDayConfig): boolean {
+  return config.perPerson != null;
+}
+
+/**
+ * その日のレイドボスの体力（＝みんなで積み上げる目標）。
+ * 人数割の日は「前日にログインした人数 × 1人あたり」。人数が 0 でも
+ * 1人ぶんは残す（体力 0 で即討伐、という見え方を避けるため）。
+ */
+export function resolveRaidGoal(
+  config: RaidDayConfig,
+  memberCount: number,
+): number {
+  if (config.perPerson != null) {
+    return config.perPerson * Math.max(1, Math.round(memberCount) || 0);
+  }
+  return config.goal || 0;
+}
+
+/** 前日の JST 日付キー。 */
+export function getPreviousDateKey(dateKey: string): string {
+  const { start } = getDailyBoundariesJST(dateKey);
+  // 当日 0:00 JST の 1ms 前 ＝ 前日 23:59:59.999 JST
+  return getDailyDateKeyJST(new Date(start.getTime() - 1));
+}
+
+/** 人数がどこから来たか。recorded = 当日に記録した実数 / estimated = 概算 */
+export type RaidMemberCountSource = 'recorded' | 'estimated';
+
+export interface ResolvedRaidMemberCount {
+  count: number;
+  /** どの日の人数か（＝前日） */
+  dateKey: string;
+  source: RaidMemberCountSource;
+}
+
+/** sinceDateKey 以降にアプリを開いた形跡があるユーザー数。 */
+export function countActiveUsersSince(
+  usersMap: Record<string, { lastActiveDateKey?: string }>,
+  sinceDateKey: string,
+): number {
+  return Object.values(usersMap || {}).filter(
+    (u) => !!u && !!u.lastActiveDateKey && u.lastActiveDateKey >= sinceDateKey,
+  ).length;
+}
+
+/**
+ * ボスの体力を決める人数（＝前日のログイン人数）を解決する。
+ *
+ * 当日のログイン人数だと日中ずっと体力が動いて数字が定まらないので、
+ * 前日ぶんを使って 0:00 の時点で確定させる。
+ *
+ * 前日の人数は開催中に記録したものを使う（`users.lastActiveDateKey` は
+ * 最後に開いた日しか持たないため、後から「前日ログインしていた人」を
+ * 数え直すことはできない）。記録が無い日は「前日以降にアプリを開いた人数」で
+ * 概算する——前日に開いた人はたいてい当日以降も開くので近い数になる。
+ */
+export function resolveRaidMemberCount(
+  dateKey: string,
+  memberCounts: RaidMemberCounts | null | undefined,
+  usersMap: Record<string, { lastActiveDateKey?: string }>,
+): ResolvedRaidMemberCount {
+  const prevKey = getPreviousDateKey(dateKey);
+  const recorded = (memberCounts || {})[prevKey];
+  if (typeof recorded === 'number' && recorded > 0) {
+    return { count: recorded, dateKey: prevKey, source: 'recorded' };
+  }
+  return {
+    count: Math.max(1, countActiveUsersSince(usersMap, prevKey)),
+    dateKey: prevKey,
+    source: 'estimated',
+  };
 }
 
 /** 目標回数として受け付ける範囲。桁を打ち間違えても壊れないように上限を置く。 */
@@ -134,11 +227,43 @@ export function applyRaidGoalOverride(
   if (typeof override !== 'number') {
     return { ...config, goalSource: 'default' };
   }
+  // 上書きの数字は「その日の設定値」＝人数割の日なら1人あたり、
+  // 固定の日なら合計。どちらを差し替えるかは日程表側の形で決まる
+  if (config.perPerson != null) {
+    return { ...config, perPerson: override, goalSource: 'override' };
+  }
   return { ...config, goal: override, goalSource: 'override' };
 }
 
 /**
- * レイドの日程表。
+ * その日のログイン人数（＝目標の掛け算に使った人数）の記録。
+ * 過去の日はもう「その日ログインしていた人」を復元できないので、
+ * 開催中に見えた最大人数を保存しておき、成績表ではそれを使う。
+ */
+export type RaidMemberCounts = Record<string, number>;
+
+/** 保存済みの人数を、日程表にある日・妥当な整数だけに絞る。 */
+export function sanitizeRaidMemberCounts(raw: unknown): RaidMemberCounts {
+  const out: RaidMemberCounts = {};
+  if (!raw || typeof raw !== 'object') return out;
+  const scheduled = new Set(RAID_SCHEDULE.map((d) => d.dateKey));
+  Object.entries(raw as Record<string, unknown>).forEach(([dateKey, value]) => {
+    if (!scheduled.has(dateKey)) return;
+    const n = Number(value);
+    if (!isFinite(n)) return;
+    const count = Math.round(n);
+    if (count < 1 || count > 1000) return;
+    out[dateKey] = count;
+  });
+  return out;
+}
+
+/**
+ * レイドの日程表。1日ずつ部位を替えて一巡させる。
+ *
+ * 初日だけ固定 1000回。2日目以降は `perPerson`（1人あたり）× その日の
+ * ログイン人数を目標にする＝人が集まるほど目標も上がる。
+ *
  * ⚠️ nameHints に一致する種目が登録されていない日は、レイドを行わず
  *    通常のデイリーミッションにフォールバックする（getRaidDayConfig の
  *    呼び出し側ではなく resolveRaidExerciseKey が null を返すことで判定）。
@@ -150,59 +275,58 @@ export const RAID_SCHEDULE: RaidDayConfig[] = [
     // 「腕立て」だけだと派生種目（腕立てジャンプ等）も拾うので、
     // 素の種目に付きやすい名前を先に見る
     nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'],
+    // 初日は開催済み。人数割に変えると確定した結果が動いてしまうので固定のまま
     goal: 1000,
-    label: '開幕戦。まずは全員で1000回。',
+    label: '開幕戦。全員で1000回（この日だけ固定目標）。',
   },
   {
     dateKey: '2026-08-10',
     day: 2,
     nameHints: ['スクワット', 'squat'],
-    goal: 1500,
-    label: '下半身デー。数で押し切ろう。',
+    perPerson: 200,
+    label: '脚の日。数で押し切ろう。',
   },
   {
     dateKey: '2026-08-11',
     day: 3,
-    nameHints: ['腹筋', 'シットアップ', 'クランチ', 'アブ', 'sit'],
-    goal: 1500,
-    label: '体幹デー。すきま時間で積み上げ。',
+    nameHints: ['レッグレイズ', 'レッグレイス', 'leg raise', 'legraise'],
+    perPerson: 150,
+    label: '腹の日。すきま時間で積み上げ。',
   },
   {
     dateKey: '2026-08-12',
     day: 4,
     nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'],
-    goal: 300,
-    label: '難関。1回の重みが大きい日。',
+    perPerson: 30,
+    label: '背中の日。1回の重みがいちばん大きい。',
   },
   {
     dateKey: '2026-08-13',
     day: 5,
     nameHints: ['ディップス', 'dip'],
-    goal: 600,
-    label: '押す種目でもう一押し。',
+    perPerson: 100,
+    label: '胸と二の腕。押す種目でもう一押し。',
   },
   {
     dateKey: '2026-08-14',
     day: 6,
     nameHints: ['バーピー', 'burpee'],
-    goal: 800,
-    label: '全身デー。息が上がる。',
+    perPerson: 80,
+    label: '全身の日。息が上がる。',
   },
   {
     dateKey: '2026-08-15',
     day: 7,
-    nameHints: ['ランジ', 'lunge'],
-    goal: 1200,
-    label: '最終日前夜。左右の合計でOK。',
+    nameHints: ['パイクプッシュアップ', 'パイク', 'ショルダープレス', 'pike'],
+    perPerson: 60,
+    label: '肩の日。ここまでで唯一あいている部位。',
   },
   {
     dateKey: '2026-08-16',
     day: 8,
-    // 「腕立て」だけだと派生種目（腕立てジャンプ等）も拾うので、
-    // 素の種目に付きやすい名前を先に見る
     nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'],
-    goal: 2000,
-    label: '最終決戦。初日の倍を全員で。',
+    perPerson: 250,
+    label: '最終決戦。初日と同じ種目で、どれだけ伸びたか。',
   },
 ];
 
@@ -396,9 +520,18 @@ export interface RaidContributor {
 export interface RaidProgress {
   day: number;
   totalDays: number;
+  /** その日の目標。人数割の日は perPerson × memberCount */
   goal: number;
-  /** goal がコードの既定か管理画面での設定か */
+  /** goal の数字がコードの既定か管理画面での設定か */
   goalSource: RaidGoalSource;
+  /** 1人あたりの体力（人数割の日のみ）。固定目標の日は null */
+  perPerson: number | null;
+  /** 体力の掛け算に使った人数（＝前日ログインした人の数） */
+  memberCount: number;
+  /** memberCount がどの日の人数か（＝前日）。固定目標の日は null */
+  memberCountDateKey: string | null;
+  /** 記録された実数か概算か */
+  memberCountSource: RaidMemberCountSource | null;
   label: string;
   /** 全員の当日合計 */
   totalValue: number;
@@ -422,6 +555,8 @@ export interface BuildRaidProgressInput {
   totals: Record<string, number>;
   myUserId: string;
   config: RaidDayConfig;
+  /** 記録済みの日別ログイン人数。前日ぶんをボスの体力に使う */
+  memberCounts?: RaidMemberCounts | null;
 }
 
 /**
@@ -435,6 +570,7 @@ export function buildRaidProgress({
   totals,
   myUserId,
   config,
+  memberCounts,
 }: BuildRaidProgressInput): RaidProgress {
   const rows = Object.keys(usersMap || {})
     .filter((userId) =>
@@ -460,12 +596,20 @@ export function buildRaidProgress({
         a.userId.localeCompare(b.userId),
     );
 
-  const goal = config.goal;
+  // ボスの体力は「前日ログインした人数 × 1人あたり」。
+  // 当日の人数だと日中ずっと動いてしまうので、前日ぶんで 0:00 に確定させる
+  const members = resolveRaidMemberCount(dateKey, memberCounts, usersMap);
+  const perPerson = config.perPerson != null ? config.perPerson : null;
+  const goal = resolveRaidGoal(config, members.count);
   return {
     day: config.day,
     totalDays: RAID_TOTAL_DAYS,
     goal,
     goalSource: config.goalSource || 'default',
+    perPerson,
+    memberCount: members.count,
+    memberCountDateKey: perPerson != null ? members.dateKey : null,
+    memberCountSource: perPerson != null ? members.source : null,
     label: config.label,
     totalValue,
     remaining: Math.max(0, goal - totalValue),
@@ -517,6 +661,10 @@ export interface RaidDayResult {
   /** その日の種目。引き当てられなければ null（レイドを行わない日） */
   exerciseKey: string | null;
   goal: number;
+  /** 1人あたりの目標（人数割の日のみ） */
+  perPerson: number | null;
+  /** 目標の掛け算に使った人数 */
+  memberCount: number;
   totalValue: number;
   cleared: boolean;
   /** 点の高い順。0回の人は含めない（成績表なので参加者だけ並べる） */
@@ -581,6 +729,12 @@ export function buildRaidDayResult(
   totals: Record<string, number>,
   usersMap: Record<string, { userName?: string; email?: string }>,
   myUserId: string,
+  /**
+   * ボスの体力の掛け算に使う人数＝**前日**に記録したログイン人数。
+   * 記録が無ければ「その日に投稿した人数」で代用する（過去のログイン
+   * 状況はもう復元できないため、分かる範囲でいちばん近い数）。
+   */
+  recordedMemberCount?: number,
 ): RaidDayResult {
   const rows = Object.keys(totals || {})
     .map((userId) => ({ userId, value: Number(totals[userId]) || 0 }))
@@ -606,13 +760,21 @@ export function buildRaidDayResult(
         a.userId.localeCompare(b.userId),
     );
 
+  const memberCount =
+    recordedMemberCount && recordedMemberCount > 0
+      ? recordedMemberCount
+      : entries.length;
+  const goal = resolveRaidGoal(config, memberCount);
+
   return {
     dateKey: config.dateKey,
     day: config.day,
     exerciseKey,
-    goal: config.goal,
+    goal,
+    perPerson: config.perPerson != null ? config.perPerson : null,
+    memberCount,
     totalValue,
-    cleared: config.goal > 0 && totalValue >= config.goal,
+    cleared: goal > 0 && totalValue >= goal,
     entries,
   };
 }

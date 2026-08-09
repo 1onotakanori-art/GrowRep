@@ -282,7 +282,7 @@ export default function DailyMissionView() {
         <p className={styles.lead}>
           {RAID_MODE_LABEL}（{RAID_START_DATE_KEY.slice(5).replace('-', '/')}〜
           {RAID_END_DATE_KEY.slice(5).replace('-', '/')}）。
-          今日の種目を全員で積み上げて、みんなの合計で目標を撃破します。
+          今日の種目を全員で積み上げて、レイドボスの体力を削り切ります。
           個人の目標回数はありません。
         </p>
 
@@ -300,13 +300,29 @@ export default function DailyMissionView() {
           </div>
 
           <div className={styles.raidGoalBox}>
-            <span className={styles.targetLabel}>みんなの目標</span>
+            <span className={styles.targetLabel}>
+              <i className="fa-solid fa-dragon" /> レイドボスの体力
+            </span>
             <span className={styles.targetValue}>
               {formatDailyCount(raid.goal)}
               <span className={styles.targetUnit}>{unit}</span>
             </span>
+            {raid.perPerson != null && (
+              <span className={styles.targetProb}>
+                昨日ログインした {raid.memberCount}人 × 1人{raid.perPerson}
+                {unit}
+              </span>
+            )}
             <span className={styles.targetProb}>{raid.label}</span>
           </div>
+
+          {raid.perPerson != null && (
+            <p className={styles.raidGoalNote}>
+              <i className="fa-solid fa-users" />
+              ボスの体力は<strong>前日のログイン人数</strong>で決まります。
+              0:00の時点で決まるので、今日どれだけ人が増えても体力は動きません。
+            </p>
+          )}
 
           <div className={styles.teamTotalRow}>
             <span className={styles.teamTotal}>
@@ -330,7 +346,7 @@ export default function DailyMissionView() {
               <span>
                 {raid.cleared
                   ? '討伐完了！'
-                  : `あと ${formatDailyCount(raid.remaining)}${unit}`}
+                  : `残り体力 ${formatDailyCount(raid.remaining)}${unit}`}
               </span>
             </div>
           </div>

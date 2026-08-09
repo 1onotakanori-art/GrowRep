@@ -312,6 +312,24 @@
 .cardDone .teamTotal {
   color: var(--success);
 }
+/* 目標が人数で決まることの説明 */
+.raidGoalNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: var(--sp-4);
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.raidGoalNote i {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #7c3aed;
+}
 
 /* ---------------------------------------------------------------
    メンテナンス告知
