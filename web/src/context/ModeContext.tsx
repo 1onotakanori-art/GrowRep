@@ -22,7 +22,8 @@ const STORAGE_KEY = 'growrep_mode';
 export function ModeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<Mode>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved === 'weekly' ? 'weekly' : 'free';
+    if (saved === 'weekly' || saved === 'raid') return saved;
+    return 'free';
   });
   const [refreshToken, setRefreshToken] = useState(0);
 

@@ -1,7 +1,7 @@
 // 共有ドメイン型（既存 Firestore データモデルに準拠）
 import type { Timestamp } from 'firebase/firestore';
 
-export type Mode = 'free' | 'weekly';
+export type Mode = 'free' | 'weekly' | 'raid';
 
 export interface UserData {
   userName?: string;

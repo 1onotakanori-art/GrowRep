@@ -14,10 +14,14 @@ import {
 } from '../lib/daily-mission';
 import {
   RAID_END_DATE_KEY,
+  RAID_INPUT_GATE_NOTE,
   RAID_MODE_LABEL,
   RAID_START_DATE_KEY,
   RAID_TITLE,
   RAID_TOTAL_DAYS,
+  getRaidInputOpenAt,
+  isRaidInputGatedDay,
+  isRaidInputOpen,
   raidContributionRatio,
 } from '../lib/raid-mode';
 import DistributionChart from '../features/daily/DistributionChart';
@@ -63,6 +67,22 @@ export default function DailyMissionView() {
   );
   const countdown = useCountdown(dailyMission?.maintenance ? raidStartMs : null);
 
+  // レイドは 0:00 に種目発表、入力開始は 7:00。解禁までは投稿フォームを出さない。
+  const raidDateKey = dailyMission?.raid ? dailyMission.dateKey : null;
+  const inputOpen = raidDateKey ? isRaidInputOpen(raidDateKey) : true;
+  const openAtMs = useMemo(
+    () => (raidDateKey ? getRaidInputOpenAt(raidDateKey).getTime() : null),
+    [raidDateKey],
+  );
+  const openCountdown = useCountdown(inputOpen ? null : openAtMs);
+  // 7:00 を過ぎたらフォームに差し替える（リロード不要）
+  useEffect(() => {
+    if (inputOpen || openAtMs == null) return;
+    const wait = Math.max(0, openAtMs - Date.now()) + 500;
+    const id = window.setTimeout(() => reloadDailyMission(), wait);
+    return () => window.clearTimeout(id);
+  }, [inputOpen, openAtMs, reloadDailyMission]);
+
   const exerciseKey = dailyMission?.exerciseKey || '';
   const ex = freeExercises[exerciseKey];
   const unit = guessExerciseUnit(ex?.name || '');
@@ -71,6 +91,12 @@ export default function DailyMissionView() {
   /** 記録を投稿して状態を取り直す。通知の文面だけレイドと通常で変える。 */
   async function handleSubmit() {
     if (!user || !dailyMission || !exerciseKey) return;
+    // 画面を開いたまま日付をまたいだ場合などに備え、送信時にも解禁を確認する
+    if (raidDateKey && !isRaidInputOpen(raidDateKey)) {
+      toast('レイドの入力は7:00からです', 'error');
+      await reloadDailyMission();
+      return;
+    }
     const num = parseInt(value, 10);
     if (!num || num <= 0 || isNaN(num) || num > 10000) {
       toast(`${unit}数を正しく入力してください（1〜10000）`, 'error');
@@ -111,6 +137,26 @@ export default function DailyMissionView() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** 入力解禁前のロック表示（7:00までのカウントダウンと、そうしている理由）。 */
+  function renderLockedPostCard() {
+    return (
+      <div className={styles.postCard}>
+        <h3 className={styles.postTitle}>
+          <i className="fa-solid fa-lock" /> 入力開始まで
+        </h3>
+        <div className={styles.maintCountdownBox}>
+          <span className={styles.maintCountdownLabel}>
+            <i className="fa-solid fa-clock" /> 7:00 まで
+          </span>
+          <span className={styles.maintCountdown}>
+            {openCountdown || 'まもなく'}
+          </span>
+        </div>
+        <p className={styles.note}>{RAID_INPUT_GATE_NOTE}</p>
+      </div>
+    );
   }
 
   /** 記録の投稿フォーム（通常・レイド共通）。 */
@@ -335,9 +381,14 @@ export default function DailyMissionView() {
           </p>
         </div>
 
-        {renderPostCard(
-          '何回かに分けてもOK。投稿するとすぐレイドの合計に加算されます（フリーモードの記録としても集計されます）。',
-        )}
+        {inputOpen
+          ? renderPostCard(
+              '何回かに分けてもOK。投稿するとすぐレイドの合計に加算されます（フリーモードの記録としても集計されます）。'
+                + (isRaidInputGatedDay(dailyMission.dateKey)
+                  ? ` ${RAID_INPUT_GATE_NOTE}`
+                  : ''),
+            )
+          : renderLockedPostCard()}
       </div>
     );
   }

@@ -57,6 +57,7 @@
                         <option value="interval">インターバル</option>
                         <option value="free">フリー</option>
                         <option value="weekly">週間チャレンジ</option>
+                        <option value="raid">レイド</option>
                     </select>
                 </div>
             </div>
@@ -80,6 +81,8 @@
         <nav class="tab-nav">
             <button class="tab-btn" data-tab="daily" data-mode="free" style="display: none;"><i class="fa-solid fa-bullseye"></i> デイリー<span class="daily-mission-dot" style="display:none;"></span></button>
             <button class="tab-btn" data-tab="daily" data-mode="weekly" style="display: none;"><i class="fa-solid fa-bullseye"></i> デイリー<span class="daily-mission-dot" style="display:none;"></span></button>
+            <button class="tab-btn" data-tab="daily" data-mode="raid" style="display: none;"><i class="fa-solid fa-dragon"></i> 今日のレイド<span class="daily-mission-dot" style="display:none;"></span></button>
+            <button class="tab-btn" data-tab="raid-score" data-mode="raid" style="display: none;"><i class="fa-solid fa-ranking-star"></i> 積み上げ得点</button>
             <button class="tab-btn active" data-tab="post"><i class="fa-solid fa-pen-to-square"></i> 投稿</button>
             <button class="tab-btn" data-tab="board"><i class="fa-solid fa-comments"></i> 掲示板</button>
             <button class="tab-btn" data-tab="ranking"><i class="fa-solid fa-trophy"></i> ランキング</button>
@@ -98,6 +101,13 @@
             <h2><i class="fa-solid fa-bullseye"></i> デイリーミッション</h2>
             <div id="daily-mode-info" class="mode-info"></div>
             <div id="daily-mission-content"></div>
+        </div>
+
+        <!-- 積み上げ得点タブ（レイドモード専用） -->
+        <div id="raid-score-tab" class="tab-content" data-mode="raid">
+            <h2><i class="fa-solid fa-ranking-star"></i> 積み上げ得点</h2>
+            <div id="raid-score-mode-info" class="mode-info"></div>
+            <div id="raid-score-content"></div>
         </div>
 
         <!-- 投稿タブ -->
