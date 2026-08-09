@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useMode } from '../context/ModeContext';
-import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import type { Mode } from '../lib/types';
 import styles from './Header.module.css';
@@ -11,7 +10,6 @@ export default function Header({
   onOpenProfile: () => void;
 }) {
   const { mode, setMode, refresh } = useMode();
-  const { resolved, toggle } = useTheme();
   const { userData, isGuest } = useAuth();
   const [spinning, setSpinning] = useState(false);
 
@@ -54,15 +52,7 @@ export default function Header({
             className={`fa-solid fa-rotate ${spinning ? 'spin' : ''}`}
           />
         </button>
-        <button
-          className={styles.iconBtn}
-          onClick={toggle}
-          aria-label="テーマ切替"
-        >
-          <i
-            className={`fa-solid ${resolved === 'dark' ? 'fa-sun' : 'fa-moon'}`}
-          />
-        </button>
+        {/* テーマ切替はマイページに集約。モードが3つになりヘッダーが折り返すため */}
         <button
           className={styles.profileBtn}
           onClick={onOpenProfile}

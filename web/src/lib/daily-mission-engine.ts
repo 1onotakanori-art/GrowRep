@@ -42,6 +42,8 @@ import {
   sanitizeRaidExerciseOverrides,
   sanitizeRaidGoalOverrides,
   sanitizeRaidMemberCounts,
+  countActiveUsersSince,
+  getPreviousDateKey,
   RAID_CONFIG_DOC,
   RAID_SCHEDULE,
   type RaidDayResult,
@@ -96,9 +98,12 @@ export async function getRaidOverrides(): Promise<RaidOverrides> {
 
 /**
  * その日のログイン人数を記録する（増えたときだけ書く）。
- * 目標が人数で決まるようになったため、過去の日の目標を成績表で
- * 再現するには当日の人数が要る。lastActiveDateKey は最後のログイン日しか
- * 持たないので、開催中に見えた最大人数をここで残しておく。
+ *
+ * ボスの体力が「前日のログイン人数 × 1人あたり」で決まるので、
+ * 翌日そのぶんを引けるように毎日残しておく必要がある。
+ * `users.lastActiveDateKey` は最後に開いた日しか持たず、後から
+ * 「その日ログインしていた人」を数え直せないため、開催中に見えた
+ * 最大人数をここで確定させる。
  * app.js: recordRaidMemberCount
  */
 export async function recordRaidMemberCount(
@@ -411,15 +416,15 @@ export async function loadDailyMissionState(
       totals: raidTotals,
       myUserId: userId,
       config: mission.raid,
+      memberCounts: overrides?.memberCounts,
     });
-    // 成績表で当日の目標を再現できるよう、人数を残しておく（増えたときだけ書く）
-    if (raid.perPerson != null) {
-      void recordRaidMemberCount(
-        mission.dateKey,
-        raid.memberCount,
-        overrides?.memberCounts || {},
-      );
-    }
+    // 翌日のボス体力に使うので、今日ログインした人数を毎日残す
+    // （固定目標の日でも、その翌日が人数割なら必要になる）
+    void recordRaidMemberCount(
+      mission.dateKey,
+      countActiveUsersSince(usersWithMe, mission.dateKey),
+      overrides?.memberCounts || {},
+    );
     return {
       dateKey: mission.dateKey,
       exerciseKey: mission.exerciseKey,
@@ -563,7 +568,8 @@ export async function loadRaidScoreboard(
       totalsByDay[config.dateKey] || {},
       users,
       userId,
-      overrides.memberCounts[config.dateKey],
+      // ボスの体力は前日のログイン人数で決まる
+      overrides.memberCounts[getPreviousDateKey(config.dateKey)],
     ),
   );
 

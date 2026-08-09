@@ -102,9 +102,9 @@ export function isPerPersonRaidDay(config: RaidDayConfig): boolean {
 }
 
 /**
- * その日の実際の目標回数。
- * 人数割の日は「ログイン人数 × 1人あたり」。人数が 0 でも 1人ぶんは残す
- * （自分だけの状態で目標 0 になって即討伐、という見え方を避けるため）。
+ * その日のレイドボスの体力（＝みんなで積み上げる目標）。
+ * 人数割の日は「前日にログインした人数 × 1人あたり」。人数が 0 でも
+ * 1人ぶんは残す（体力 0 で即討伐、という見え方を避けるため）。
  */
 export function resolveRaidGoal(
   config: RaidDayConfig,
@@ -114,6 +114,61 @@ export function resolveRaidGoal(
     return config.perPerson * Math.max(1, Math.round(memberCount) || 0);
   }
   return config.goal || 0;
+}
+
+/** 前日の JST 日付キー。 */
+export function getPreviousDateKey(dateKey: string): string {
+  const { start } = getDailyBoundariesJST(dateKey);
+  // 当日 0:00 JST の 1ms 前 ＝ 前日 23:59:59.999 JST
+  return getDailyDateKeyJST(new Date(start.getTime() - 1));
+}
+
+/** 人数がどこから来たか。recorded = 当日に記録した実数 / estimated = 概算 */
+export type RaidMemberCountSource = 'recorded' | 'estimated';
+
+export interface ResolvedRaidMemberCount {
+  count: number;
+  /** どの日の人数か（＝前日） */
+  dateKey: string;
+  source: RaidMemberCountSource;
+}
+
+/** sinceDateKey 以降にアプリを開いた形跡があるユーザー数。 */
+export function countActiveUsersSince(
+  usersMap: Record<string, { lastActiveDateKey?: string }>,
+  sinceDateKey: string,
+): number {
+  return Object.values(usersMap || {}).filter(
+    (u) => !!u && !!u.lastActiveDateKey && u.lastActiveDateKey >= sinceDateKey,
+  ).length;
+}
+
+/**
+ * ボスの体力を決める人数（＝前日のログイン人数）を解決する。
+ *
+ * 当日のログイン人数だと日中ずっと体力が動いて数字が定まらないので、
+ * 前日ぶんを使って 0:00 の時点で確定させる。
+ *
+ * 前日の人数は開催中に記録したものを使う（`users.lastActiveDateKey` は
+ * 最後に開いた日しか持たないため、後から「前日ログインしていた人」を
+ * 数え直すことはできない）。記録が無い日は「前日以降にアプリを開いた人数」で
+ * 概算する——前日に開いた人はたいてい当日以降も開くので近い数になる。
+ */
+export function resolveRaidMemberCount(
+  dateKey: string,
+  memberCounts: RaidMemberCounts | null | undefined,
+  usersMap: Record<string, { lastActiveDateKey?: string }>,
+): ResolvedRaidMemberCount {
+  const prevKey = getPreviousDateKey(dateKey);
+  const recorded = (memberCounts || {})[prevKey];
+  if (typeof recorded === 'number' && recorded > 0) {
+    return { count: recorded, dateKey: prevKey, source: 'recorded' };
+  }
+  return {
+    count: Math.max(1, countActiveUsersSince(usersMap, prevKey)),
+    dateKey: prevKey,
+    source: 'estimated',
+  };
 }
 
 /** 目標回数として受け付ける範囲。桁を打ち間違えても壊れないように上限を置く。 */
@@ -469,10 +524,14 @@ export interface RaidProgress {
   goal: number;
   /** goal の数字がコードの既定か管理画面での設定か */
   goalSource: RaidGoalSource;
-  /** 1人あたりの目標（人数割の日のみ）。固定目標の日は null */
+  /** 1人あたりの体力（人数割の日のみ）。固定目標の日は null */
   perPerson: number | null;
-  /** 目標の掛け算に使った人数（＝その日ログインした人の数） */
+  /** 体力の掛け算に使った人数（＝前日ログインした人の数） */
   memberCount: number;
+  /** memberCount がどの日の人数か（＝前日）。固定目標の日は null */
+  memberCountDateKey: string | null;
+  /** 記録された実数か概算か */
+  memberCountSource: RaidMemberCountSource | null;
   label: string;
   /** 全員の当日合計 */
   totalValue: number;
@@ -496,6 +555,8 @@ export interface BuildRaidProgressInput {
   totals: Record<string, number>;
   myUserId: string;
   config: RaidDayConfig;
+  /** 記録済みの日別ログイン人数。前日ぶんをボスの体力に使う */
+  memberCounts?: RaidMemberCounts | null;
 }
 
 /**
@@ -509,6 +570,7 @@ export function buildRaidProgress({
   totals,
   myUserId,
   config,
+  memberCounts,
 }: BuildRaidProgressInput): RaidProgress {
   const rows = Object.keys(usersMap || {})
     .filter((userId) =>
@@ -534,16 +596,20 @@ export function buildRaidProgress({
         a.userId.localeCompare(b.userId),
     );
 
-  // 目標は「その日ログインした人数 × 1人あたり」。人が増えると目標も上がる
-  const memberCount = contributors.length;
-  const goal = resolveRaidGoal(config, memberCount);
+  // ボスの体力は「前日ログインした人数 × 1人あたり」。
+  // 当日の人数だと日中ずっと動いてしまうので、前日ぶんで 0:00 に確定させる
+  const members = resolveRaidMemberCount(dateKey, memberCounts, usersMap);
+  const perPerson = config.perPerson != null ? config.perPerson : null;
+  const goal = resolveRaidGoal(config, members.count);
   return {
     day: config.day,
     totalDays: RAID_TOTAL_DAYS,
     goal,
     goalSource: config.goalSource || 'default',
-    perPerson: config.perPerson != null ? config.perPerson : null,
-    memberCount,
+    perPerson,
+    memberCount: members.count,
+    memberCountDateKey: perPerson != null ? members.dateKey : null,
+    memberCountSource: perPerson != null ? members.source : null,
     label: config.label,
     totalValue,
     remaining: Math.max(0, goal - totalValue),
@@ -664,9 +730,9 @@ export function buildRaidDayResult(
   usersMap: Record<string, { userName?: string; email?: string }>,
   myUserId: string,
   /**
-   * 目標の掛け算に使う人数。開催中に記録したログイン人数を渡す。
-   * 記録が無ければ「実際に投稿した人数」で代用する（過去の日の
-   * ログイン状況はもう復元できないため、分かる範囲でいちばん近い数）。
+   * ボスの体力の掛け算に使う人数＝**前日**に記録したログイン人数。
+   * 記録が無ければ「その日に投稿した人数」で代用する（過去のログイン
+   * 状況はもう復元できないため、分かる範囲でいちばん近い数）。
    */
   recordedMemberCount?: number,
 ): RaidDayResult {

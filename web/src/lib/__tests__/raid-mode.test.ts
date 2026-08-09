@@ -24,8 +24,11 @@ import {
   isPerPersonRaidDay,
   isRaidInputGatedDay,
   isRaidInputOpen,
+  countActiveUsersSince,
+  getPreviousDateKey,
   raidConfiguredValue,
   resolveRaidGoal,
+  resolveRaidMemberCount,
   sanitizeRaidMemberCounts,
   raidContributionRatio,
   resolveRaidExercise,
@@ -695,11 +698,11 @@ describe('ログイン人数 × 1人あたり', () => {
     expect(resolveRaidGoal(o, 5)).toBe(1200);
   });
 
-  it('進捗の目標はログイン人数から出る', () => {
+  it('ボスの体力は前日の記録人数から出る（当日の増減で動かない）', () => {
     const usersMap = {
       u1: { userName: 'あ', lastActiveDateKey: '2026-08-10' },
       u2: { userName: 'い', lastActiveDateKey: '2026-08-10' },
-      u3: { userName: 'う', lastActiveDateKey: '2026-08-01' },
+      u3: { userName: 'う', lastActiveDateKey: '2026-08-10' },
     };
     const r = buildRaidProgress({
       usersMap,
@@ -707,12 +710,50 @@ describe('ログイン人数 × 1人あたり', () => {
       totals: { u1: 100 },
       myUserId: 'u1',
       config: day2,
+      memberCounts: { '2026-08-09': 4 },
     });
-    // 今日ログインしたのは u1/u2 の2人 → 250×2
-    expect(r.memberCount).toBe(2);
+    // 当日は3人ログインしているが、体力は前日の4人で決まる
+    expect(r.memberCount).toBe(4);
+    expect(r.memberCountDateKey).toBe('2026-08-09');
+    expect(r.memberCountSource).toBe('recorded');
     expect(r.perPerson).toBe(250);
-    expect(r.goal).toBe(500);
+    expect(r.goal).toBe(1000);
     expect(r.cleared).toBe(false);
+  });
+
+  it('前日の記録が無ければ「前日以降に開いた人数」で概算する', () => {
+    const usersMap = {
+      u1: { userName: 'あ', lastActiveDateKey: '2026-08-10' },
+      u2: { userName: 'い', lastActiveDateKey: '2026-08-09' },
+      u3: { userName: 'う', lastActiveDateKey: '2026-08-01' },
+    };
+    const r = buildRaidProgress({
+      usersMap,
+      dateKey: '2026-08-10',
+      totals: {},
+      myUserId: 'u1',
+      config: day2,
+      memberCounts: {},
+    });
+    // 8/9 以降に開いたのは u1/u2 の2人
+    expect(r.memberCount).toBe(2);
+    expect(r.memberCountSource).toBe('estimated');
+    expect(r.goal).toBe(500);
+  });
+
+  it('固定目標の日は人数の情報を出さない', () => {
+    const r = buildRaidProgress({
+      usersMap: { u1: { userName: 'あ', lastActiveDateKey: '2026-08-09' } },
+      dateKey: '2026-08-09',
+      totals: {},
+      myUserId: 'u1',
+      config: day1,
+      memberCounts: { '2026-08-08': 9 },
+    });
+    expect(r.goal).toBe(1000);
+    expect(r.perPerson).toBeNull();
+    expect(r.memberCountDateKey).toBeNull();
+    expect(r.memberCountSource).toBeNull();
   });
 
   it('成績表は記録された人数で目標を再現し、無ければ投稿者数で代用する', () => {
@@ -739,5 +780,47 @@ describe('ログイン人数 × 1人あたり', () => {
       }),
     ).toEqual({ '2026-08-10': 5 });
     expect(sanitizeRaidMemberCounts(null)).toEqual({});
+  });
+});
+
+
+describe('前日のログイン人数', () => {
+  it('getPreviousDateKey は前日を返す（月またぎ・年またぎも）', () => {
+    expect(getPreviousDateKey('2026-08-10')).toBe('2026-08-09');
+    expect(getPreviousDateKey('2026-08-01')).toBe('2026-07-31');
+    expect(getPreviousDateKey('2026-01-01')).toBe('2025-12-31');
+    // うるう年の 3/1
+    expect(getPreviousDateKey('2024-03-01')).toBe('2024-02-29');
+  });
+
+  it('countActiveUsersSince は指定日以降に開いた人だけ数える', () => {
+    const users = {
+      a: { lastActiveDateKey: '2026-08-10' },
+      b: { lastActiveDateKey: '2026-08-09' },
+      c: { lastActiveDateKey: '2026-08-08' },
+      d: {},
+    };
+    expect(countActiveUsersSince(users, '2026-08-09')).toBe(2);
+    expect(countActiveUsersSince(users, '2026-08-08')).toBe(3);
+    expect(countActiveUsersSince({}, '2026-08-09')).toBe(0);
+  });
+
+  it('記録があればそれを、無ければ概算を使い、最低でも1人', () => {
+    const users = { a: { lastActiveDateKey: '2026-08-09' } };
+    const rec = resolveRaidMemberCount('2026-08-10', { '2026-08-09': 6 }, users);
+    expect(rec).toEqual({ count: 6, dateKey: '2026-08-09', source: 'recorded' });
+
+    const est = resolveRaidMemberCount('2026-08-10', {}, users);
+    expect(est).toEqual({ count: 1, dateKey: '2026-08-09', source: 'estimated' });
+
+    // 誰も該当しなくても 0 にはしない（体力0で即討伐を避ける）
+    const none = resolveRaidMemberCount('2026-08-10', {}, {});
+    expect(none.count).toBe(1);
+  });
+
+  it('別の日の記録は使わない', () => {
+    const r = resolveRaidMemberCount('2026-08-12', { '2026-08-09': 6 }, {});
+    expect(r.dateKey).toBe('2026-08-11');
+    expect(r.source).toBe('estimated');
   });
 });

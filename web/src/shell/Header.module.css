@@ -19,6 +19,11 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  min-width: 0;
+}
+/* 右側は縮めない。潰れるならモード切替側を先に詰める */
+.right {
+  flex-shrink: 0;
 }
 
 .logo {
@@ -38,6 +43,13 @@
   padding: 3px;
   border-radius: var(--radius-pill);
   background: var(--surface-3);
+  /* 端末の文字サイズ設定で文字だけ拡大されても、はみ出すより横スクロールに逃がす */
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.modeToggle::-webkit-scrollbar {
+  display: none;
 }
 .modeBtn,
 .modeActive {
@@ -47,6 +59,24 @@
   font-weight: 700;
   color: var(--text-2);
   transition: all 0.18s ease;
+  /* モードが3つになったので、狭い端末でも文字を折り返さない。
+     縮めると文字がはみ出すだけなので、幅は文字ぶんを保って親側で逃がす */
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* 幅が足りない端末では余白と字送りを詰めて1行を保つ */
+@media (max-width: 400px) {
+  .modeBtn,
+  .modeActive {
+    padding: 6px 10px;
+    font-size: 12px;
+    letter-spacing: -0.01em;
+  }
+  .logo {
+    width: 30px;
+    height: 30px;
+    font-size: 14px;
+  }
 }
 .modeActive {
   background: var(--surface);
