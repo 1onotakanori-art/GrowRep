@@ -7776,7 +7776,7 @@ const RAID_SCHEDULE = [
     // 初日は開催済み。人数割に変えると確定した結果が動いてしまうので固定のまま
     // 「腕立て」だけだと派生種目（腕立てジャンプ等）も拾うので、素の種目に付きやすい名前を先に見る
     { dateKey: '2026-08-09', day: 1, nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'], goal: 1000, label: '開幕戦。全員で1000回（この日だけ固定目標）。' },
-    { dateKey: '2026-08-10', day: 2, nameHints: ['スクワット', 'squat'], perPerson: 250, label: '脚の日。数で押し切ろう。' },
+    { dateKey: '2026-08-10', day: 2, nameHints: ['スクワット', 'squat'], perPerson: 200, label: '脚の日。数で押し切ろう。' },
     { dateKey: '2026-08-11', day: 3, nameHints: ['レッグレイズ', 'レッグレイス', 'leg raise', 'legraise'], perPerson: 150, label: '腹の日。すきま時間で積み上げ。' },
     { dateKey: '2026-08-12', day: 4, nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'], perPerson: 30, label: '背中の日。1回の重みがいちばん大きい。' },
     { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス', 'dip'], perPerson: 100, label: '胸と二の腕。押す種目でもう一押し。' },

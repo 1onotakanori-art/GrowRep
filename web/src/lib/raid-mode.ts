@@ -283,7 +283,7 @@ export const RAID_SCHEDULE: RaidDayConfig[] = [
     dateKey: '2026-08-10',
     day: 2,
     nameHints: ['スクワット', 'squat'],
-    perPerson: 250,
+    perPerson: 200,
     label: '脚の日。数で押し切ろう。',
   },
   {

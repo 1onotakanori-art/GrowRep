@@ -82,10 +82,10 @@ describe('日程表', () => {
     });
   });
 
-  it('2日目はスクワット 250回/人', () => {
+  it('2日目はスクワット 200回/人', () => {
     const day2 = RAID_SCHEDULE[1];
     expect(day2.dateKey).toBe('2026-08-10');
-    expect(day2.perPerson).toBe(250);
+    expect(day2.perPerson).toBe(200);
     expect(day2.nameHints).toContain('スクワット');
   });
 
@@ -662,7 +662,7 @@ describe('積み上げ得点', () => {
 
 describe('ログイン人数 × 1人あたり', () => {
   const day1 = RAID_SCHEDULE[0]; // 固定 1000
-  const day2 = RAID_SCHEDULE[1]; // 250/人
+  const day2 = RAID_SCHEDULE[1]; // 200/人
 
   it('固定目標の日は人数に影響されない', () => {
     expect(resolveRaidGoal(day1, 1)).toBe(1000);
@@ -670,18 +670,18 @@ describe('ログイン人数 × 1人あたり', () => {
   });
 
   it('人数割の日は人数を掛ける', () => {
-    expect(resolveRaidGoal(day2, 1)).toBe(250);
-    expect(resolveRaidGoal(day2, 4)).toBe(1000);
-    expect(resolveRaidGoal(day2, 6)).toBe(1500);
+    expect(resolveRaidGoal(day2, 1)).toBe(200);
+    expect(resolveRaidGoal(day2, 4)).toBe(800);
+    expect(resolveRaidGoal(day2, 6)).toBe(1200);
   });
 
   it('人数が0でも1人ぶんは残す（目標0で即討伐にしない）', () => {
-    expect(resolveRaidGoal(day2, 0)).toBe(250);
+    expect(resolveRaidGoal(day2, 0)).toBe(200);
   });
 
   it('raidConfiguredValue はその日の編集対象の数字を返す', () => {
     expect(raidConfiguredValue(day1)).toBe(1000);
-    expect(raidConfiguredValue(day2)).toBe(250);
+    expect(raidConfiguredValue(day2)).toBe(200);
   });
 
   it('上書きは人数割の日なら1人あたりを差し替える', () => {
@@ -689,6 +689,10 @@ describe('ログイン人数 × 1人あたり', () => {
     expect(o.perPerson).toBe(300);
     expect(o.goalSource).toBe('override');
     expect(resolveRaidGoal(o, 5)).toBe(1500);
+  });
+
+  it('日程表の 250 前提が残っていないこと（2日目は200）', () => {
+    expect(RAID_SCHEDULE[1].perPerson).toBe(200);
   });
 
   it('上書きは固定の日なら合計を差し替える', () => {
@@ -716,8 +720,8 @@ describe('ログイン人数 × 1人あたり', () => {
     expect(r.memberCount).toBe(4);
     expect(r.memberCountDateKey).toBe('2026-08-09');
     expect(r.memberCountSource).toBe('recorded');
-    expect(r.perPerson).toBe(250);
-    expect(r.goal).toBe(1000);
+    expect(r.perPerson).toBe(200);
+    expect(r.goal).toBe(800);
     expect(r.cleared).toBe(false);
   });
 
@@ -738,7 +742,7 @@ describe('ログイン人数 × 1人あたり', () => {
     // 8/9 以降に開いたのは u1/u2 の2人
     expect(r.memberCount).toBe(2);
     expect(r.memberCountSource).toBe('estimated');
-    expect(r.goal).toBe(500);
+    expect(r.goal).toBe(400);
   });
 
   it('固定目標の日は人数の情報を出さない', () => {
@@ -760,12 +764,12 @@ describe('ログイン人数 × 1人あたり', () => {
     const users = { u1: { userName: 'あ' }, u2: { userName: 'い' } };
     const recorded = buildRaidDayResult(day2, 'ex', { u1: 400, u2: 400 }, users, 'u1', 5);
     expect(recorded.memberCount).toBe(5);
-    expect(recorded.goal).toBe(1250);
+    expect(recorded.goal).toBe(1000);
     expect(recorded.cleared).toBe(false);
 
     const fallback = buildRaidDayResult(day2, 'ex', { u1: 400, u2: 400 }, users, 'u1');
     expect(fallback.memberCount).toBe(2);
-    expect(fallback.goal).toBe(500);
+    expect(fallback.goal).toBe(400);
     expect(fallback.cleared).toBe(true);
   });
 
