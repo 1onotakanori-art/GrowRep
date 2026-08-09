@@ -292,6 +292,8 @@ let _exercises = {}, _wc = null, _wcConfig = {}, _users = {}, _override = null;
 let _raidGoals = {};
 // settings_free/raid_config の exercises（日付キー→種目キー）。未設定の日は名前から自動解決
 let _raidExercises = {};
+// settings_free/raid_config の memberCounts（日付キー→その日のログイン人数。アプリが自動記録）
+let _raidMembers = {};
 
 // 夏休みレイドの日程表。
 // ⚠️ app.js / web の RAID_SCHEDULE の「表示用ミラー」。日付・既定値がズレても
@@ -299,15 +301,21 @@ let _raidExercises = {};
 //    （日付キー単位）なので、ズレの影響はこの画面の表示だけに閉じる。
 //    それでも紛らわしいので、日程を変えるときは3か所そろえること。
 const RAID_SCHEDULE = [
+    // goal = その日の合計を固定 / perPerson = ログイン人数 × 1人あたり
     { dateKey: '2026-08-09', day: 1, nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'], goal: 1000 },
-    { dateKey: '2026-08-10', day: 2, nameHints: ['スクワット', 'squat'], goal: 1500 },
-    { dateKey: '2026-08-11', day: 3, nameHints: ['腹筋', 'シットアップ', 'クランチ', 'アブ', 'sit'], goal: 1500 },
-    { dateKey: '2026-08-12', day: 4, nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'], goal: 300 },
-    { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス', 'dip'], goal: 600 },
-    { dateKey: '2026-08-14', day: 6, nameHints: ['バーピー', 'burpee'], goal: 800 },
-    { dateKey: '2026-08-15', day: 7, nameHints: ['ランジ', 'lunge'], goal: 1200 },
-    { dateKey: '2026-08-16', day: 8, nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'], goal: 2000 }
+    { dateKey: '2026-08-10', day: 2, nameHints: ['スクワット', 'squat'], perPerson: 250 },
+    { dateKey: '2026-08-11', day: 3, nameHints: ['レッグレイズ', 'レッグレイス', 'leg raise', 'legraise'], perPerson: 150 },
+    { dateKey: '2026-08-12', day: 4, nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'], perPerson: 30 },
+    { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス', 'dip'], perPerson: 100 },
+    { dateKey: '2026-08-14', day: 6, nameHints: ['バーピー', 'burpee'], perPerson: 80 },
+    { dateKey: '2026-08-15', day: 7, nameHints: ['パイクプッシュアップ', 'パイク', 'ショルダープレス', 'pike'], perPerson: 60 },
+    { dateKey: '2026-08-16', day: 8, nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'], perPerson: 250 }
 ];
+
+/** その日の設定値（固定目標なら goal、人数割なら perPerson） */
+function raidConfiguredValue(d) {
+    return (d.perPerson != null ? d.perPerson : d.goal) || 0;
+}
 const RAID_GOAL_MIN = 1;
 const RAID_GOAL_MAX = 1000000;
 // この種目はレイド向け、と種目側で宣言するためのタグ（app.js / web の RAID_TAG）
@@ -404,6 +412,7 @@ async function loadAll() {
         _override = overrideDoc.exists ? overrideDoc.data() : null;
         _raidGoals = raidDoc.exists ? sanitizeRaidGoals(raidDoc.data().goals) : {};
         _raidExercises = raidDoc.exists ? sanitizeRaidExercises(raidDoc.data().exercises) : {};
+        _raidMembers = raidDoc.exists ? (raidDoc.data().memberCounts || {}) : {};
         _users = {};
         usrSnap.forEach(d => { _users[d.id] = d.data(); });
 
@@ -644,8 +653,11 @@ function renderRaid() {
     </div>`;
 
     RAID_SCHEDULE.forEach(d => {
-        const effective = _raidGoals[d.dateKey] != null ? _raidGoals[d.dateKey] : d.goal;
+        const base = raidConfiguredValue(d);
+        const effective = _raidGoals[d.dateKey] != null ? _raidGoals[d.dateKey] : base;
         const isOverride = _raidGoals[d.dateKey] != null;
+        const perPerson = d.perPerson != null;
+        const members = _raidMembers[d.dateKey] || 0;
         const isToday = d.dateKey === today;
         const pinned = _raidExercises[d.dateKey] || '';
         const auto = autoResolveRaid(d);
@@ -663,8 +675,11 @@ function renderRaid() {
         html += `<div class="cfg-row" style="align-items:center;flex-wrap:wrap;gap:8px;${isToday ? 'background:#fff8e1;border-radius:6px;padding:6px 8px' : ''}">
             <span style="min-width:96px;font-weight:700">Day ${d.day} <span style="color:var(--tx2);font-weight:400">${fmtRaidDate(d.dateKey)}</span>${isToday ? ' <span class="badge badge-sel">今日</span>' : ''}</span>
             <select id="raid-ex-${d.dateKey}" style="flex:1;min-width:150px;padding:6px 8px">${opts}</select>${warn}
-            <input type="number" id="raid-goal-${d.dateKey}" value="${effective}" min="${RAID_GOAL_MIN}" max="${RAID_GOAL_MAX}" step="1" style="width:88px">
-            <span style="color:var(--tx2);font-size:.8em;min-width:86px">既定 ${d.goal}${isOverride ? ' <b style="color:var(--pri)">(上書き中)</b>' : ''}</span>
+            <span style="display:flex;align-items:center;gap:5px">
+                <input type="number" id="raid-goal-${d.dateKey}" value="${effective}" min="${RAID_GOAL_MIN}" max="${RAID_GOAL_MAX}" step="1" style="width:76px">
+                <span style="font-size:.75em;color:var(--tx2);white-space:nowrap">${perPerson ? '回/人' : '回(合計)'}</span>
+            </span>
+            <span style="color:var(--tx2);font-size:.8em;min-width:104px">既定 ${base}${isOverride ? ' <b style="color:var(--pri)">(上書き中)</b>' : ''}${perPerson && members > 0 ? `<br>= ${effective * members}回 (${members}人)` : ''}</span>
         </div>`;
     });
 
@@ -676,7 +691,8 @@ function renderRaid() {
     <p style="color:var(--tx2);font-size:.8em;margin-top:6px;line-height:1.6">
         種目の決まり方は <b>①この画面での指定 → ②「${esc(RAID_TAG)}」タグ付きの種目 → ③全種目から名前で推測</b> の順です。
         種目編集で「${esc(RAID_TAG)}」タグを付けておくと、名前の推測に頼らず確実にその種目が候補になります（★印がタグ付き）。<br>
-        既定値と同じ目標回数は保存しません（コード側の既定がそのまま使われます）。「種目未定」の日はレイドを行わず、通常のデイリーミッションになります。
+        <b>2日目以降の目標は「ログイン人数 × 1人あたり」</b>です（初日だけ合計固定）。入力欄はその「1人あたり」の数字で、実際の目標は当日の人数で決まります。<br>
+        既定値と同じ数字は保存しません（コード側の既定がそのまま使われます）。「種目未定」の日はレイドを行わず、通常のデイリーミッションになります。
     </p>`;
 
     el.innerHTML = html;
@@ -692,7 +708,7 @@ async function saveRaidGoals() {
             const n = Math.round(Number(inp.value));
             if (!isFinite(n) || n < RAID_GOAL_MIN || n > RAID_GOAL_MAX) {
                 invalid.push(`Day ${d.day}`);
-            } else if (n !== d.goal) {
+            } else if (n !== raidConfiguredValue(d)) {
                 // 既定と同じなら保存しない＝コード側の既定を生かす
                 goals[d.dateKey] = n;
             }

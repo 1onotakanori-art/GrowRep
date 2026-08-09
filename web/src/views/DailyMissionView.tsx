@@ -305,8 +305,22 @@ export default function DailyMissionView() {
               {formatDailyCount(raid.goal)}
               <span className={styles.targetUnit}>{unit}</span>
             </span>
+            {raid.perPerson != null && (
+              <span className={styles.targetProb}>
+                今日ログインした {raid.memberCount}人 × 1人{raid.perPerson}
+                {unit}
+              </span>
+            )}
             <span className={styles.targetProb}>{raid.label}</span>
           </div>
+
+          {raid.perPerson != null && (
+            <p className={styles.raidGoalNote}>
+              <i className="fa-solid fa-users" />
+              目標は参加人数で決まります。人が増えるほど目標も上がるので、
+              まだ来ていない人に声をかけるほど大きな山になります。
+            </p>
+          )}
 
           <div className={styles.teamTotalRow}>
             <span className={styles.teamTotal}>

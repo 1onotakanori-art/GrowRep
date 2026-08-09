@@ -21,8 +21,12 @@ import {
   formatRaidPoints,
   getRaidInputOpenAt,
   hasRaidTag,
+  isPerPersonRaidDay,
   isRaidInputGatedDay,
   isRaidInputOpen,
+  raidConfiguredValue,
+  resolveRaidGoal,
+  sanitizeRaidMemberCounts,
   raidContributionRatio,
   resolveRaidExercise,
   resolveRaidExerciseKey,
@@ -57,12 +61,29 @@ const EXERCISES_WITH_VARIANT: FreeExerciseMap = {
 };
 
 describe('日程表', () => {
-  it('初日は 腕立て1000回 で、開始日と一致する', () => {
+  it('初日だけ固定1000回（開催済みなので人数割にしない）', () => {
     const day1 = RAID_SCHEDULE[0];
     expect(day1.dateKey).toBe(RAID_START_DATE_KEY);
     expect(day1.day).toBe(1);
     expect(day1.goal).toBe(1000);
+    expect(day1.perPerson).toBeUndefined();
+    expect(isPerPersonRaidDay(day1)).toBe(false);
     expect(day1.nameHints).toContain('腕立て');
+  });
+
+  it('2日目以降はすべて人数割（1人あたりを持つ）', () => {
+    RAID_SCHEDULE.slice(1).forEach((d) => {
+      expect(isPerPersonRaidDay(d)).toBe(true);
+      expect(d.perPerson).toBeGreaterThan(0);
+      expect(d.goal).toBeUndefined();
+    });
+  });
+
+  it('2日目はスクワット 250回/人', () => {
+    const day2 = RAID_SCHEDULE[1];
+    expect(day2.dateKey).toBe('2026-08-10');
+    expect(day2.perPerson).toBe(250);
+    expect(day2.nameHints).toContain('スクワット');
   });
 
   it('最終日が RAID_END_DATE_KEY と一致する', () => {
@@ -77,7 +98,7 @@ describe('日程表', () => {
     expect(new Set(keys).size).toBe(keys.length);
     RAID_SCHEDULE.forEach((d, i) => {
       expect(d.day).toBe(i + 1);
-      expect(d.goal).toBeGreaterThan(0);
+      expect(raidConfiguredValue(d)).toBeGreaterThan(0);
       expect(d.nameHints.length).toBeGreaterThan(0);
       if (i > 0) {
         const prev = getDailyBoundariesJST(RAID_SCHEDULE[i - 1].dateKey).start;
@@ -632,5 +653,91 @@ describe('積み上げ得点', () => {
       expect(formatRaidPoints(66.666)).toBe('66.7');
       expect(formatRaidPoints(0)).toBe('0');
     });
+  });
+});
+
+
+describe('ログイン人数 × 1人あたり', () => {
+  const day1 = RAID_SCHEDULE[0]; // 固定 1000
+  const day2 = RAID_SCHEDULE[1]; // 250/人
+
+  it('固定目標の日は人数に影響されない', () => {
+    expect(resolveRaidGoal(day1, 1)).toBe(1000);
+    expect(resolveRaidGoal(day1, 8)).toBe(1000);
+  });
+
+  it('人数割の日は人数を掛ける', () => {
+    expect(resolveRaidGoal(day2, 1)).toBe(250);
+    expect(resolveRaidGoal(day2, 4)).toBe(1000);
+    expect(resolveRaidGoal(day2, 6)).toBe(1500);
+  });
+
+  it('人数が0でも1人ぶんは残す（目標0で即討伐にしない）', () => {
+    expect(resolveRaidGoal(day2, 0)).toBe(250);
+  });
+
+  it('raidConfiguredValue はその日の編集対象の数字を返す', () => {
+    expect(raidConfiguredValue(day1)).toBe(1000);
+    expect(raidConfiguredValue(day2)).toBe(250);
+  });
+
+  it('上書きは人数割の日なら1人あたりを差し替える', () => {
+    const o = applyRaidGoalOverride(day2, { '2026-08-10': 300 });
+    expect(o.perPerson).toBe(300);
+    expect(o.goalSource).toBe('override');
+    expect(resolveRaidGoal(o, 5)).toBe(1500);
+  });
+
+  it('上書きは固定の日なら合計を差し替える', () => {
+    const o = applyRaidGoalOverride(day1, { '2026-08-09': 1200 });
+    expect(o.goal).toBe(1200);
+    expect(o.perPerson).toBeUndefined();
+    expect(resolveRaidGoal(o, 5)).toBe(1200);
+  });
+
+  it('進捗の目標はログイン人数から出る', () => {
+    const usersMap = {
+      u1: { userName: 'あ', lastActiveDateKey: '2026-08-10' },
+      u2: { userName: 'い', lastActiveDateKey: '2026-08-10' },
+      u3: { userName: 'う', lastActiveDateKey: '2026-08-01' },
+    };
+    const r = buildRaidProgress({
+      usersMap,
+      dateKey: '2026-08-10',
+      totals: { u1: 100 },
+      myUserId: 'u1',
+      config: day2,
+    });
+    // 今日ログインしたのは u1/u2 の2人 → 250×2
+    expect(r.memberCount).toBe(2);
+    expect(r.perPerson).toBe(250);
+    expect(r.goal).toBe(500);
+    expect(r.cleared).toBe(false);
+  });
+
+  it('成績表は記録された人数で目標を再現し、無ければ投稿者数で代用する', () => {
+    const users = { u1: { userName: 'あ' }, u2: { userName: 'い' } };
+    const recorded = buildRaidDayResult(day2, 'ex', { u1: 400, u2: 400 }, users, 'u1', 5);
+    expect(recorded.memberCount).toBe(5);
+    expect(recorded.goal).toBe(1250);
+    expect(recorded.cleared).toBe(false);
+
+    const fallback = buildRaidDayResult(day2, 'ex', { u1: 400, u2: 400 }, users, 'u1');
+    expect(fallback.memberCount).toBe(2);
+    expect(fallback.goal).toBe(500);
+    expect(fallback.cleared).toBe(true);
+  });
+
+  it('sanitizeRaidMemberCounts は日程内の妥当な整数だけ通す', () => {
+    expect(
+      sanitizeRaidMemberCounts({
+        '2026-08-10': 5,
+        '2026-08-11': 0,
+        '2026-08-12': -1,
+        '2026-08-13': 'x',
+        '2099-01-01': 3,
+      }),
+    ).toEqual({ '2026-08-10': 5 });
+    expect(sanitizeRaidMemberCounts(null)).toEqual({});
   });
 });

@@ -180,6 +180,11 @@ export default function RaidScoreView() {
                     {formatDailyCount(d.totalValue)} /{' '}
                     {formatDailyCount(d.goal)}
                     {unit}
+                    {d.perPerson != null && (
+                      <span className={styles.dayFormula}>
+                        （{d.memberCount}人×{d.perPerson}）
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className={styles.dayTops}>

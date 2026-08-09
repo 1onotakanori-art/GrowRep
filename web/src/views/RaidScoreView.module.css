@@ -200,6 +200,10 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+.dayFormula {
+  font-weight: 600;
+  color: var(--text-3);
+}
 .dayTops {
   display: flex;
   flex-wrap: wrap;
