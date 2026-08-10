@@ -89,6 +89,22 @@ describe('日程表', () => {
     expect(day2.nameHints).toContain('スクワット');
   });
 
+  it('3日目は懸垂 100回/人', () => {
+    const day3 = RAID_SCHEDULE[2];
+    expect(day3.dateKey).toBe('2026-08-11');
+    expect(day3.perPerson).toBe(100);
+    expect(day3.nameHints).toContain('懸垂');
+  });
+
+  it('同じ名前ヒントの日が重ならない（懸垂が2日に出ない）', () => {
+    // 先頭ヒントで日程の重複を見る。最終日だけは初日と同種目にしてある
+    const heads = RAID_SCHEDULE.slice(0, -1).map((d) => d.nameHints[0]);
+    expect(new Set(heads).size).toBe(heads.length);
+    expect(RAID_SCHEDULE[RAID_SCHEDULE.length - 1].nameHints[0]).toBe(
+      RAID_SCHEDULE[0].nameHints[0],
+    );
+  });
+
   it('最終日が RAID_END_DATE_KEY と一致する', () => {
     expect(RAID_SCHEDULE[RAID_SCHEDULE.length - 1].dateKey).toBe(
       RAID_END_DATE_KEY,

@@ -289,16 +289,16 @@ export const RAID_SCHEDULE: RaidDayConfig[] = [
   {
     dateKey: '2026-08-11',
     day: 3,
-    nameHints: ['レッグレイズ', 'レッグレイス', 'leg raise', 'legraise'],
-    perPerson: 150,
-    label: '腹の日。すきま時間で積み上げ。',
+    nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'],
+    perPerson: 100,
+    label: '背中の日。1回の重みがいちばん大きい。',
   },
   {
     dateKey: '2026-08-12',
     day: 4,
-    nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'],
-    perPerson: 30,
-    label: '背中の日。1回の重みがいちばん大きい。',
+    nameHints: ['レッグレイズ', 'レッグレイス', 'leg raise', 'legraise'],
+    perPerson: 150,
+    label: '腹の日。すきま時間で積み上げ。',
   },
   {
     dateKey: '2026-08-13',
