@@ -96,6 +96,13 @@ describe('日程表', () => {
     expect(day3.nameHints).toContain('懸垂');
   });
 
+  it('4日目はクラップクランチ 200回/人', () => {
+    const day4 = RAID_SCHEDULE[3];
+    expect(day4.dateKey).toBe('2026-08-12');
+    expect(day4.perPerson).toBe(200);
+    expect(day4.nameHints).toContain('クラップクランチ');
+  });
+
   it('同じ名前ヒントの日が重ならない（懸垂が2日に出ない）', () => {
     // 先頭ヒントで日程の重複を見る。最終日だけは初日と同種目にしてある
     const heads = RAID_SCHEDULE.slice(0, -1).map((d) => d.nameHints[0]);
