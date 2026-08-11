@@ -296,8 +296,8 @@ export const RAID_SCHEDULE: RaidDayConfig[] = [
   {
     dateKey: '2026-08-12',
     day: 4,
-    nameHints: ['レッグレイズ', 'レッグレイス', 'leg raise', 'legraise'],
-    perPerson: 150,
+    nameHints: ['クラップクランチ', 'クラップ', 'clap crunch', 'clap'],
+    perPerson: 200,
     label: '腹の日。すきま時間で積み上げ。',
   },
   {
