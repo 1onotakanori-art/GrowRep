@@ -7779,7 +7779,7 @@ const RAID_SCHEDULE = [
     { dateKey: '2026-08-10', day: 2, nameHints: ['スクワット', 'squat'], perPerson: 200, label: '脚の日。数で押し切ろう。' },
     { dateKey: '2026-08-11', day: 3, nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'], perPerson: 100, label: '背中の日。1回の重みがいちばん大きい。' },
     { dateKey: '2026-08-12', day: 4, nameHints: ['クラップクランチ', 'クラップ', 'clap crunch', 'clap'], perPerson: 200, label: '腹の日。すきま時間で積み上げ。' },
-    { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス', 'dip'], perPerson: 100, label: '胸と二の腕。押す種目でもう一押し。' },
+    { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス(レイド)', 'ディップス（レイド）', 'ディップス', 'dip'], perPerson: 120, label: '胸と二の腕。押す種目でもう一押し。' },
     { dateKey: '2026-08-14', day: 6, nameHints: ['バーピー', 'burpee'], perPerson: 80, label: '全身の日。息が上がる。' },
     { dateKey: '2026-08-15', day: 7, nameHints: ['パイクプッシュアップ', 'パイク', 'ショルダープレス', 'pike'], perPerson: 60, label: '肩の日。ここまでで唯一あいている部位。' },
     { dateKey: '2026-08-16', day: 8, nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'], perPerson: 250, label: '最終決戦。初日と同じ種目で、どれだけ伸びたか。' }
