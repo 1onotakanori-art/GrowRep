@@ -103,6 +103,13 @@ describe('日程表', () => {
     expect(day4.nameHints).toContain('クラップクランチ');
   });
 
+  it('5日目はディップス(レイド) 120回/人', () => {
+    const day5 = RAID_SCHEDULE[4];
+    expect(day5.dateKey).toBe('2026-08-13');
+    expect(day5.perPerson).toBe(120);
+    expect(day5.nameHints[0]).toBe('ディップス(レイド)');
+  });
+
   it('同じ名前ヒントの日が重ならない（懸垂が2日に出ない）', () => {
     // 先頭ヒントで日程の重複を見る。最終日だけは初日と同種目にしてある
     const heads = RAID_SCHEDULE.slice(0, -1).map((d) => d.nameHints[0]);
@@ -199,6 +206,27 @@ describe('resolveRaidExerciseKey', () => {
       b_short: { name: 'スクワット', rule: '', icon: '', tags: [] },
     };
     expect(resolveRaidExerciseKey(RAID_SCHEDULE[1], map)).toBe('b_short');
+  });
+
+  it('5日目は素のディップスよりレイド用のディップスを選ぶ', () => {
+    // 名前が短いほうが勝つ規則があるので、先頭ヒントで明示していないと
+    // レイド用に用意した種目ではなく素のディップスに寄ってしまう
+    const map: FreeExerciseMap = {
+      a_plain: { name: 'ディップス', rule: '', icon: '', tags: [] },
+      b_raid: { name: 'ディップス(レイド)', rule: '', icon: '', tags: [] },
+    };
+    expect(resolveRaidExerciseKey(RAID_SCHEDULE[4], map)).toBe('b_raid');
+    // 全角カッコで登録されていても拾う
+    const wide: FreeExerciseMap = {
+      a_plain: { name: 'ディップス', rule: '', icon: '', tags: [] },
+      b_raid: { name: 'ディップス（レイド）', rule: '', icon: '', tags: [] },
+    };
+    expect(resolveRaidExerciseKey(RAID_SCHEDULE[4], wide)).toBe('b_raid');
+    // レイド用が無ければ素のディップスに落ちる
+    const plainOnly: FreeExerciseMap = {
+      a_plain: { name: 'ディップス', rule: '', icon: '', tags: [] },
+    };
+    expect(resolveRaidExerciseKey(RAID_SCHEDULE[4], plainOnly)).toBe('a_plain');
   });
 
   it('名前の長さが並んだらキー昇順（全端末で同じ種目にするため）', () => {

@@ -303,8 +303,10 @@ export const RAID_SCHEDULE: RaidDayConfig[] = [
   {
     dateKey: '2026-08-13',
     day: 5,
-    nameHints: ['ディップス', 'dip'],
-    perPerson: 100,
+    // レイド用に用意された「ディップス(レイド)」を先に見る。素の「ディップス」も
+    // 一致するうえ、名前が短いほうが優先されるので、明示しないとそちらに寄る
+    nameHints: ['ディップス(レイド)', 'ディップス（レイド）', 'ディップス', 'dip'],
+    perPerson: 120,
     label: '胸と二の腕。押す種目でもう一押し。',
   },
   {
