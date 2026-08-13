@@ -135,6 +135,83 @@ export default function RaidScoreView() {
         )}
       </div>
 
+      {board.blocks.map((b) => {
+        const ex = b.exerciseKey ? freeExercises[b.exerciseKey] : undefined;
+        const unit = guessExerciseUnit(ex?.name || '');
+        return (
+          <div key={b.id} className={styles.card}>
+            <div className={styles.cardHead}>
+              <span>
+                <i className="fa-solid fa-layer-group" /> {b.title}（
+                {b.dayCount}日通算）
+              </span>
+              <span className={styles.count}>
+                {b.playedDays}/{b.dayCount} 日終了
+              </span>
+            </div>
+            <div className={styles.dayList}>
+              <div
+                className={`${styles.dayCard} ${b.cleared ? styles.dayDone : ''}`}
+              >
+                <div className={styles.dayHead}>
+                  <span className={styles.dayLabel}>
+                    {formatDailyDateLabel(b.startDateKey)}
+                    <span className={styles.dayDate}>
+                      〜{formatDailyDateLabel(b.endDateKey)}
+                    </span>
+                  </span>
+                  <span className={styles.dayStatus}>
+                    {b.cleared ? (
+                      <>
+                        <i className="fa-solid fa-circle-check" /> 討伐
+                      </>
+                    ) : (
+                      `${b.percent}%`
+                    )}
+                  </span>
+                </div>
+                <div className={styles.dayBody}>
+                  <span className={styles.dayEx}>
+                    <i className={`fa-solid ${ex?.icon || 'fa-dumbbell'}`} />
+                    {ex?.name || '種目未定'}
+                  </span>
+                  <span className={styles.dayTotal}>
+                    {formatDailyCount(b.totalValue)} /{' '}
+                    {formatDailyCount(b.goal)}
+                    {unit}
+                    {b.perPersonTotal != null && (
+                      <span className={styles.dayFormula}>
+                        （{b.memberCount}人×{b.perPersonTotal}）
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className={styles.dayTops}>
+                  {b.entries.length === 0 ? (
+                    <span className={styles.dayEmpty}>投稿なし</span>
+                  ) : (
+                    b.entries.slice(0, 3).map((e) => (
+                      <span
+                        key={e.userId}
+                        className={`${styles.dayTop} ${e.isMe ? styles.dayTopMe : ''}`}
+                      >
+                        {truncateLabelName(e.userName)}{' '}
+                        {formatDailyCount(e.value)}
+                        {unit}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+            <p className={styles.note}>
+              {b.label}
+              日ごとに区切らず、期間の合計で討伐判定をします（得点はこれまでどおり日ごとに分け合います）。
+            </p>
+          </div>
+        );
+      })}
+
       <div className={styles.card}>
         <div className={styles.cardHead}>
           <span>
@@ -162,7 +239,9 @@ export default function RaidScoreView() {
                     </span>
                   </span>
                   <span className={styles.dayStatus}>
-                    {d.cleared ? (
+                    {d.blockId ? (
+                      '通算に加算'
+                    ) : d.cleared ? (
                       <>
                         <i className="fa-solid fa-circle-check" /> 討伐
                       </>
@@ -177,13 +256,20 @@ export default function RaidScoreView() {
                     {ex?.name || '種目未定'}
                   </span>
                   <span className={styles.dayTotal}>
-                    {formatDailyCount(d.totalValue)} /{' '}
-                    {formatDailyCount(d.goal)}
-                    {unit}
-                    {d.perPerson != null && (
-                      <span className={styles.dayFormula}>
-                        （{d.memberCount}人×{d.perPerson}）
-                      </span>
+                    {formatDailyCount(d.totalValue)}
+                    {d.blockId ? (
+                      unit
+                    ) : (
+                      <>
+                        {' '}
+                        / {formatDailyCount(d.goal)}
+                        {unit}
+                        {d.perPerson != null && (
+                          <span className={styles.dayFormula}>
+                            （{d.memberCount}人×{d.perPerson}）
+                          </span>
+                        )}
+                      </>
                     )}
                   </span>
                 </div>

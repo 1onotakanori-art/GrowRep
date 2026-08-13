@@ -300,6 +300,9 @@ let _raidMembers = {};
 //    実際に使われる目標はアプリ側の RAID_SCHEDULE + この画面が書く上書き
 //    （日付キー単位）なので、ズレの影響はこの画面の表示だけに閉じる。
 //    それでも紛らわしいので、日程を変えるときは3か所そろえること。
+// 3日通算ブロック「複合種目総合1」の名前ヒント（app.js / web と同じ）
+const RAID_BLOCK_TOTAL_1_HINTS = ['複合種目総合1', '複合種目総合', '複合種目'];
+
 const RAID_SCHEDULE = [
     // goal = その日の合計を固定 / perPerson = ログイン人数 × 1人あたり
     { dateKey: '2026-08-09', day: 1, nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'], goal: 1000 },
@@ -307,10 +310,22 @@ const RAID_SCHEDULE = [
     { dateKey: '2026-08-11', day: 3, nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'], perPerson: 100 },
     { dateKey: '2026-08-12', day: 4, nameHints: ['クラップクランチ', 'クラップ', 'clap crunch', 'clap'], perPerson: 200 },
     { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス(レイド)', 'ディップス（レイド）', 'ディップス', 'dip'], perPerson: 120 },
-    { dateKey: '2026-08-14', day: 6, nameHints: ['バーピー', 'burpee'], perPerson: 80 },
-    { dateKey: '2026-08-15', day: 7, nameHints: ['パイクプッシュアップ', 'パイク', 'ショルダープレス', 'pike'], perPerson: 60 },
-    { dateKey: '2026-08-16', day: 8, nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'], perPerson: 250 }
+    // 8/14〜8/16 は「複合種目総合1」の3日通算ブロック（blockId でまとめる）
+    { dateKey: '2026-08-14', day: 6, blockId: 'total1', nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 80 },
+    { dateKey: '2026-08-15', day: 7, blockId: 'total1', nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 80 },
+    { dateKey: '2026-08-16', day: 8, blockId: 'total1', nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 80 }
 ];
+
+// 通算ブロック：複数日を1種目でつなぎ、期間の合計で1体のボスを削る単位。
+// 入力欄は日ごとのままで、ブロックの目標は「各日の1人あたりの合計 × 人数」
+const RAID_BLOCKS = [
+    { id: 'total1', title: '複合種目総合1', dateKeys: ['2026-08-14', '2026-08-15', '2026-08-16'] }
+];
+
+/** その日が属する通算ブロック（無ければ null） */
+function raidBlockOf(d) {
+    return RAID_BLOCKS.find(b => b.id === d.blockId) || null;
+}
 
 /** その日の設定値（固定目標なら goal、人数割なら perPerson） */
 function raidConfiguredValue(d) {
@@ -569,6 +584,13 @@ function todayDateKeyJST() {
     return `${jst.getUTCFullYear()}-${String(jst.getUTCMonth() + 1).padStart(2, '0')}-${String(jst.getUTCDate()).padStart(2, '0')}`;
 }
 
+/** 前日の日付キー（通算ブロックの体力は初日の前日の人数で決まる） */
+function prevDateKeyJST(dateKey) {
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const prev = new Date(Date.UTC(y, m - 1, d) - 24 * 60 * 60 * 1000);
+    return `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}-${String(prev.getUTCDate()).padStart(2, '0')}`;
+}
+
 /** 日付キーを 8/9(日) 形式に */
 function fmtRaidDate(dateKey) {
     const [y, m, d] = dateKey.split('-').map(Number);
@@ -652,6 +674,25 @@ function renderRaid() {
         <div class="ip-row"><span class="ip-label">反映</span><span class="ip-val">保存後、各自がアプリを開き直した時点で反映されます</span></div>
     </div>`;
 
+    // 通算ブロックは「各日の1人あたりの合計 × 人数」が期間ぶんの体力になる。
+    // 日ごとの数字だけ見ても実際の目標が読めないので、合計をここに出す
+    RAID_BLOCKS.forEach(b => {
+        const days = RAID_SCHEDULE.filter(d => d.blockId === b.id);
+        if (days.length === 0) return;
+        const perPersonTotal = days.reduce((sum, d) => {
+            const v = _raidGoals[d.dateKey] != null ? _raidGoals[d.dateKey] : raidConfiguredValue(d);
+            return sum + v;
+        }, 0);
+        // 体力は「ブロック初日の前日」のログイン人数で決まる（期間中ずっと同じ）
+        const members = _raidMembers[prevDateKeyJST(b.dateKeys[0])] || 0;
+        html += `<div class="info-panel">
+            <div class="ip-row"><span class="ip-label">通算ブロック</span><span class="ip-val">${esc(b.title)}（${fmtRaidDate(b.dateKeys[0])}〜${fmtRaidDate(b.dateKeys[b.dateKeys.length - 1])}／${b.dateKeys.length}日通算）</span></div>
+            <div class="ip-row"><span class="ip-label">1人あたり</span><span class="ip-val">${perPersonTotal}回（${days.map(d => (_raidGoals[d.dateKey] != null ? _raidGoals[d.dateKey] : raidConfiguredValue(d))).join(' + ')}）</span></div>
+            <div class="ip-row"><span class="ip-label">ボスの体力</span><span class="ip-val">${members > 0 ? `${perPersonTotal * members}回（${members}人 × ${perPersonTotal}回）` : `${perPersonTotal}回 × ${fmtRaidDate(b.dateKeys[0])}前日のログイン人数`}</span></div>
+            <div class="ip-row"><span class="ip-label">扱い</span><span class="ip-val">日ごとの討伐判定はなく、${b.dateKeys.length}日間の合計で1体を削ります（得点は日ごとに分け合うまま）</span></div>
+        </div>`;
+    });
+
     RAID_SCHEDULE.forEach(d => {
         const base = raidConfiguredValue(d);
         const effective = _raidGoals[d.dateKey] != null ? _raidGoals[d.dateKey] : base;
@@ -672,14 +713,15 @@ function renderRaid() {
             : (!pinned && auto.source === 'name' && taggedCount > 0)
                 ? ` <span style="color:var(--warn);font-size:.8em"><i class="fa-solid fa-tag"></i> タグ未該当</span>`
                 : '';
+        const block = raidBlockOf(d);
         html += `<div class="cfg-row" style="align-items:center;flex-wrap:wrap;gap:8px;${isToday ? 'background:#fff8e1;border-radius:6px;padding:6px 8px' : ''}">
-            <span style="min-width:96px;font-weight:700">Day ${d.day} <span style="color:var(--tx2);font-weight:400">${fmtRaidDate(d.dateKey)}</span>${isToday ? ' <span class="badge badge-sel">今日</span>' : ''}</span>
+            <span style="min-width:96px;font-weight:700">Day ${d.day} <span style="color:var(--tx2);font-weight:400">${fmtRaidDate(d.dateKey)}</span>${isToday ? ' <span class="badge badge-sel">今日</span>' : ''}${block ? `<br><span style="color:var(--tx2);font-weight:400;font-size:.8em">通算：${esc(block.title)}</span>` : ''}</span>
             <select id="raid-ex-${d.dateKey}" style="flex:1;min-width:150px;padding:6px 8px">${opts}</select>${warn}
             <span style="display:flex;align-items:center;gap:5px">
                 <input type="number" id="raid-goal-${d.dateKey}" value="${effective}" min="${RAID_GOAL_MIN}" max="${RAID_GOAL_MAX}" step="1" style="width:76px">
                 <span style="font-size:.75em;color:var(--tx2);white-space:nowrap">${perPerson ? '回/人' : '回(合計)'}</span>
             </span>
-            <span style="color:var(--tx2);font-size:.8em;min-width:104px">既定 ${base}${isOverride ? ' <b style="color:var(--pri)">(上書き中)</b>' : ''}${perPerson && members > 0 ? `<br>= ${effective * members}回 (${members}人)` : ''}</span>
+            <span style="color:var(--tx2);font-size:.8em;min-width:104px">既定 ${base}${isOverride ? ' <b style="color:var(--pri)">(上書き中)</b>' : ''}${block ? '<br>通算ぶんに合算' : (perPerson && members > 0 ? `<br>= ${effective * members}回 (${members}人)` : '')}</span>
         </div>`;
     });
 
@@ -692,6 +734,7 @@ function renderRaid() {
         種目の決まり方は <b>①この画面での指定 → ②「${esc(RAID_TAG)}」タグ付きの種目 → ③全種目から名前で推測</b> の順です。
         種目編集で「${esc(RAID_TAG)}」タグを付けておくと、名前の推測に頼らず確実にその種目が候補になります（★印がタグ付き）。<br>
         <b>2日目以降の目標は「ログイン人数 × 1人あたり」</b>です（初日だけ合計固定）。入力欄はその「1人あたり」の数字で、実際の目標は当日の人数で決まります。<br>
+        <b>通算ブロックの日</b>（上の「通算：」表示がある日）は1日ごとの討伐判定をしません。入力欄は日ごとのままで、ブロックの体力は<b>各日の1人あたりを足した数 × ブロック初日の前日のログイン人数</b>になります。<br>
         既定値と同じ数字は保存しません（コード側の既定がそのまま使われます）。「種目未定」の日はレイドを行わず、通常のデイリーミッションになります。
     </p>`;
 
