@@ -33,19 +33,26 @@ import {
 import {
   applyRaidGoalOverride,
   bucketRaidTotals,
+  buildRaidBlockResult,
   buildRaidDayResult,
   buildRaidProgress,
   buildRaidStandings,
+  getRaidBlockForDate,
+  getRaidBlockDayConfigs,
   getRaidDayConfig,
   isRaidMaintenanceDay,
+  planRaidBlock,
   resolveRaidExerciseKey,
+  resolveRaidMemberCount,
   sanitizeRaidExerciseOverrides,
   sanitizeRaidGoalOverrides,
   sanitizeRaidMemberCounts,
   countActiveUsersSince,
   getPreviousDateKey,
+  RAID_BLOCKS,
   RAID_CONFIG_DOC,
   RAID_SCHEDULE,
+  type RaidBlockResult,
   type RaidDayResult,
   type RaidOverrides,
   type RaidStanding,
@@ -357,6 +364,54 @@ export async function getDailyMissionTotals(
 }
 
 /**
+ * 期間ぶんの投稿を日ごと・ユーザーごとに合計する。
+ * 通算ブロックの進捗は「開始日から今日まで」の合計なので、
+ * その日ぶんだけを引く getDailyMissionTotals では足りない。
+ * timestamp の単一フィールド範囲検索1回で期間ぶんを取り、手元で振り分ける。
+ * app.js: getRaidRangeTotals
+ */
+export async function getRaidRangeTotals(
+  fromDateKey: string,
+  throughDateKey: string,
+  /** 日付キー→その日の種目キー。載っていない日は数えない */
+  exerciseKeyByDate: Record<string, string>,
+): Promise<{
+  /** 期間ぶんの通算 userId→合計回数 */
+  cumulative: Record<string, number>;
+  /** 日付キー→userId→合計回数 */
+  byDay: Record<string, Record<string, number>>;
+}> {
+  const { start } = getDailyBoundariesJST(fromDateKey);
+  const { end } = getDailyBoundariesJST(throughDateKey);
+  const snap = await getDocs(
+    query(
+      collection(db, POSTS),
+      where('timestamp', '>=', Timestamp.fromDate(start)),
+      where('timestamp', '<', Timestamp.fromDate(end)),
+    ),
+  );
+  const posts = snap.docs
+    .map((d) => d.data() as Post)
+    .map((p) => ({
+      userId: p.userId,
+      exerciseType: p.exerciseType,
+      value: Number(p.value) || 0,
+      // timestamp 未確定（serverTimestamp 反映待ち）の投稿は日を決められない
+      date: p.timestamp?.toDate?.() as Date,
+    }))
+    .filter((p) => !!p.date);
+
+  const byDay = bucketRaidTotals(posts, exerciseKeyByDate);
+  const cumulative: Record<string, number> = {};
+  Object.values(byDay).forEach((day) => {
+    Object.entries(day).forEach(([userId, value]) => {
+      cumulative[userId] = (cumulative[userId] || 0) + value;
+    });
+  });
+  return { cumulative, byDay };
+}
+
+/**
  * ミッション本体＋自分の達成状況＋全員の目標をまとめて解決。
  * 目標はシードから決まるので、他ユーザーの回数を保存・取得する必要はない。
  * app.js: loadDailyMissionState
@@ -401,12 +456,38 @@ export async function loadDailyMissionState(
 
   // レイド開催日: 個人目標は無く、全員の合計だけで達成を判定する
   if (mission.raid) {
+    // 通算ブロックの日は、ブロック開始日から今日までを積み上げて見る
+    const block = getRaidBlockForDate(mission.dateKey);
+    const blockPlan = block ? planRaidBlock(block, overrides?.goals) : null;
     let raidTotals: Record<string, number> = {};
+    let todayTotals: Record<string, number> | null = null;
     try {
-      raidTotals = await getDailyMissionTotals(
-        mission.dateKey,
-        mission.exerciseKey,
-      );
+      if (block) {
+        // ブロックの各日の種目は管理画面で日ごとに指定できるので、日ごとに引き当てる
+        const keyByDate: Record<string, string> = {};
+        getRaidBlockDayConfigs(block)
+          .filter((c) => c.dateKey <= mission.dateKey)
+          .forEach((c) => {
+            const key = resolveRaidExerciseKey(
+              c,
+              freeExercises,
+              overrides?.exercises,
+            );
+            if (key) keyByDate[c.dateKey] = key;
+          });
+        const range = await getRaidRangeTotals(
+          block.dateKeys[0],
+          mission.dateKey,
+          keyByDate,
+        );
+        raidTotals = range.cumulative;
+        todayTotals = range.byDay[mission.dateKey] || {};
+      } else {
+        raidTotals = await getDailyMissionTotals(
+          mission.dateKey,
+          mission.exerciseKey,
+        );
+      }
     } catch (e) {
       console.warn('[レイド] 集計に失敗:', e);
     }
@@ -417,6 +498,8 @@ export async function loadDailyMissionState(
       myUserId: userId,
       config: mission.raid,
       memberCounts: overrides?.memberCounts,
+      blockPlan,
+      todayTotals,
     });
     // 翌日のボス体力に使うので、今日ログインした人数を毎日残す
     // （固定目標の日でも、その翌日が人数割なら必要になる）
@@ -430,8 +513,10 @@ export async function loadDailyMissionState(
       exerciseKey: mission.exerciseKey,
       target: 0,
       totalValue: raid.myValue,
-      // レイド中の「クリア済み」は自分が今日1回でも積んだか（タブのドット用）
-      cleared: raid.myValue > 0,
+      // レイド中の「クリア済み」は自分が今日1回でも積んだか（タブのドット用）。
+      // 通算ブロックでも見るのは今日ぶん——前の日の積み上げで今日の催促が
+      // 消えてしまうと、通算のいちばん大事な「毎日積む」が伝わらない
+      cleared: raid.myTodayValue > 0,
       probability: 0,
       peak: 0,
       bestValue: 0,
@@ -489,6 +574,8 @@ export async function loadDailyMissionState(
 export interface RaidScoreboard {
   /** 開催済みの日だけ（今日を含む）。新しい日が先頭 */
   days: RaidDayResult[];
+  /** 開催済みの日を含む通算ブロックの結果。新しいブロックが先頭 */
+  blocks: RaidBlockResult[];
   standings: RaidStanding[];
   /** 開催済み日数 */
   playedDays: number;
@@ -510,7 +597,7 @@ export async function loadRaidScoreboard(
   // まだ来ていない日は集計しない（0点の行が並ぶだけなので）
   const played = RAID_SCHEDULE.filter((d) => d.dateKey <= todayKey);
   if (played.length === 0) {
-    return { days: [], standings: [], playedDays: 0 };
+    return { days: [], blocks: [], standings: [], playedDays: 0 };
   }
 
   const overrides = await getRaidOverrides();
@@ -573,8 +660,27 @@ export async function loadRaidScoreboard(
     ),
   );
 
+  // 通算ブロックは日ごとに区切らず、開催済みの日をまとめて1体ぶんにする
+  const blocks = RAID_BLOCKS.map((block) => {
+    const blockDays = days.filter((d) => d.blockId === block.id);
+    if (blockDays.length === 0) return null;
+    const members = resolveRaidMemberCount(
+      block.dateKeys[0],
+      overrides.memberCounts,
+      users,
+    );
+    return buildRaidBlockResult(
+      planRaidBlock(block, overrides.goals),
+      blockDays,
+      members.count,
+      users,
+      userId,
+    );
+  }).filter((b): b is RaidBlockResult => b !== null);
+
   return {
     days: [...days].reverse(),
+    blocks: [...blocks].reverse(),
     standings: buildRaidStandings(days, users, userId),
     playedDays: days.length,
   };

@@ -7765,12 +7765,23 @@ const WEEKLY_PAUSE_LABEL = '夏休み休止';
 const WEEKLY_PAUSE_NOTE = '夏休みのため、今週の週間チャレンジはお休みです。種目の選出も得点集計もありません。';
 const WEEKLY_PAUSE_RESUME_NOTE = '再開は 8/17(月) の週から。';
 
+// 3日通算ブロック「複合種目総合1」の識別子・種目名・名前ヒント。
+// ブロックの3日はすべてこの種目。表記ゆれ（数字なし・「総合」なし）でも
+// 拾えるように短い候補を後ろに置く
+const RAID_BLOCK_TOTAL_1 = 'total1';
+const RAID_BLOCK_TOTAL_1_TITLE = '複合種目総合1';
+const RAID_BLOCK_TOTAL_1_HINTS = ['複合種目総合1', '複合種目総合', '複合種目'];
+// 1セットの中身。数えるのは回数ではなく**セット数**なので、
+// 何をもって1と数えるのかがカードに出ていないと数字の意味が伝わらない
+const RAID_BLOCK_TOTAL_1_SET = '1セット＝腕立て10回→バックエクステンション10回→クラップクランチ10回→スクワット20回';
+
 /**
  * レイドの日程表。
  * nameHints は登録種目の「名前」に対する部分一致候補（優先順）。
  * フリー種目のキーは 'free_<timestamp>' で環境ごとに違うため名前で引き当てる。
+ * blockId が付いた日は通算ブロック（RAID_BLOCKS）の一部で、1日で完結しない。
  * ⚠️ 一致する種目が無い日はレイドを行わず、通常のデイリーミッションに戻る。
- * @type {Array<{dateKey: string, day: number, nameHints: string[], goal: number, label: string}>}
+ * @type {Array<{dateKey: string, day: number, blockId?: string, nameHints: string[], goal: number, label: string}>}
  */
 const RAID_SCHEDULE = [
     // 初日は開催済み。人数割に変えると確定した結果が動いてしまうので固定のまま
@@ -7780,13 +7791,119 @@ const RAID_SCHEDULE = [
     { dateKey: '2026-08-11', day: 3, nameHints: ['懸垂', 'チンニング', 'プルアップ', 'pull'], perPerson: 100, label: '背中の日。1回の重みがいちばん大きい。' },
     { dateKey: '2026-08-12', day: 4, nameHints: ['クラップクランチ', 'クラップ', 'clap crunch', 'clap'], perPerson: 200, label: '腹の日。すきま時間で積み上げ。' },
     { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス(レイド)', 'ディップス（レイド）', 'ディップス', 'dip'], perPerson: 120, label: '胸と二の腕。押す種目でもう一押し。' },
-    { dateKey: '2026-08-14', day: 6, nameHints: ['バーピー', 'burpee'], perPerson: 80, label: '全身の日。息が上がる。' },
-    { dateKey: '2026-08-15', day: 7, nameHints: ['パイクプッシュアップ', 'パイク', 'ショルダープレス', 'pike'], perPerson: 60, label: '肩の日。ここまでで唯一あいている部位。' },
-    { dateKey: '2026-08-16', day: 8, nameHints: ['プッシュアップ', '腕立て伏せ', '腕立て', 'push'], perPerson: 250, label: '最終決戦。初日と同じ種目で、どれだけ伸びたか。' }
+    // 8/14〜8/16 は「複合種目総合1」の3日通算ブロック。
+    // 3日とも同じ種目・同じ1人あたりで、体力も進捗も3日ぶんをひとまとめに見る。
+    // 数えるのはセット数。1人1日30セット＝3日で90セットから始めて、
+    // 軽ければ管理画面で2日目以降だけ上げられる（日ごとの数字がそのまま合算される）
+    { dateKey: '2026-08-14', day: 6, blockId: RAID_BLOCK_TOTAL_1, nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 30, label: `3日通算の1日目。${RAID_BLOCK_TOTAL_1_SET}。` },
+    { dateKey: '2026-08-15', day: 7, blockId: RAID_BLOCK_TOTAL_1, nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 30, label: `3日通算の2日目。折り返し。${RAID_BLOCK_TOTAL_1_SET}。` },
+    { dateKey: '2026-08-16', day: 8, blockId: RAID_BLOCK_TOTAL_1, nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 30, label: `3日通算の最終日。ここまでの合計で討伐判定。${RAID_BLOCK_TOTAL_1_SET}。` }
 ];
 
 // レイド全体の日数
 const RAID_TOTAL_DAYS = RAID_SCHEDULE.length;
+
+/**
+ * 通算ブロック：複数日をひとつの種目でつなぎ、その期間の**合計**で
+ * 1体のボスを削る単位。日ごとに区切らないので、前の日に積んだぶんは
+ * 最終日まで残る（1日だけ出られなかった人も置いていかれない）。
+ *
+ * ブロックの日は個別の目標を持たず、体力も進捗率も討伐判定もブロック全体で1つ。
+ * ただし積み上げ得点（RAID_POINTS_PER_DAY）はこれまでどおり日ごとに分け合う。
+ * @type {Array<{id: string, title: string, dateKeys: string[], label: string}>}
+ */
+const RAID_BLOCKS = [
+    {
+        id: RAID_BLOCK_TOTAL_1,
+        title: RAID_BLOCK_TOTAL_1_TITLE,
+        dateKeys: ['2026-08-14', '2026-08-15', '2026-08-16'],
+        label: `3日通算。1種目を最終日まで積み上げて、1体のボスを削り切る。数えるのはセット数（${RAID_BLOCK_TOTAL_1_SET}）。`
+    }
+];
+
+/**
+ * id からブロック設定を引く
+ * @param {string|null} blockId
+ * @returns {Object|null}
+ */
+function getRaidBlock(blockId) {
+    if (!blockId) return null;
+    return RAID_BLOCKS.find(b => b.id === blockId) || null;
+}
+
+/**
+ * その日が属する通算ブロック。単独開催の日は null
+ * @param {string} dateKey
+ * @returns {Object|null}
+ */
+function getRaidBlockForDate(dateKey) {
+    const config = getRaidDayConfig(dateKey);
+    return config ? getRaidBlock(config.blockId) : null;
+}
+
+/**
+ * ブロックに属する日の設定（日付順）
+ * @param {Object} block
+ * @returns {Array<Object>}
+ */
+function getRaidBlockDayConfigs(block) {
+    return RAID_SCHEDULE.filter(d => d.blockId === block.id);
+}
+
+/**
+ * ブロックの中で何日目か（1始まり）。含まれない日は0
+ * @param {Object} block
+ * @param {string} dateKey
+ * @returns {number}
+ */
+function raidBlockDayIndex(block, dateKey) {
+    return block.dateKeys.indexOf(dateKey) + 1;
+}
+
+/**
+ * 管理画面での上書きをブロックの各日に反映する（非破壊）
+ * @param {Object} block
+ * @param {Object|null} goalOverrides
+ * @returns {{block: Object, dayConfigs: Array<Object>}}
+ */
+function planRaidBlock(block, goalOverrides) {
+    return {
+        block: block,
+        dayConfigs: getRaidBlockDayConfigs(block).map(c => applyRaidGoalOverride(c, goalOverrides))
+    };
+}
+
+/**
+ * ブロックのボスの体力＝各日の目標の合計。
+ * 人数は「ブロック初日に確定した1つ」を全日に使う。日ごとに数え直すと
+ * 期間の途中で体力が動いて、積み上げた割合の意味が変わってしまうため
+ * @param {Object} plan - planRaidBlock の結果
+ * @param {number} memberCount
+ * @returns {number}
+ */
+function resolveRaidBlockGoal(plan, memberCount) {
+    return plan.dayConfigs.reduce((sum, config) => sum + resolveRaidGoal(config, memberCount), 0);
+}
+
+/**
+ * 1人あたりの通算目標。全日が人数割のときだけ意味を持つので、
+ * 固定目標の日が混ざるブロックでは null（＝合計だけを見せる）
+ * @param {Object} plan
+ * @returns {number|null}
+ */
+function raidBlockPerPerson(plan) {
+    if (plan.dayConfigs.some(c => c.perPerson == null)) return null;
+    return plan.dayConfigs.reduce((sum, c) => sum + (c.perPerson || 0), 0);
+}
+
+/**
+ * ブロックの目標がコードの既定か、1日でも管理画面で上書きされているか
+ * @param {Object} plan
+ * @returns {string}
+ */
+function raidBlockGoalSource(plan) {
+    return plan.dayConfigs.some(c => c.goalSource === 'override') ? 'override' : 'default';
+}
 
 /**
  * その日の設定値（固定目標なら goal、人数割なら perPerson）。
@@ -8176,10 +8293,14 @@ function isWeeklyPausedWeekStart(weekStart) {
  * レイドの進捗（全員の合計）を組み立てる。
  * 並ぶのは通常のデイリーミッションと同じ「今日ログインした人」＋投稿済みの人。
  * 個人目標の抽選は無いので、達成判定はチーム合計だけを見る。
- * @param {{usersMap: Object, dateKey: string, totals: Object, myUserId: string, config: Object}} input
+ *
+ * 通算ブロックの日は blockPlan を渡す。totals は「ブロック開始日から今日まで」の
+ * 通算、todayTotals は当日ぶんで、体力・達成判定はブロック全体で行う
+ * @param {{usersMap: Object, dateKey: string, totals: Object, myUserId: string, config: Object, memberCounts: Object, blockPlan: Object, todayTotals: Object}} input
  * @returns {Object}
  */
-function buildRaidProgress({ usersMap, dateKey, totals, myUserId, config, memberCounts }) {
+function buildRaidProgress({ usersMap, dateKey, totals, myUserId, config, memberCounts, blockPlan, todayTotals }) {
+    const today = todayTotals || totals;
     const rows = Object.keys(usersMap || {})
         .filter(userId => isDailyActiveUser(usersMap[userId], userId, dateKey, totals, myUserId))
         .map(userId => {
@@ -8200,25 +8321,44 @@ function buildRaidProgress({ usersMap, dateKey, totals, myUserId, config, member
             || a.userId.localeCompare(b.userId));
 
     // ボスの体力は「前日ログインした人数 × 1人あたり」。
-    // 当日の人数だと日中ずっと動いてしまうので、前日ぶんで0:00に確定させる
-    const members = resolveRaidMemberCount(dateKey, memberCounts, usersMap);
-    const perPerson = config.perPerson != null ? config.perPerson : null;
-    const goal = resolveRaidGoal(config, members.count);
+    // 当日の人数だと日中ずっと動いてしまうので、前日ぶんで0:00に確定させる。
+    // 通算ブロックの日は「ブロック初日の前日」で数え、期間中ずっと同じ体力にする
+    const goalDateKey = blockPlan ? blockPlan.block.dateKeys[0] : dateKey;
+    const members = resolveRaidMemberCount(goalDateKey, memberCounts, usersMap);
+    const perPerson = blockPlan
+        ? raidBlockPerPerson(blockPlan)
+        : (config.perPerson != null ? config.perPerson : null);
+    const goal = blockPlan
+        ? resolveRaidBlockGoal(blockPlan, members.count)
+        : resolveRaidGoal(config, members.count);
+    const block = blockPlan ? {
+        id: blockPlan.block.id,
+        title: blockPlan.block.title,
+        label: blockPlan.block.label,
+        startDateKey: blockPlan.block.dateKeys[0],
+        endDateKey: blockPlan.block.dateKeys[blockPlan.block.dateKeys.length - 1],
+        dayCount: blockPlan.block.dateKeys.length,
+        dayIndex: raidBlockDayIndex(blockPlan.block, dateKey),
+        perPersonTotal: perPerson
+    } : null;
     return {
         day: config.day,
         totalDays: RAID_TOTAL_DAYS,
         goal: goal,
-        goalSource: config.goalSource || 'default',
+        goalSource: blockPlan ? raidBlockGoalSource(blockPlan) : (config.goalSource || 'default'),
         perPerson: perPerson,
         memberCount: members.count,
         memberCountDateKey: perPerson != null ? members.dateKey : null,
         memberCountSource: perPerson != null ? members.source : null,
         label: config.label,
+        block: block,
         totalValue: totalValue,
+        todayValue: rows.reduce((sum, r) => sum + (Number(today[r.userId]) || 0), 0),
         remaining: Math.max(0, goal - totalValue),
         percent: goal > 0 ? Math.min(100, Math.round((totalValue / goal) * 100)) : 0,
         cleared: goal > 0 && totalValue >= goal,
         myValue: Number(totals[myUserId]) || 0,
+        myTodayValue: Number(today[myUserId]) || 0,
         contributors: contributors,
         activeCount: contributors.filter(c => c.value > 0).length
     };
@@ -8309,16 +8449,79 @@ function buildRaidDayResult(config, exerciseKey, totals, usersMap, myUserId, rec
     const memberCount = (recordedMemberCount && recordedMemberCount > 0)
         ? recordedMemberCount
         : entries.length;
-    const goal = resolveRaidGoal(config, memberCount);
+    // 通算ブロックの日は1日ぶんの目標を持たない。ここで per-day の目標を作ると
+    // 「その日だけで未達」という、ブロックには存在しない判定が画面に出てしまう
+    const inBlock = !!config.blockId;
+    const goal = inBlock ? 0 : resolveRaidGoal(config, memberCount);
 
     return {
         dateKey: config.dateKey,
         day: config.day,
         exerciseKey: exerciseKey,
         goal: goal,
-        perPerson: config.perPerson != null ? config.perPerson : null,
+        perPerson: (!inBlock && config.perPerson != null) ? config.perPerson : null,
         memberCount: memberCount,
         totalValue: totalValue,
+        cleared: goal > 0 && totalValue >= goal,
+        blockId: config.blockId || null,
+        entries: entries
+    };
+}
+
+/**
+ * ブロックの日ごとの結果を通算にまとめる。
+ * 回数は期間の合計、点は日ごとに分け合ったものの合計。
+ * 討伐判定はここでだけ行う（1日ごとには判定しない）
+ * @param {Object} plan - planRaidBlock の結果
+ * @param {Array<Object>} dayResults - ブロックに属する日の結果（日付順・今日までのぶん）
+ * @param {number} memberCount - ブロック初日の前日に記録したログイン人数
+ * @param {Object} usersMap
+ * @param {string} myUserId
+ * @returns {Object}
+ */
+function buildRaidBlockResult(plan, dayResults, memberCount, usersMap, myUserId) {
+    const acc = {};
+    (dayResults || []).forEach(day => {
+        day.entries.forEach(e => {
+            if (!acc[e.userId]) acc[e.userId] = { value: 0, points: 0 };
+            acc[e.userId].value += e.value;
+            acc[e.userId].points += e.points;
+        });
+    });
+
+    const totalValue = Object.keys(acc).reduce((sum, userId) => sum + acc[userId].value, 0);
+    const entries = Object.keys(acc).map(userId => ({
+        userId: userId,
+        userName: raidUserName(usersMap, userId),
+        value: acc[userId].value,
+        share: totalValue > 0 ? acc[userId].value / totalValue : 0,
+        points: acc[userId].points,
+        isMe: userId === myUserId
+    })).sort((a, b) => b.value - a.value
+        || a.userName.localeCompare(b.userName)
+        || a.userId.localeCompare(b.userId));
+
+    const goal = resolveRaidBlockGoal(plan, memberCount);
+    // 最後に種目が決まっている日のものを代表にする（3日とも同じ種目のため）
+    const withExercise = dayResults.filter(d => !!d.exerciseKey);
+    const exerciseKey = withExercise.length > 0
+        ? withExercise[withExercise.length - 1].exerciseKey
+        : null;
+
+    return {
+        id: plan.block.id,
+        title: plan.block.title,
+        label: plan.block.label,
+        startDateKey: plan.block.dateKeys[0],
+        endDateKey: plan.block.dateKeys[plan.block.dateKeys.length - 1],
+        dayCount: plan.block.dateKeys.length,
+        playedDays: dayResults.length,
+        exerciseKey: exerciseKey,
+        goal: goal,
+        perPersonTotal: raidBlockPerPerson(plan),
+        memberCount: memberCount,
+        totalValue: totalValue,
+        percent: goal > 0 ? Math.min(100, Math.round((totalValue / goal) * 100)) : 0,
         cleared: goal > 0 && totalValue >= goal,
         entries: entries
     };
@@ -8395,7 +8598,7 @@ async function loadRaidScoreboard(now = new Date()) {
     // まだ来ていない日は集計しない（0点の行が並ぶだけなので）
     const played = RAID_SCHEDULE.filter(d => d.dateKey <= todayKey);
     if (played.length === 0) {
-        return { days: [], standings: [], playedDays: 0 };
+        return { days: [], blocks: [], standings: [], playedDays: 0 };
     }
 
     if (!freeExercisesLoaded) {
@@ -8451,8 +8654,19 @@ async function loadRaidScoreboard(now = new Date()) {
         overrides.memberCounts[getPreviousDateKey(r.config.dateKey)]
     ));
 
+    // 通算ブロックは日ごとに区切らず、開催済みの日をまとめて1体ぶんにする
+    const blocks = RAID_BLOCKS.map(block => {
+        const blockDays = days.filter(d => d.blockId === block.id);
+        if (blockDays.length === 0) return null;
+        const members = resolveRaidMemberCount(block.dateKeys[0], overrides.memberCounts, users);
+        return buildRaidBlockResult(
+            planRaidBlock(block, overrides.goals), blockDays, members.count, users, myUserId
+        );
+    }).filter(b => !!b);
+
     return {
         days: days.slice().reverse(),
+        blocks: blocks.slice().reverse(),
         standings: buildRaidStandings(days, users, myUserId),
         playedDays: days.length
     };
@@ -9223,6 +9437,44 @@ async function getDailyMissionTotals(dateKey, exerciseKey) {
 }
 
 /**
+ * 期間ぶんの投稿を日ごと・ユーザーごとに合計する。
+ * 通算ブロックの進捗は「開始日から今日まで」の合計なので、その日ぶんだけを
+ * 引く getDailyMissionTotals では足りない。timestampの単一フィールド範囲検索
+ * 1回で期間ぶんを取り、手元で振り分ける
+ * @param {string} fromDateKey
+ * @param {string} throughDateKey
+ * @param {Object} exerciseKeyByDate - 日付キー→その日の種目キー（載っていない日は数えない）
+ * @returns {Promise<{cumulative: Object, byDay: Object}>}
+ */
+async function getRaidRangeTotals(fromDateKey, throughDateKey, exerciseKeyByDate) {
+    const start = getDailyBoundariesJST(fromDateKey).start;
+    const end = getDailyBoundariesJST(throughDateKey).end;
+    const snap = await db.collection('posts_free')
+        .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(start))
+        .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(end))
+        .get();
+    const posts = snap.docs.map(d => {
+        const p = d.data() || {};
+        return {
+            userId: p.userId,
+            exerciseType: p.exerciseType,
+            value: Number(p.value) || 0,
+            // timestamp未確定（serverTimestamp反映待ち）の投稿は日を決められない
+            date: p.timestamp && p.timestamp.toDate ? p.timestamp.toDate() : null
+        };
+    }).filter(p => !!p.date);
+
+    const byDay = bucketRaidTotals(posts, exerciseKeyByDate);
+    const cumulative = {};
+    Object.keys(byDay).forEach(dateKey => {
+        Object.keys(byDay[dateKey]).forEach(userId => {
+            cumulative[userId] = (cumulative[userId] || 0) + byDay[dateKey][userId];
+        });
+    });
+    return { cumulative: cumulative, byDay: byDay };
+}
+
+/**
  * ミッション本体＋自分の達成状況＋全員の目標を解決し、dailyMissionState に格納する。
  * 目標はシードから決まるので、他ユーザーの回数を保存・取得する必要はない。
  * @returns {Promise<Object|null>}
@@ -9278,9 +9530,27 @@ async function loadDailyMissionState() {
 
     // レイド開催日: 個人目標は無く、全員の合計だけで達成を判定する
     if (mission.raid) {
+        // 通算ブロックの日は、ブロック開始日から今日までを積み上げて見る
+        const block = getRaidBlockForDate(mission.dateKey);
+        const blockPlan = block ? planRaidBlock(block, raidDayOverrides.goals) : null;
         let raidTotals = {};
+        let todayTotals = null;
         try {
-            raidTotals = await getDailyMissionTotals(mission.dateKey, mission.exerciseKey);
+            if (block) {
+                // ブロックの各日の種目は管理画面で日ごとに指定できるので、日ごとに引き当てる
+                const keyByDate = {};
+                getRaidBlockDayConfigs(block)
+                    .filter(c => c.dateKey <= mission.dateKey)
+                    .forEach(c => {
+                        const key = resolveRaidExerciseKey(c, freeExercises, raidDayOverrides.exercises);
+                        if (key) keyByDate[c.dateKey] = key;
+                    });
+                const range = await getRaidRangeTotals(block.dateKeys[0], mission.dateKey, keyByDate);
+                raidTotals = range.cumulative;
+                todayTotals = range.byDay[mission.dateKey] || {};
+            } else {
+                raidTotals = await getDailyMissionTotals(mission.dateKey, mission.exerciseKey);
+            }
         } catch (e) {
             console.warn('[レイド] 集計に失敗:', e);
         }
@@ -9290,7 +9560,9 @@ async function loadDailyMissionState() {
             totals: raidTotals,
             myUserId: currentUser.uid,
             config: mission.raid,
-            memberCounts: raidDayOverrides.memberCounts
+            memberCounts: raidDayOverrides.memberCounts,
+            blockPlan: blockPlan,
+            todayTotals: todayTotals
         });
         // 翌日のボス体力に使うので、今日ログインした人数を毎日残す
         // （固定目標の日でも、その翌日が人数割なら必要になる）
@@ -9304,8 +9576,10 @@ async function loadDailyMissionState() {
             exerciseKey: mission.exerciseKey,
             target: 0,
             totalValue: raid.myValue,
-            // レイド中の「クリア済み」は自分が今日1回でも積んだか（タブのドット用）
-            cleared: raid.myValue > 0,
+            // レイド中の「クリア済み」は自分が今日1回でも積んだか（タブのドット用）。
+            // 通算ブロックでも見るのは今日ぶん——前の日の積み上げで今日の催促が
+            // 消えてしまうと、通算のいちばん大事な「毎日積む」が伝わらない
+            cleared: raid.myTodayValue > 0,
             probability: 0,
             peak: 0,
             bestValue: 0,
@@ -9622,6 +9896,7 @@ function renderRaidPostSection(dateKey, unit) {
     const gateNote = isRaidInputGatedDay(dateKey)
         ? `<p class="daily-mission-note raid-gate-note"><i class="fa-solid fa-circle-info"></i> ${escapeHtml(RAID_INPUT_GATE_NOTE)}</p>`
         : '';
+    const postBlock = getRaidBlockForDate(dateKey);
     return `
         <div class="daily-mission-post">
             <h3><i class="fa-solid fa-pen-to-square"></i> 記録を投稿</h3>
@@ -9630,7 +9905,7 @@ function renderRaidPostSection(dateKey, unit) {
                 <span class="daily-mission-unit">${escapeHtml(unit)}</span>
                 <button type="button" class="btn-primary" id="daily-mission-submit">投稿する</button>
             </div>
-            <p class="daily-mission-note">何回かに分けてもOK。投稿するとすぐレイドの合計に加算されます（フリーモードの記録としても集計されます）。</p>
+            <p class="daily-mission-note">何回かに分けてもOK。投稿するとすぐレイドの${postBlock ? `${postBlock.dateKeys.length}日通算` : '合計'}に加算されます（フリーモードの記録としても集計されます）。</p>
             ${gateNote}
             <p id="daily-mission-error" class="error-message"></p>
         </div>
@@ -9647,6 +9922,7 @@ function renderRaidPostSection(dateKey, unit) {
 function renderRaidContributionCard(raid, unit) {
     // 先頭が最多貢献者（貢献の多い順に並んでいる）
     const maxValue = raid.contributors.length > 0 ? raid.contributors[0].value : 0;
+    const block = raid.block;
     const rowsHtml = raid.contributors.map(c => {
         const width = (raidContributionRatio(c.value, maxValue) * 100).toFixed(1);
         return `<li class="daily-team-row${c.isMe ? ' is-me' : ''}">`
@@ -9656,16 +9932,32 @@ function renderRaidContributionCard(raid, unit) {
             + `</li>`;
     }).join('');
 
+    const note = block
+        ? `並ぶのは今日ログインした人と、この${block.dayCount}日間で投稿した人。回数と％は${escapeHtml(formatRaidMonthDay(block.startDateKey))}からの通算です。`
+            + `あなたの通算は ${formatDailyCount(raid.myValue)}${escapeHtml(unit)}（うち今日 ${formatDailyCount(raid.myTodayValue)}${escapeHtml(unit)}）。`
+        : `並ぶのは今日ログインした人だけ。右の％はみんなの合計に占める割合です。あなたの今日の合計は ${formatDailyCount(raid.myValue)}${escapeHtml(unit)}。`;
+
     return `
         <div class="daily-dist-card daily-team-card">
             <div class="daily-dist-head">
-                <span><i class="fa-solid fa-people-group"></i> みんなの貢献</span>
+                <span><i class="fa-solid fa-people-group"></i> みんなの貢献${block ? `（${block.dayCount}日通算）` : ''}</span>
                 <span class="daily-dist-count">${raid.activeCount}/${raid.contributors.length} 人が参加</span>
             </div>
             <ul class="daily-team-list">${rowsHtml}</ul>
-            <p class="daily-dist-note">並ぶのは今日ログインした人だけ。右の％はみんなの合計に占める割合です。あなたの今日の合計は ${formatDailyCount(raid.myValue)}${escapeHtml(unit)}。</p>
+            <p class="daily-dist-note">${note}</p>
         </div>
     `;
+}
+
+/**
+ * 日付キーを「8/14」形式にする（レイドの文言用）
+ * @param {string} dateKey
+ * @returns {string}
+ */
+function formatRaidMonthDay(dateKey) {
+    const parts = String(dateKey || '').split('-');
+    if (parts.length !== 3) return String(dateKey || '');
+    return `${Number(parts[1])}/${Number(parts[2])}`;
 }
 
 /**
@@ -9678,11 +9970,23 @@ function renderRaidContributionCard(raid, unit) {
  */
 function renderRaidCard(state, ex, unit) {
     const raid = state.raid;
+    const block = raid.block;
+    const badgeLabel = raid.cleared
+        ? '討伐完了'
+        : (block
+            ? `通算 ${block.dayIndex} / ${block.dayCount}日目（Day ${raid.day}）`
+            : `Day ${raid.day} / ${RAID_TOTAL_DAYS}`);
+    const formulaText = block
+        ? `${escapeHtml(formatRaidMonthDay(block.startDateKey))}の前日にログインした ${raid.memberCount}人 × 1人${raid.perPerson}${escapeHtml(unit)}（${block.dayCount}日通算）`
+        : `昨日ログインした ${raid.memberCount}人 × 1人${raid.perPerson}${escapeHtml(unit)}`;
+    const goalNote = block
+        ? `<p class="raid-goal-note"><i class="fa-solid fa-users"></i> ボスの体力は<strong>ブロック開始の前日のログイン人数</strong>で決まります。${block.dayCount}日間ずっと同じ体力なので、積み上げた割合の意味も途中で変わりません。</p>`
+        : `<p class="raid-goal-note"><i class="fa-solid fa-users"></i> ボスの体力は<strong>前日のログイン人数</strong>で決まります。0:00の時点で決まるので、今日どれだけ人が増えても体力は動きません。</p>`;
     return `
         <div class="daily-mission-card raid-card${raid.cleared ? ' cleared' : ''}">
             <div class="daily-mission-badge raid-badge">
                 <i class="fa-solid ${raid.cleared ? 'fa-circle-check' : 'fa-dragon'}"></i>
-                ${raid.cleared ? '討伐完了' : `Day ${raid.day} / ${RAID_TOTAL_DAYS}`}
+                ${badgeLabel}
             </div>
             <div class="daily-mission-date">${escapeHtml(formatDailyDateLabel(state.dateKey))}</div>
             <div class="daily-mission-exercise">
@@ -9690,15 +9994,15 @@ function renderRaidCard(state, ex, unit) {
                 <span class="daily-mission-name">${escapeHtml(ex.name || state.exerciseKey)}</span>
             </div>
             <div class="daily-mission-target raid-goal">
-                <span class="daily-mission-target-label"><i class="fa-solid fa-dragon"></i> レイドボスの体力</span>
+                <span class="daily-mission-target-label"><i class="fa-solid fa-dragon"></i> レイドボスの体力${block ? `（${block.dayCount}日通算）` : ''}</span>
                 <span class="daily-mission-target-value">${formatDailyCount(raid.goal)}<span class="daily-mission-target-unit">${escapeHtml(unit)}</span></span>
-                ${raid.perPerson != null ? `<span class="daily-mission-target-prob">昨日ログインした ${raid.memberCount}人 × 1人${raid.perPerson}${escapeHtml(unit)}</span>` : ''}
+                ${raid.perPerson != null ? `<span class="daily-mission-target-prob">${formulaText}</span>` : ''}
                 <span class="daily-mission-target-prob">${escapeHtml(raid.label)}</span>
             </div>
-            ${raid.perPerson != null ? `<p class="raid-goal-note"><i class="fa-solid fa-users"></i> ボスの体力は<strong>前日のログイン人数</strong>で決まります。0:00の時点で決まるので、今日どれだけ人が増えても体力は動きません。</p>` : ''}
+            ${raid.perPerson != null ? goalNote : ''}
             <div class="daily-team-total">
                 <span class="daily-team-total-value">${formatDailyCount(raid.totalValue)}</span>
-                <span class="daily-team-total-goal">/ ${formatDailyCount(raid.goal)}${escapeHtml(unit)}</span>
+                <span class="daily-team-total-goal">/ ${formatDailyCount(raid.goal)}${escapeHtml(unit)}${block ? `（うち今日 ${formatDailyCount(raid.todayValue)}${escapeHtml(unit)}）` : ''}</span>
             </div>
             <div class="daily-mission-progress">
                 <div class="daily-mission-bar"><div class="daily-mission-bar-fill" style="width:${raid.percent}%"></div></div>
@@ -9755,7 +10059,9 @@ async function renderDailyMissionTab(forceRefresh = false) {
         container.innerHTML = `
             <div class="raid-lead">
                 <span class="raid-lead-badge"><i class="fa-solid fa-dragon"></i> ${escapeHtml(RAID_MODE_LABEL)}</span>
-                今日の種目を全員で積み上げて、レイドボスの体力を削り切ります。個人の目標回数はありません。
+                ${raid.block
+                    ? `ここからの${raid.block.dayCount}日（${escapeHtml(formatRaidMonthDay(raid.block.startDateKey))}〜${escapeHtml(formatRaidMonthDay(raid.block.endDateKey))}）は「${escapeHtml(raid.block.title)}」の1種目だけ。日ごとに区切らず、<strong>${raid.block.dayCount}日間の合計</strong>で1体のボスを削り切ります。前の日に積んだぶんは最終日まで残ります。`
+                    : '今日の種目を全員で積み上げて、レイドボスの体力を削り切ります。個人の目標回数はありません。'}
             </div>
 
             ${renderRaidCard(dailyMissionState, ex, unit)}
@@ -9883,16 +10189,54 @@ async function renderRaidScoreTab(forceRefresh = false) {
             : d.entries.slice(0, 3).map(e =>
                 `<span class="raid-day-top${e.isMe ? ' is-me' : ''}">${escapeHtml(truncateLabelName(e.userName))} ${formatRaidPoints(e.points)}点</span>`
             ).join('');
+        // 通算ブロックの日は1日ぶんの目標を持たないので、合計だけを出す
+        const status = d.blockId
+            ? '通算に加算'
+            : (d.cleared ? '<i class="fa-solid fa-circle-check"></i> 討伐' : `${Math.min(100, Math.round(d.goal > 0 ? d.totalValue / d.goal * 100 : 0))}%`);
+        const total = d.blockId
+            ? `${formatDailyCount(d.totalValue)}${escapeHtml(unit)}`
+            : `${formatDailyCount(d.totalValue)} / ${formatDailyCount(d.goal)}${escapeHtml(unit)}${d.perPerson != null ? `<span class="raid-day-formula">（${d.memberCount}人×${d.perPerson}）</span>` : ''}`;
         return `<div class="raid-day-card${d.cleared ? ' cleared' : ''}">
             <div class="raid-day-head">
                 <span class="raid-day-label">Day ${d.day} <span class="raid-day-date">${escapeHtml(formatDailyDateLabel(d.dateKey))}</span></span>
-                <span class="raid-day-status">${d.cleared ? '<i class="fa-solid fa-circle-check"></i> 討伐' : `${Math.min(100, Math.round(d.goal > 0 ? d.totalValue / d.goal * 100 : 0))}%`}</span>
+                <span class="raid-day-status">${status}</span>
             </div>
             <div class="raid-day-body">
                 <span class="raid-day-ex"><i class="fa-solid ${escapeHtml(ex.icon || 'fa-dumbbell')}"></i> ${escapeHtml(ex.name || '種目未定')}</span>
-                <span class="raid-day-total">${formatDailyCount(d.totalValue)} / ${formatDailyCount(d.goal)}${escapeHtml(unit)}${d.perPerson != null ? `<span class="raid-day-formula">（${d.memberCount}人×${d.perPerson}）</span>` : ''}</span>
+                <span class="raid-day-total">${total}</span>
             </div>
             <div class="raid-day-tops">${topHtml}</div>
+        </div>`;
+    }).join('');
+
+    // 通算ブロック（例：複合種目総合1）は期間ぶんをまとめて1枚のカードにする
+    const blocksHtml = (board.blocks || []).map(b => {
+        const ex = b.exerciseKey ? (freeExercises[b.exerciseKey] || {}) : {};
+        const unit = guessExerciseUnit(ex.name || '');
+        const topHtml = b.entries.length === 0
+            ? '<span class="raid-day-empty">投稿なし</span>'
+            : b.entries.slice(0, 3).map(e =>
+                `<span class="raid-day-top${e.isMe ? ' is-me' : ''}">${escapeHtml(truncateLabelName(e.userName))} ${formatDailyCount(e.value)}${escapeHtml(unit)}</span>`
+            ).join('');
+        return `<div class="daily-dist-card">
+            <div class="daily-dist-head">
+                <span><i class="fa-solid fa-layer-group"></i> ${escapeHtml(b.title)}（${b.dayCount}日通算）</span>
+                <span class="daily-dist-count">${b.playedDays}/${b.dayCount} 日終了</span>
+            </div>
+            <div class="raid-day-list">
+                <div class="raid-day-card${b.cleared ? ' cleared' : ''}">
+                    <div class="raid-day-head">
+                        <span class="raid-day-label">${escapeHtml(formatDailyDateLabel(b.startDateKey))} <span class="raid-day-date">〜${escapeHtml(formatDailyDateLabel(b.endDateKey))}</span></span>
+                        <span class="raid-day-status">${b.cleared ? '<i class="fa-solid fa-circle-check"></i> 討伐' : `${b.percent}%`}</span>
+                    </div>
+                    <div class="raid-day-body">
+                        <span class="raid-day-ex"><i class="fa-solid ${escapeHtml(ex.icon || 'fa-dumbbell')}"></i> ${escapeHtml(ex.name || '種目未定')}</span>
+                        <span class="raid-day-total">${formatDailyCount(b.totalValue)} / ${formatDailyCount(b.goal)}${escapeHtml(unit)}${b.perPersonTotal != null ? `<span class="raid-day-formula">（${b.memberCount}人×${b.perPersonTotal}）</span>` : ''}</span>
+                    </div>
+                    <div class="raid-day-tops">${topHtml}</div>
+                </div>
+            </div>
+            <p class="daily-dist-note">${escapeHtml(b.label)}日ごとに区切らず、期間の合計で討伐判定をします（得点はこれまでどおり日ごとに分け合います）。</p>
         </div>`;
     }).join('');
 
@@ -9911,6 +10255,8 @@ async function renderRaidScoreTab(forceRefresh = false) {
             </div>
             <ul class="raid-rank-list">${standingsHtml}</ul>
         </div>
+
+        ${blocksHtml}
 
         <div class="daily-dist-card">
             <div class="daily-dist-head">

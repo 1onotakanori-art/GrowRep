@@ -125,6 +125,8 @@ export default function HomeView({
                 <span>
                   <i className="fa-solid fa-dragon" /> {RAID_TITLE} Day{' '}
                   {dailyMission.raid.day}/{RAID_TOTAL_DAYS}
+                  {dailyMission.raid.block &&
+                    `（${dailyMission.raid.block.dayCount}日通算 ${dailyMission.raid.block.dayIndex}日目）`}
                 </span>
                 <button
                   className={styles.link}

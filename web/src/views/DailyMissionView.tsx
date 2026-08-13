@@ -267,6 +267,9 @@ export default function DailyMissionView() {
   // ---------------------------------------------------------------
   if (raid) {
     const maxValue = raid.contributors[0]?.value || 0;
+    const block = raid.block;
+    /** 「8/14」形式（日付キーから月日だけ） */
+    const md = (dateKey: string) => dateKey.slice(5).replace('-', '/');
     return (
       <div className="fade-in">
         <ViewHeader
@@ -282,14 +285,30 @@ export default function DailyMissionView() {
         <p className={styles.lead}>
           {RAID_MODE_LABEL}（{RAID_START_DATE_KEY.slice(5).replace('-', '/')}〜
           {RAID_END_DATE_KEY.slice(5).replace('-', '/')}）。
-          今日の種目を全員で積み上げて、レイドボスの体力を削り切ります。
-          個人の目標回数はありません。
+          {block ? (
+            <>
+              ここからの{block.dayCount}日（{md(block.startDateKey)}〜
+              {md(block.endDateKey)}）は「{block.title}」の1種目だけ。
+              日ごとに区切らず、
+              <strong>{block.dayCount}日間の合計</strong>
+              で1体のボスを削り切ります。前の日に積んだぶんは最終日まで残ります。
+            </>
+          ) : (
+            <>
+              今日の種目を全員で積み上げて、レイドボスの体力を削り切ります。
+              個人の目標回数はありません。
+            </>
+          )}
         </p>
 
         <div className={`${styles.card} ${raid.cleared ? styles.cardDone : ''}`}>
           <div className={`${styles.badge} ${styles.raidBadge}`}>
             <i className={`fa-solid ${raid.cleared ? 'fa-circle-check' : 'fa-dragon'}`} />
-            {raid.cleared ? '討伐完了' : `Day ${raid.day} / ${RAID_TOTAL_DAYS}`}
+            {raid.cleared
+              ? '討伐完了'
+              : block
+                ? `通算 ${block.dayIndex} / ${block.dayCount}日目（Day ${raid.day}）`
+                : `Day ${raid.day} / ${RAID_TOTAL_DAYS}`}
           </div>
 
           <div className={styles.exRow}>
@@ -302,6 +321,7 @@ export default function DailyMissionView() {
           <div className={styles.raidGoalBox}>
             <span className={styles.targetLabel}>
               <i className="fa-solid fa-dragon" /> レイドボスの体力
+              {block ? `（${block.dayCount}日通算）` : ''}
             </span>
             <span className={styles.targetValue}>
               {formatDailyCount(raid.goal)}
@@ -309,8 +329,9 @@ export default function DailyMissionView() {
             </span>
             {raid.perPerson != null && (
               <span className={styles.targetProb}>
-                昨日ログインした {raid.memberCount}人 × 1人{raid.perPerson}
-                {unit}
+                {block
+                  ? `${md(block.startDateKey)}の前日にログインした ${raid.memberCount}人 × 1人${raid.perPerson}${unit}（${block.dayCount}日通算）`
+                  : `昨日ログインした ${raid.memberCount}人 × 1人${raid.perPerson}${unit}`}
               </span>
             )}
             <span className={styles.targetProb}>{raid.label}</span>
@@ -319,8 +340,19 @@ export default function DailyMissionView() {
           {raid.perPerson != null && (
             <p className={styles.raidGoalNote}>
               <i className="fa-solid fa-users" />
-              ボスの体力は<strong>前日のログイン人数</strong>で決まります。
-              0:00の時点で決まるので、今日どれだけ人が増えても体力は動きません。
+              {block ? (
+                <>
+                  ボスの体力は
+                  <strong>ブロック開始の前日のログイン人数</strong>
+                  で決まります。{block.dayCount}日間ずっと同じ体力なので、
+                  積み上げた割合の意味も途中で変わりません。
+                </>
+              ) : (
+                <>
+                  ボスの体力は<strong>前日のログイン人数</strong>で決まります。
+                  0:00の時点で決まるので、今日どれだけ人が増えても体力は動きません。
+                </>
+              )}
             </p>
           )}
 
@@ -331,6 +363,7 @@ export default function DailyMissionView() {
             <span className={styles.teamGoal}>
               / {formatDailyCount(raid.goal)}
               {unit}
+              {block && `（うち今日 ${formatDailyCount(raid.todayValue)}${unit}）`}
             </span>
           </div>
 
@@ -358,6 +391,7 @@ export default function DailyMissionView() {
           <div className={styles.distHead}>
             <span>
               <i className="fa-solid fa-people-group" /> みんなの貢献
+              {block ? `（${block.dayCount}日通算）` : ''}
             </span>
             <span className={styles.distCount}>
               {raid.activeCount}/{raid.contributors.length} 人が参加
@@ -391,15 +425,28 @@ export default function DailyMissionView() {
           </ul>
 
           <p className={styles.distNote}>
-            並ぶのは今日ログインした人だけ。右の％はみんなの合計に占める割合です。
-            あなたの今日の合計は {formatDailyCount(raid.myValue)}
-            {unit}。
+            {block ? (
+              <>
+                並ぶのは今日ログインした人と、この{block.dayCount}
+                日間で投稿した人。回数と％は
+                {md(block.startDateKey)}からの通算です。 あなたの通算は{' '}
+                {formatDailyCount(raid.myValue)}
+                {unit}（うち今日 {formatDailyCount(raid.myTodayValue)}
+                {unit}）。
+              </>
+            ) : (
+              <>
+                並ぶのは今日ログインした人だけ。右の％はみんなの合計に占める割合です。
+                あなたの今日の合計は {formatDailyCount(raid.myValue)}
+                {unit}。
+              </>
+            )}
           </p>
         </div>
 
         {inputOpen
           ? renderPostCard(
-              '何回かに分けてもOK。投稿するとすぐレイドの合計に加算されます（フリーモードの記録としても集計されます）。'
+              `何回かに分けてもOK。投稿するとすぐレイドの${block ? `${block.dayCount}日通算` : '合計'}に加算されます（フリーモードの記録としても集計されます）。`
                 + (isRaidInputGatedDay(dailyMission.dateKey)
                   ? ` ${RAID_INPUT_GATE_NOTE}`
                   : ''),

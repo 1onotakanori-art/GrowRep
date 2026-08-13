@@ -1,9 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import {
+  RAID_BLOCKS,
+  RAID_BLOCK_TOTAL_1,
+  RAID_BLOCK_TOTAL_1_TITLE,
   RAID_END_DATE_KEY,
   RAID_GOAL_MAX,
   RAID_MAINTENANCE_DATE_KEYS,
   RAID_SCHEDULE,
+  buildRaidBlockResult,
+  getRaidBlock,
+  getRaidBlockDayConfigs,
+  getRaidBlockForDate,
+  planRaidBlock,
+  raidBlockDayIndex,
+  raidBlockGoalSource,
+  raidBlockPerPerson,
+  resolveRaidBlockGoal,
   RAID_START_DATE_KEY,
   RAID_TOTAL_DAYS,
   WEEKLY_PAUSE_WEEK_KEYS,
@@ -110,13 +122,41 @@ describe('日程表', () => {
     expect(day5.nameHints[0]).toBe('ディップス(レイド)');
   });
 
-  it('同じ名前ヒントの日が重ならない（懸垂が2日に出ない）', () => {
-    // 先頭ヒントで日程の重複を見る。最終日だけは初日と同種目にしてある
-    const heads = RAID_SCHEDULE.slice(0, -1).map((d) => d.nameHints[0]);
-    expect(new Set(heads).size).toBe(heads.length);
-    expect(RAID_SCHEDULE[RAID_SCHEDULE.length - 1].nameHints[0]).toBe(
-      RAID_SCHEDULE[0].nameHints[0],
+  it('6〜8日目は「複合種目総合1」の3日通算ブロック', () => {
+    const blockDays = RAID_SCHEDULE.filter(
+      (d) => d.blockId === RAID_BLOCK_TOTAL_1,
     );
+    expect(blockDays.map((d) => d.dateKey)).toEqual([
+      '2026-08-14',
+      '2026-08-15',
+      '2026-08-16',
+    ]);
+    blockDays.forEach((d) => {
+      expect(d.perPerson).toBe(30);
+      expect(d.nameHints[0]).toBe(RAID_BLOCK_TOTAL_1_TITLE);
+    });
+  });
+
+  it('ブロックの日付が RAID_SCHEDULE の日と一致する', () => {
+    RAID_BLOCKS.forEach((block) => {
+      expect(getRaidBlockDayConfigs(block).map((d) => d.dateKey)).toEqual(
+        block.dateKeys,
+      );
+      block.dateKeys.forEach((dateKey) => {
+        expect(getRaidBlockForDate(dateKey)?.id).toBe(block.id);
+      });
+    });
+    // ブロックに属さない日は null（体力も判定も1日で完結する）
+    expect(getRaidBlockForDate('2026-08-13')).toBeNull();
+  });
+
+  it('同じ名前ヒントの日が重ならない（懸垂が2日に出ない）', () => {
+    // 先頭ヒントで日程の重複を見る。通算ブロックの日は同じ種目で当たり前なので、
+    // ブロックごとに1つだけ数える
+    const heads = RAID_SCHEDULE.filter(
+      (d, i) => !d.blockId || RAID_SCHEDULE.findIndex((x) => x.blockId === d.blockId) === i,
+    ).map((d) => d.nameHints[0]);
+    expect(new Set(heads).size).toBe(heads.length);
   });
 
   it('最終日が RAID_END_DATE_KEY と一致する', () => {
@@ -877,5 +917,176 @@ describe('前日のログイン人数', () => {
     const r = resolveRaidMemberCount('2026-08-12', { '2026-08-09': 6 }, {});
     expect(r.dateKey).toBe('2026-08-11');
     expect(r.source).toBe('estimated');
+  });
+});
+
+// =====================================================================
+// 通算ブロック（複合種目総合1）
+// =====================================================================
+describe('通算ブロック', () => {
+  const block = getRaidBlock(RAID_BLOCK_TOTAL_1)!;
+  const usersMap = {
+    u1: { userName: 'あ', lastActiveDateKey: '2026-08-15' },
+    u2: { userName: 'い', lastActiveDateKey: '2026-08-15' },
+    // 今日は開いていないが、ブロックの初日に投稿している
+    u3: { userName: 'う', lastActiveDateKey: '2026-08-14' },
+  };
+
+  it('体力は「各日の1人あたりの合計 × 人数」', () => {
+    const plan = planRaidBlock(block, {});
+    expect(raidBlockPerPerson(plan)).toBe(90); // 30セット × 3日
+    expect(resolveRaidBlockGoal(plan, 4)).toBe(360);
+    // 人数が 0 でも体力を 0 にはしない（1人ぶんは残す）
+    expect(resolveRaidBlockGoal(plan, 0)).toBe(90);
+  });
+
+  it('1日でも上書きされていればブロックの目標に効く', () => {
+    const plan = planRaidBlock(block, { '2026-08-15': 100 });
+    expect(raidBlockPerPerson(plan)).toBe(160); // 30 + 100 + 30
+    expect(raidBlockGoalSource(plan)).toBe('override');
+    expect(raidBlockGoalSource(planRaidBlock(block, {}))).toBe('default');
+  });
+
+  it('何日目かを日付から出す', () => {
+    expect(raidBlockDayIndex(block, '2026-08-14')).toBe(1);
+    expect(raidBlockDayIndex(block, '2026-08-16')).toBe(3);
+    expect(raidBlockDayIndex(block, '2026-08-13')).toBe(0);
+  });
+
+  it('進捗は通算で見て、体力は初日の前日の人数で決まる', () => {
+    const plan = planRaidBlock(block, {});
+    const r = buildRaidProgress({
+      usersMap,
+      dateKey: '2026-08-15',
+      // 8/14 と 8/15 を足した通算（数えるのはセット数）
+      totals: { u1: 15, u2: 10, u3: 5 },
+      todayTotals: { u1: 10, u2: 10 },
+      myUserId: 'u1',
+      config: getRaidDayConfig('2026-08-15')!,
+      // ブロック初日(8/14)の前日＝8/13 の人数を使う。8/14 の記録は使わない
+      memberCounts: { '2026-08-13': 3, '2026-08-14': 10 },
+      blockPlan: plan,
+    });
+    expect(r.memberCount).toBe(3);
+    expect(r.memberCountDateKey).toBe('2026-08-13');
+    expect(r.goal).toBe(270); // 90セット × 3人
+    expect(r.perPerson).toBe(90);
+    expect(r.totalValue).toBe(30);
+    expect(r.todayValue).toBe(20);
+    expect(r.myValue).toBe(15);
+    expect(r.myTodayValue).toBe(10);
+    expect(r.remaining).toBe(240);
+    expect(r.cleared).toBe(false);
+    expect(r.block).toMatchObject({
+      id: RAID_BLOCK_TOTAL_1,
+      title: RAID_BLOCK_TOTAL_1_TITLE,
+      startDateKey: '2026-08-14',
+      endDateKey: '2026-08-16',
+      dayCount: 3,
+      dayIndex: 2,
+      perPersonTotal: 90,
+    });
+  });
+
+  it('前の日だけ投稿した人も通算の一覧に残る', () => {
+    const r = buildRaidProgress({
+      usersMap,
+      dateKey: '2026-08-15',
+      totals: { u3: 5 },
+      todayTotals: {},
+      myUserId: 'u1',
+      config: getRaidDayConfig('2026-08-15')!,
+      memberCounts: { '2026-08-13': 3 },
+      blockPlan: planRaidBlock(block, {}),
+    });
+    // 今日ログインしていない u3 も、ブロック中に積んでいるので並ぶ
+    expect(r.contributors.map((c) => c.userId)).toContain('u3');
+    expect(r.activeCount).toBe(1);
+    expect(r.todayValue).toBe(0);
+  });
+
+  it('ブロックでない日は今日ぶんがそのまま通算になる', () => {
+    const r = buildRaidProgress({
+      usersMap: { u1: { userName: 'あ', lastActiveDateKey: '2026-08-13' } },
+      dateKey: '2026-08-13',
+      totals: { u1: 30 },
+      myUserId: 'u1',
+      config: getRaidDayConfig('2026-08-13')!,
+      memberCounts: { '2026-08-12': 2 },
+    });
+    expect(r.block).toBeNull();
+    expect(r.todayValue).toBe(30);
+    expect(r.myTodayValue).toBe(30);
+  });
+
+  it('ブロックの日の成績表は1日ぶんの目標を持たない', () => {
+    const day = buildRaidDayResult(
+      getRaidDayConfig('2026-08-14')!,
+      'ex',
+      { u1: 10 },
+      usersMap,
+      'u1',
+      3,
+    );
+    expect(day.blockId).toBe(RAID_BLOCK_TOTAL_1);
+    expect(day.goal).toBe(0);
+    expect(day.perPerson).toBeNull();
+    // 1日だけでは討伐にならない（判定はブロック単位）
+    expect(day.cleared).toBe(false);
+    expect(day.totalValue).toBe(10);
+  });
+
+  it('ブロックの結果は回数を通算し、点は日ごとの合計になる', () => {
+    const plan = planRaidBlock(block, {});
+    const d1 = buildRaidDayResult(
+      getRaidDayConfig('2026-08-14')!,
+      'ex',
+      { u1: 10, u3: 10 },
+      usersMap,
+      'u1',
+      3,
+    );
+    const d2 = buildRaidDayResult(
+      getRaidDayConfig('2026-08-15')!,
+      'ex',
+      { u1: 50 },
+      usersMap,
+      'u1',
+      3,
+    );
+    const r = buildRaidBlockResult(plan, [d1, d2], 3, usersMap, 'u1');
+    expect(r.totalValue).toBe(70);
+    expect(r.goal).toBe(270);
+    expect(r.perPersonTotal).toBe(90);
+    expect(r.playedDays).toBe(2);
+    expect(r.dayCount).toBe(3);
+    expect(r.cleared).toBe(false);
+    expect(r.percent).toBe(26);
+    // u1 は初日50点＋2日目100点、u3 は初日50点
+    const u1 = r.entries.find((e) => e.userId === 'u1')!;
+    expect(u1.value).toBe(60);
+    expect(u1.points).toBeCloseTo(150);
+    expect(u1.share).toBeCloseTo(60 / 70);
+    expect(r.entries[0].userId).toBe('u1'); // 通算の多い順
+    expect(r.exerciseKey).toBe('ex');
+  });
+
+  it('通算が目標に届けば討伐（1日ごとには判定しない）', () => {
+    const plan = planRaidBlock(block, {});
+    const days = ['2026-08-14', '2026-08-15', '2026-08-16'].map((dateKey) =>
+      buildRaidDayResult(
+        getRaidDayConfig(dateKey)!,
+        'ex',
+        { u1: 60, u2: 40 },
+        usersMap,
+        'u1',
+        3,
+      ),
+    );
+    const r = buildRaidBlockResult(plan, days, 3, usersMap, 'u1');
+    expect(r.totalValue).toBe(300);
+    expect(r.goal).toBe(270);
+    expect(r.cleared).toBe(true);
+    expect(r.percent).toBe(100);
   });
 });
