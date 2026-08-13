@@ -7771,6 +7771,9 @@ const WEEKLY_PAUSE_RESUME_NOTE = '再開は 8/17(月) の週から。';
 const RAID_BLOCK_TOTAL_1 = 'total1';
 const RAID_BLOCK_TOTAL_1_TITLE = '複合種目総合1';
 const RAID_BLOCK_TOTAL_1_HINTS = ['複合種目総合1', '複合種目総合', '複合種目'];
+// 1セットの中身。数えるのは回数ではなく**セット数**なので、
+// 何をもって1と数えるのかがカードに出ていないと数字の意味が伝わらない
+const RAID_BLOCK_TOTAL_1_SET = '1セット＝腕立て10回→バックエクステンション10回→クラップクランチ10回→スクワット20回';
 
 /**
  * レイドの日程表。
@@ -7789,10 +7792,12 @@ const RAID_SCHEDULE = [
     { dateKey: '2026-08-12', day: 4, nameHints: ['クラップクランチ', 'クラップ', 'clap crunch', 'clap'], perPerson: 200, label: '腹の日。すきま時間で積み上げ。' },
     { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス(レイド)', 'ディップス（レイド）', 'ディップス', 'dip'], perPerson: 120, label: '胸と二の腕。押す種目でもう一押し。' },
     // 8/14〜8/16 は「複合種目総合1」の3日通算ブロック。
-    // 3日とも同じ種目・同じ1人あたりで、体力も進捗も3日ぶんをひとまとめに見る
-    { dateKey: '2026-08-14', day: 6, blockId: RAID_BLOCK_TOTAL_1, nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 80, label: '3日通算の1日目。ここからの積み上げが最終日まで残る。' },
-    { dateKey: '2026-08-15', day: 7, blockId: RAID_BLOCK_TOTAL_1, nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 80, label: '3日通算の2日目。折り返し。' },
-    { dateKey: '2026-08-16', day: 8, blockId: RAID_BLOCK_TOTAL_1, nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 80, label: '3日通算の最終日。ここまでの合計で討伐判定。' }
+    // 3日とも同じ種目・同じ1人あたりで、体力も進捗も3日ぶんをひとまとめに見る。
+    // 数えるのはセット数。1人1日30セット＝3日で90セットから始めて、
+    // 軽ければ管理画面で2日目以降だけ上げられる（日ごとの数字がそのまま合算される）
+    { dateKey: '2026-08-14', day: 6, blockId: RAID_BLOCK_TOTAL_1, nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 30, label: `3日通算の1日目。${RAID_BLOCK_TOTAL_1_SET}。` },
+    { dateKey: '2026-08-15', day: 7, blockId: RAID_BLOCK_TOTAL_1, nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 30, label: `3日通算の2日目。折り返し。${RAID_BLOCK_TOTAL_1_SET}。` },
+    { dateKey: '2026-08-16', day: 8, blockId: RAID_BLOCK_TOTAL_1, nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 30, label: `3日通算の最終日。ここまでの合計で討伐判定。${RAID_BLOCK_TOTAL_1_SET}。` }
 ];
 
 // レイド全体の日数
@@ -7812,7 +7817,7 @@ const RAID_BLOCKS = [
         id: RAID_BLOCK_TOTAL_1,
         title: RAID_BLOCK_TOTAL_1_TITLE,
         dateKeys: ['2026-08-14', '2026-08-15', '2026-08-16'],
-        label: '3日通算。1種目を最終日まで積み上げて、1体のボスを削り切る。'
+        label: `3日通算。1種目を最終日まで積み上げて、1体のボスを削り切る。数えるのはセット数（${RAID_BLOCK_TOTAL_1_SET}）。`
     }
 ];
 

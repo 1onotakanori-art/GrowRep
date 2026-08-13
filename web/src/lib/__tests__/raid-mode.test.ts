@@ -132,7 +132,7 @@ describe('日程表', () => {
       '2026-08-16',
     ]);
     blockDays.forEach((d) => {
-      expect(d.perPerson).toBe(80);
+      expect(d.perPerson).toBe(30);
       expect(d.nameHints[0]).toBe(RAID_BLOCK_TOTAL_1_TITLE);
     });
   });
@@ -934,15 +934,15 @@ describe('通算ブロック', () => {
 
   it('体力は「各日の1人あたりの合計 × 人数」', () => {
     const plan = planRaidBlock(block, {});
-    expect(raidBlockPerPerson(plan)).toBe(240); // 80 × 3日
-    expect(resolveRaidBlockGoal(plan, 4)).toBe(960);
+    expect(raidBlockPerPerson(plan)).toBe(90); // 30セット × 3日
+    expect(resolveRaidBlockGoal(plan, 4)).toBe(360);
     // 人数が 0 でも体力を 0 にはしない（1人ぶんは残す）
-    expect(resolveRaidBlockGoal(plan, 0)).toBe(240);
+    expect(resolveRaidBlockGoal(plan, 0)).toBe(90);
   });
 
   it('1日でも上書きされていればブロックの目標に効く', () => {
     const plan = planRaidBlock(block, { '2026-08-15': 100 });
-    expect(raidBlockPerPerson(plan)).toBe(260); // 80 + 100 + 80
+    expect(raidBlockPerPerson(plan)).toBe(160); // 30 + 100 + 30
     expect(raidBlockGoalSource(plan)).toBe('override');
     expect(raidBlockGoalSource(planRaidBlock(block, {}))).toBe('default');
   });
@@ -958,9 +958,9 @@ describe('通算ブロック', () => {
     const r = buildRaidProgress({
       usersMap,
       dateKey: '2026-08-15',
-      // 8/14 と 8/15 を足した通算
-      totals: { u1: 150, u2: 100, u3: 50 },
-      todayTotals: { u1: 100, u2: 100 },
+      // 8/14 と 8/15 を足した通算（数えるのはセット数）
+      totals: { u1: 15, u2: 10, u3: 5 },
+      todayTotals: { u1: 10, u2: 10 },
       myUserId: 'u1',
       config: getRaidDayConfig('2026-08-15')!,
       // ブロック初日(8/14)の前日＝8/13 の人数を使う。8/14 の記録は使わない
@@ -969,13 +969,13 @@ describe('通算ブロック', () => {
     });
     expect(r.memberCount).toBe(3);
     expect(r.memberCountDateKey).toBe('2026-08-13');
-    expect(r.goal).toBe(720); // 240 × 3人
-    expect(r.perPerson).toBe(240);
-    expect(r.totalValue).toBe(300);
-    expect(r.todayValue).toBe(200);
-    expect(r.myValue).toBe(150);
-    expect(r.myTodayValue).toBe(100);
-    expect(r.remaining).toBe(420);
+    expect(r.goal).toBe(270); // 90セット × 3人
+    expect(r.perPerson).toBe(90);
+    expect(r.totalValue).toBe(30);
+    expect(r.todayValue).toBe(20);
+    expect(r.myValue).toBe(15);
+    expect(r.myTodayValue).toBe(10);
+    expect(r.remaining).toBe(240);
     expect(r.cleared).toBe(false);
     expect(r.block).toMatchObject({
       id: RAID_BLOCK_TOTAL_1,
@@ -984,7 +984,7 @@ describe('通算ブロック', () => {
       endDateKey: '2026-08-16',
       dayCount: 3,
       dayIndex: 2,
-      perPersonTotal: 240,
+      perPersonTotal: 90,
     });
   });
 
@@ -992,7 +992,7 @@ describe('通算ブロック', () => {
     const r = buildRaidProgress({
       usersMap,
       dateKey: '2026-08-15',
-      totals: { u3: 50 },
+      totals: { u3: 5 },
       todayTotals: {},
       myUserId: 'u1',
       config: getRaidDayConfig('2026-08-15')!,
@@ -1023,7 +1023,7 @@ describe('通算ブロック', () => {
     const day = buildRaidDayResult(
       getRaidDayConfig('2026-08-14')!,
       'ex',
-      { u1: 100 },
+      { u1: 10 },
       usersMap,
       'u1',
       3,
@@ -1033,7 +1033,7 @@ describe('通算ブロック', () => {
     expect(day.perPerson).toBeNull();
     // 1日だけでは討伐にならない（判定はブロック単位）
     expect(day.cleared).toBe(false);
-    expect(day.totalValue).toBe(100);
+    expect(day.totalValue).toBe(10);
   });
 
   it('ブロックの結果は回数を通算し、点は日ごとの合計になる', () => {
@@ -1041,7 +1041,7 @@ describe('通算ブロック', () => {
     const d1 = buildRaidDayResult(
       getRaidDayConfig('2026-08-14')!,
       'ex',
-      { u1: 100, u3: 100 },
+      { u1: 10, u3: 10 },
       usersMap,
       'u1',
       3,
@@ -1049,24 +1049,24 @@ describe('通算ブロック', () => {
     const d2 = buildRaidDayResult(
       getRaidDayConfig('2026-08-15')!,
       'ex',
-      { u1: 500 },
+      { u1: 50 },
       usersMap,
       'u1',
       3,
     );
     const r = buildRaidBlockResult(plan, [d1, d2], 3, usersMap, 'u1');
-    expect(r.totalValue).toBe(700);
-    expect(r.goal).toBe(720);
-    expect(r.perPersonTotal).toBe(240);
+    expect(r.totalValue).toBe(70);
+    expect(r.goal).toBe(270);
+    expect(r.perPersonTotal).toBe(90);
     expect(r.playedDays).toBe(2);
     expect(r.dayCount).toBe(3);
     expect(r.cleared).toBe(false);
-    expect(r.percent).toBe(97);
+    expect(r.percent).toBe(26);
     // u1 は初日50点＋2日目100点、u3 は初日50点
     const u1 = r.entries.find((e) => e.userId === 'u1')!;
-    expect(u1.value).toBe(600);
+    expect(u1.value).toBe(60);
     expect(u1.points).toBeCloseTo(150);
-    expect(u1.share).toBeCloseTo(600 / 700);
+    expect(u1.share).toBeCloseTo(60 / 70);
     expect(r.entries[0].userId).toBe('u1'); // 通算の多い順
     expect(r.exerciseKey).toBe('ex');
   });
@@ -1077,15 +1077,15 @@ describe('通算ブロック', () => {
       buildRaidDayResult(
         getRaidDayConfig(dateKey)!,
         'ex',
-        { u1: 200, u2: 100 },
+        { u1: 60, u2: 40 },
         usersMap,
         'u1',
         3,
       ),
     );
     const r = buildRaidBlockResult(plan, days, 3, usersMap, 'u1');
-    expect(r.totalValue).toBe(900);
-    expect(r.goal).toBe(720);
+    expect(r.totalValue).toBe(300);
+    expect(r.goal).toBe(270);
     expect(r.cleared).toBe(true);
     expect(r.percent).toBe(100);
   });

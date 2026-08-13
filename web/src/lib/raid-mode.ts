@@ -276,6 +276,12 @@ export const RAID_BLOCK_TOTAL_1_HINTS = [
   '複合種目総合',
   '複合種目',
 ];
+/**
+ * 1セットの中身。数えるのは回数ではなく**セット数**なので、
+ * 何をもって1と数えるのかがカードに出ていないと数字の意味が伝わらない。
+ */
+export const RAID_BLOCK_TOTAL_1_SET =
+  '1セット＝腕立て10回→バックエクステンション10回→クラップクランチ10回→スクワット20回';
 
 /**
  * レイドの日程表。1日ずつ部位を替えて一巡させる。
@@ -329,30 +335,32 @@ export const RAID_SCHEDULE: RaidDayConfig[] = [
     label: '胸と二の腕。押す種目でもう一押し。',
   },
   // 8/14〜8/16 は「複合種目総合1」の3日通算ブロック（RAID_BLOCK_TOTAL_1）。
-  // 3日とも同じ種目・同じ1人あたりで、体力も進捗も3日ぶんをひとまとめに見る
+  // 3日とも同じ種目・同じ1人あたりで、体力も進捗も3日ぶんをひとまとめに見る。
+  // 数えるのはセット数。1人1日30セット＝3日で90セットから始めて、
+  // 軽ければ管理画面で2日目以降だけ上げられる（日ごとの数字がそのまま合算される）
   {
     dateKey: '2026-08-14',
     day: 6,
     blockId: RAID_BLOCK_TOTAL_1,
     nameHints: RAID_BLOCK_TOTAL_1_HINTS,
-    perPerson: 80,
-    label: '3日通算の1日目。ここからの積み上げが最終日まで残る。',
+    perPerson: 30,
+    label: `3日通算の1日目。${RAID_BLOCK_TOTAL_1_SET}。`,
   },
   {
     dateKey: '2026-08-15',
     day: 7,
     blockId: RAID_BLOCK_TOTAL_1,
     nameHints: RAID_BLOCK_TOTAL_1_HINTS,
-    perPerson: 80,
-    label: '3日通算の2日目。折り返し。',
+    perPerson: 30,
+    label: `3日通算の2日目。折り返し。${RAID_BLOCK_TOTAL_1_SET}。`,
   },
   {
     dateKey: '2026-08-16',
     day: 8,
     blockId: RAID_BLOCK_TOTAL_1,
     nameHints: RAID_BLOCK_TOTAL_1_HINTS,
-    perPerson: 80,
-    label: '3日通算の最終日。ここまでの合計で討伐判定。',
+    perPerson: 30,
+    label: `3日通算の最終日。ここまでの合計で討伐判定。${RAID_BLOCK_TOTAL_1_SET}。`,
   },
 ];
 
@@ -380,7 +388,7 @@ export const RAID_BLOCKS: RaidBlockConfig[] = [
     id: RAID_BLOCK_TOTAL_1,
     title: RAID_BLOCK_TOTAL_1_TITLE,
     dateKeys: ['2026-08-14', '2026-08-15', '2026-08-16'],
-    label: '3日通算。1種目を最終日まで積み上げて、1体のボスを削り切る。',
+    label: `3日通算。1種目を最終日まで積み上げて、1体のボスを削り切る。数えるのはセット数（${RAID_BLOCK_TOTAL_1_SET}）。`,
   },
 ];
 

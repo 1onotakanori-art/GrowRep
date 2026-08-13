@@ -311,9 +311,10 @@ const RAID_SCHEDULE = [
     { dateKey: '2026-08-12', day: 4, nameHints: ['クラップクランチ', 'クラップ', 'clap crunch', 'clap'], perPerson: 200 },
     { dateKey: '2026-08-13', day: 5, nameHints: ['ディップス(レイド)', 'ディップス（レイド）', 'ディップス', 'dip'], perPerson: 120 },
     // 8/14〜8/16 は「複合種目総合1」の3日通算ブロック（blockId でまとめる）
-    { dateKey: '2026-08-14', day: 6, blockId: 'total1', nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 80 },
-    { dateKey: '2026-08-15', day: 7, blockId: 'total1', nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 80 },
-    { dateKey: '2026-08-16', day: 8, blockId: 'total1', nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 80 }
+    // 数えるのはセット数（1セット＝腕立て10→バックエクステンション10→クラップクランチ10→スクワット20）
+    { dateKey: '2026-08-14', day: 6, blockId: 'total1', nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 30 },
+    { dateKey: '2026-08-15', day: 7, blockId: 'total1', nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 30 },
+    { dateKey: '2026-08-16', day: 8, blockId: 'total1', nameHints: RAID_BLOCK_TOTAL_1_HINTS, perPerson: 30 }
 ];
 
 // 通算ブロック：複数日を1種目でつなぎ、期間の合計で1体のボスを削る単位。
