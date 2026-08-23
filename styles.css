@@ -2331,6 +2331,60 @@ body.mode-interval header h1::after {
     margin-top: 4px;
 }
 
+/* デイリーミッション未クリアによる週間チャレンジ投稿ロック */
+.daily-locked-entry {
+    background: repeating-linear-gradient(45deg, #fffaf3, #fffaf3 10px, #fdeedd 10px, #fdeedd 20px);
+    border-left: 4px solid #f39c12;
+    cursor: pointer;  /* タップでデイリーミッションタブへ移動する */
+}
+.daily-locked-entry .post-entry-title {
+    color: #a05a00;
+}
+.daily-locked-entry .locked-note {
+    background: #f39c12;
+}
+.daily-locked-entry .locked-desc {
+    color: #a3762f;
+}
+.daily-lock-notice {
+    margin: 0 0 12px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: #fff8ec;
+    border: 1px solid #f6d6a1;
+    color: #8a5a00;
+    font-size: 0.85em;
+    line-height: 1.7;
+    text-align: center;
+}
+.daily-lock-notice i {
+    margin-right: 5px;
+}
+.daily-lock-jump {
+    margin-top: 8px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 999px;
+    background: #f39c12;
+    color: #fff;
+    font-size: 1em;
+    font-weight: 700;
+    cursor: pointer;
+}
+.daily-lock-jump:hover {
+    background: #e08e0b;
+}
+body.dark-mode .daily-locked-entry {
+    background: repeating-linear-gradient(45deg, #2a241c, #2a241c 10px, #332b20 10px, #332b20 20px);
+}
+body.dark-mode .daily-locked-entry .post-entry-title { color: #f0b860; }
+body.dark-mode .daily-locked-entry .locked-desc { color: #c9a76e; }
+body.dark-mode .daily-lock-notice {
+    background: rgba(243, 156, 18, 0.12);
+    border-color: rgba(243, 156, 18, 0.4);
+    color: #f0b860;
+}
+
 /* 連続投稿ストリークのバッジ（得点タブ） */
 .streak-badge {
     display: inline-flex;

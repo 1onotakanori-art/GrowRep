@@ -103,6 +103,35 @@
   font-size: 11px;
 }
 
+/* デイリーミッション未クリアによるロック（種目名は見せる） */
+.dailyLocked {
+  border-color: var(--gold);
+  cursor: pointer;
+}
+.dailyLocked .lockIcon,
+.dailyLocked .lockName {
+  color: var(--gold);
+}
+.dailyLockNotice {
+  padding: 12px 14px;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background: var(--gold-soft);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+}
+.dailyLockJump {
+  margin-top: 8px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--text-on-accent);
+  font-weight: 700;
+  font-size: 12px;
+}
+
 /*
  * ⚠️ CSS Modules は animation-name をローカルスコープへ書き換えるため、
  * global.css の fadeIn を参照しても解決されない。必ずこのファイルで定義する。
