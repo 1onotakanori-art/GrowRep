@@ -38,7 +38,7 @@ function ShellInner() {
         {nav === 'home' && <HomeView onNavigate={setNav} />}
         {nav === 'daily' && <DailyMissionView />}
         {nav === 'timer' && <TimerView />}
-        {nav === 'post' && <PostView />}
+        {nav === 'post' && <PostView onNavigate={setNav} />}
         {nav === 'ranking' && <RankingView />}
         {nav === 'center' &&
           (mode === 'weekly' ? (

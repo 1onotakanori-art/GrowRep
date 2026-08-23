@@ -4,26 +4,44 @@ import { useData } from '../../context/DataContext';
 import { useMode } from '../../context/ModeContext';
 import { useToast } from '../../context/ToastContext';
 import { submitPost } from '../../lib/posts';
-import { getModeExercises } from '../../lib/mode-exercises';
+import {
+  getModeExercises,
+  isWeeklyPostLockedByDailyMission,
+} from '../../lib/mode-exercises';
 import { EmptyState, ExerciseIcon, Barbadge } from '../../components/ui';
+import type { NavKey } from '../../shell/BottomNav';
 import styles from './PostComposer.module.css';
 
-export default function PostComposer() {
+export default function PostComposer({
+  onNavigate,
+}: {
+  onNavigate?: (k: NavKey) => void;
+}) {
   const { user } = useAuth();
   const { mode, refresh } = useMode();
-  const { freeExercises, weeklyChallenge } = useData();
+  const { freeExercises, weeklyChallenge, dailyMission } = useData();
   const { toast } = useToast();
   const [selected, setSelected] = useState<string | null>(null);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
 
   const exercises = useMemo(
-    () => getModeExercises(mode, freeExercises, weeklyChallenge),
-    [mode, freeExercises, weeklyChallenge],
+    () => getModeExercises(mode, freeExercises, weeklyChallenge, new Date(), dailyMission),
+    [mode, freeExercises, weeklyChallenge, dailyMission],
   );
+
+  // 週間チャレンジは、その日のデイリーミッションをクリアするまで投稿できない
+  const dailyLocked =
+    mode === 'weekly' && isWeeklyPostLockedByDailyMission(dailyMission);
 
   async function handleSubmit(key: string) {
     if (!user) return;
+    // 画面を開いたまま日付をまたいだ場合に備え、送信時にもロックを確認する
+    if (dailyLocked) {
+      toast('今日のデイリーミッションをクリアすると投稿できます', 'error');
+      setSelected(null);
+      return;
+    }
     const num = parseInt(value, 10);
     if (!num || num <= 0 || isNaN(num) || num > 10000) {
       toast('回数または秒数を正しく入力してください（1〜10000）', 'error');
@@ -62,7 +80,40 @@ export default function PostComposer() {
 
   return (
     <div className={styles.grid}>
-      {exercises.map(({ key, ex, locked }) => {
+      {dailyLocked && (
+        <div className={styles.dailyLockNotice}>
+          <p>
+            <i className="fa-solid fa-lock" /> 今日のデイリーミッションを
+            クリアすると、今週のチャレンジ種目に投稿できます。
+          </p>
+          {onNavigate && (
+            <button
+              className={styles.dailyLockJump}
+              onClick={() => onNavigate('daily')}
+            >
+              <i className="fa-solid fa-bullseye" /> デイリーミッションへ
+            </button>
+          )}
+        </div>
+      )}
+      {exercises.map(({ key, ex, locked, lockReason }) => {
+        if (locked && lockReason === 'daily') {
+          return (
+            <div
+              key={key}
+              className={`${styles.locked} ${styles.dailyLocked}`}
+              onClick={() => onNavigate?.('daily')}
+            >
+              <span className={styles.lockIcon}>
+                <i className="fa-solid fa-lock" />
+              </span>
+              <span className={styles.lockName}>{ex.name}</span>
+              <span className={styles.lockNote}>
+                デイリーミッションをクリアすると解禁
+              </span>
+            </div>
+          );
+        }
         if (locked) {
           return (
             <div key={key} className={styles.locked}>

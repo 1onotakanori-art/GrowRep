@@ -2091,7 +2091,15 @@ async function submitPost(exerciseKey) {
         postError.textContent = '回数または秒数を正しく入力してください（1〜10000）';
         return;
     }
-    
+
+    // 週間チャレンジは、その日のデイリーミッションをクリアするまで投稿できない。
+    // カードを開いたまま日付をまたいだ場合に備え、送信時にもここで確認する。
+    if (currentMode === 'weekly' && isWeeklyPostLockedByDailyMission()) {
+        postError.textContent = '今日のデイリーミッションをクリアすると投稿できます。';
+        updateWeeklyPostDropdown();
+        return;
+    }
+
     try {
         const collectionName = getCollectionName('posts');
         console.log(`[submitPost] モード: ${currentMode}, コレクション: ${collectionName}`);
@@ -2131,7 +2139,7 @@ async function submitPost(exerciseKey) {
         // デイリーミッションの種目を投稿した場合は達成状況が変わるため作り直す
         if (dailyMissionState && dailyMissionState.exerciseKey === exerciseKey) {
             loadDailyMissionState()
-                .then(updateDailyMissionBadge)
+                .then(onDailyMissionStateChanged)
                 .catch(e => console.warn('[デイリーミッション] 更新失敗:', e));
         }
 
@@ -7519,6 +7527,15 @@ async function initWeeklyMode() {
     }
     await getOrUpdateWeeklyChallenge();
     saveWeeklyChallengeCache();  // 次回の楽観描画用にローカル保存
+    // 投稿タブのロック判定にデイリーミッションのクリア状況が要るので先に解決する。
+    // 失敗しても未取得のまま進める（＝ロックしない）ので投稿を止めてしまうことはない。
+    if (!dailyMissionState) {
+        try {
+            await loadDailyMissionState();
+        } catch (e) {
+            console.warn('[週間チャレンジ] デイリーミッションの状態取得に失敗（ロック判定はスキップ）:', e);
+        }
+    }
     updateWeeklyPostDropdown();
     updateWeeklyRulesTab();
     updateWeeklyGraphDropdown();
@@ -7546,6 +7563,8 @@ async function initWeeklyMode() {
  */
 function updateWeeklyPostDropdown() {
     if (currentMode !== 'weekly') return;
+    // 種目カードを出さずに抜けるルート（休止週など）に備えて未描画へ戻しておく
+    weeklyPostLockRendered = null;
     const postTab = document.getElementById('post-tab');
     const exercisesGrid = document.getElementById('post-exercises-grid');
 
@@ -7567,6 +7586,10 @@ function updateWeeklyPostDropdown() {
 
     // 4枠すべて表示。未解禁の水曜公開枠は ？？？ のロックカード（投稿不可）で表示する
     const activeKeys = getActiveWeeklyKeys(weeklyChallenge.exercises);
+    // 今日のデイリーミッションが未クリアなら、解禁済みの枠もまとめてロックする
+    const dailyLocked = isWeeklyPostLockedByDailyMission();
+    weeklyPostLockRendered = dailyLocked;
+    if (dailyLocked) appendDailyMissionLockNotice(exercisesGrid);
     weeklyChallenge.exercises.forEach(key => {
         if (!activeKeys.includes(key)) {
             appendLockedPostItem(exercisesGrid);
@@ -7574,8 +7597,71 @@ function updateWeeklyPostDropdown() {
         }
         const ex = freeExercises[key];
         if (!ex) return;
+        if (dailyLocked) {
+            appendDailyLockedPostItem(exercisesGrid, key, ex);
+            return;
+        }
         appendPostItem(exercisesGrid, key, ex);
     });
+}
+
+/** 投稿タブに描画済みのロック状態（true/false）。未描画なら null。 */
+let weeklyPostLockRendered = null;
+
+/**
+ * 週間チャレンジの投稿が「その日のデイリーミッション未クリア」でロックされているか。
+ *
+ * ⚠️ 判定できないときは必ず false（＝投稿できる）を返す。通信失敗や読み込み前に
+ *    ロックしてしまうと、クリア済みの人まで投稿できなくなるため。
+ * - ミッション自体が無い日（レイド前メンテナンス）はロックしない
+ * - レイド開催日の cleared は「今日1回でも積んだか」なので、そのまま条件に使う
+ * @returns {boolean}
+ */
+function isWeeklyPostLockedByDailyMission() {
+    if (!dailyMissionState) return false;
+    if (dailyMissionState.maintenance) return false;
+    return !dailyMissionState.cleared;
+}
+
+/**
+ * 投稿タブの先頭に「デイリーミッションをクリアすると解禁」の案内を差し込む。
+ * @param {HTMLElement} container
+ */
+function appendDailyMissionLockNotice(container) {
+    const note = document.createElement('p');
+    note.className = 'daily-lock-notice';
+    note.innerHTML = '<i class="fa-solid fa-lock"></i> 今日のデイリーミッションをクリアすると、今週のチャレンジ種目に投稿できます。';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'daily-lock-jump';
+    btn.innerHTML = '<i class="fa-solid fa-bullseye"></i> デイリーミッションへ';
+    btn.addEventListener('click', () => switchToDailyMissionTab());
+    note.appendChild(document.createElement('br'));
+    note.appendChild(btn);
+    container.appendChild(note);
+}
+
+/**
+ * 投稿タブに「デイリーミッション未クリアのため投稿不可」のロックカードを追加する。
+ * 種目名は隠さない（水曜解禁枠と違い、伏せる理由が無いため）。
+ * @param {HTMLElement} container
+ * @param {string} key
+ * @param {Object} ex - freeExercises[key]
+ */
+function appendDailyLockedPostItem(container, key, ex) {
+    const iconClass = ex.icon || 'fa-dumbbell';
+    const item = document.createElement('div');
+    item.className = 'rule-item post-exercise-entry weekly-locked-entry daily-locked-entry';
+    item.dataset.key = key;
+    item.setAttribute('aria-disabled', 'true');
+    item.innerHTML = `
+        <div class="post-exercise-entry-info">
+            <h3 class="post-entry-title"><i class="fa-solid ${escapeHtml(iconClass)}"></i> ${escapeHtml(ex.name)} <span class="locked-note"><i class="fa-solid fa-lock"></i> ミッション未クリア</span></h3>
+            <div class="locked-desc">今日のデイリーミッションをクリアすると投稿できます。</div>
+        </div>
+    `;
+    item.addEventListener('click', () => switchToDailyMissionTab());
+    container.appendChild(item);
 }
 
 /**
@@ -10035,7 +10121,7 @@ async function renderDailyMissionTab(forceRefresh = false) {
         }
     }
 
-    updateDailyMissionBadge();
+    onDailyMissionStateChanged();
 
     if (!dailyMissionState) {
         container.innerHTML = '<p style="text-align:center;color:#999;padding:24px;"><i class="fa-solid fa-dumbbell"></i> 対象になる種目がまだありません。ルールタブから追加してください。</p>';
@@ -10365,6 +10451,18 @@ async function submitDailyMissionPost() {
 }
 
 /**
+ * デイリーミッションの状態が変わったあとのUI反映をまとめて行う。
+ * 週間チャレンジの投稿ロックはクリア状況に連動するので、ここで作り直す。
+ */
+function onDailyMissionStateChanged() {
+    updateDailyMissionBadge();
+    if (currentMode !== 'weekly') return;
+    // 入力中のカードを閉じてしまわないよう、ロック状態が変わったときだけ作り直す
+    if (isWeeklyPostLockedByDailyMission() === weeklyPostLockRendered) return;
+    updateWeeklyPostDropdown();
+}
+
+/**
  * 未クリアならタブボタンに赤ドットを表示する
  */
 function updateDailyMissionBadge() {
@@ -10398,7 +10496,7 @@ async function maybeOpenDailyMissionOnStart() {
         return;
     }
 
-    updateDailyMissionBadge();
+    onDailyMissionStateChanged();
     if (dailyMissionState && !dailyMissionState.cleared) {
         switchToDailyMissionTab();
     }
