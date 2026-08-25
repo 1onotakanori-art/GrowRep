@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { ModeProvider, useMode } from '../context/ModeContext';
 import { DataProvider, useData } from '../context/DataContext';
+import {
+  SpecialEventProvider,
+  useSpecialEvent,
+} from '../context/SpecialEventContext';
 import Header from './Header';
 import BottomNav, { type NavKey } from './BottomNav';
 import ProfileModal from '../features/profile/ProfileModal';
@@ -13,11 +17,13 @@ import MyPageView from '../views/MyPageView';
 import ChallengeView from '../views/ChallengeView';
 import ExercisesView from '../views/ExercisesView';
 import RaidScoreView from '../views/RaidScoreView';
+import SpecialEventApprovalModal from '../features/special/SpecialEventApprovalModal';
 import styles from './AppShell.module.css';
 
 function ShellInner() {
   const { mode } = useMode();
-  const { dailyMission, dailyLoading } = useData();
+  const { dailyMission, dailyLoading, loading: dataLoading } = useData();
+  const { pending, reload: reloadSpecialEvents } = useSpecialEvent();
   const [nav, setNav] = useState<NavKey>('home');
   const [profileOpen, setProfileOpen] = useState(false);
   const autoNavDone = useRef(false);
@@ -61,6 +67,20 @@ function ShellInner() {
       />
 
       {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
+
+      {/*
+        承認者に選ばれた提案は、承認/否認を選ぶまでアプリを開くたびに出す。
+        閉じる手段を用意しないことで回答漏れを防ぐ（dismissible=false）。
+      */}
+      {!dataLoading && pending.length > 0 && (
+        <SpecialEventApprovalModal
+          key={pending.map((p) => p.id).join(',')}
+          proposals={pending}
+          mandatory
+          onClose={reloadSpecialEvents}
+          onResolved={reloadSpecialEvents}
+        />
+      )}
     </div>
   );
 }
@@ -69,7 +89,9 @@ export default function AppShell() {
   return (
     <ModeProvider>
       <DataProvider>
-        <ShellInner />
+        <SpecialEventProvider>
+          <ShellInner />
+        </SpecialEventProvider>
       </DataProvider>
     </ModeProvider>
   );

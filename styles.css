@@ -4679,3 +4679,369 @@ body.dark-mode .weekly-paused-raid { background: rgba(0, 0, 0, 0.28); }
     margin-right: 5px;
 }
 body.dark-mode .weekly-paused-inline { color: #aaa; }
+
+/* ====================================================================
+   特別イベントウィーク（提案フォーム / 承認ポップアップ）
+   ==================================================================== */
+.special-event-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.special-event-buttons button {
+    flex: 1 1 160px;
+}
+
+.se-lead {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #555;
+    margin-bottom: 4px;
+}
+.se-muted {
+    font-size: 12px;
+    color: #999;
+    margin: 4px 0;
+}
+.se-center { text-align: center; }
+.se-warn {
+    font-size: 12px;
+    line-height: 1.6;
+    color: #d9601f;
+    background: #fff3e6;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin: 4px 0;
+}
+
+.se-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 14px 0 6px;
+}
+.se-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #555;
+}
+.se-section-title i {
+    color: #5b6bd6;
+    margin-right: 4px;
+}
+.se-counter {
+    font-size: 12px;
+    font-weight: 800;
+    color: #5b6bd6;
+    background: #eef1ff;
+    border-radius: 999px;
+    padding: 2px 10px;
+}
+
+/* 種目ピッカー */
+.se-pick-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 40vh;
+    overflow-y: auto;
+}
+.se-pick {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    text-align: left;
+    border-radius: 10px;
+    border: 1.5px solid #e6e8f0;
+    background: #f7f8fc;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.se-pick-on {
+    border-color: #5b6bd6;
+    background: #eef1ff;
+}
+.se-pick:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.se-pick-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: #e6e8f0;
+    color: #555;
+    font-size: 14px;
+    font-weight: 800;
+}
+.se-pick-on .se-pick-icon {
+    background: #5b6bd6;
+    color: #fff;
+}
+.se-pick-body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.se-pick-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #333;
+}
+.se-pick-rule {
+    font-size: 11px;
+    line-height: 1.5;
+    color: #999;
+    white-space: pre-wrap;
+}
+.se-ta {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #ffe9df;
+    color: #ff6b3d;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+/* 開始日ピッカー */
+.se-week-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.se-week {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    text-align: left;
+    border-radius: 10px;
+    border: 1.5px solid #e6e8f0;
+    background: #f7f8fc;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.se-week-on {
+    border-color: #5b6bd6;
+    background: #eef1ff;
+}
+.se-week-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.se-week-monday {
+    font-size: 14px;
+    font-weight: 700;
+    color: #333;
+}
+.se-week-period {
+    font-size: 11px;
+    color: #999;
+}
+
+/* 承認者チップ */
+.se-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.se-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1.5px solid #e6e8f0;
+    background: #f7f8fc;
+    color: #555;
+    cursor: pointer;
+}
+.se-chip-on {
+    background: #eef1ff;
+    border-color: #5b6bd6;
+    color: #5b6bd6;
+}
+.se-chip:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.se-chip-count {
+    font-size: 10px;
+    color: #999;
+}
+
+/* 承認ポップアップ */
+.se-progress {
+    text-align: right;
+    font-size: 11px;
+    font-weight: 700;
+    color: #999;
+}
+.se-period-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #eef1ff;
+    margin: 8px 0;
+}
+.se-period-card > i {
+    color: #5b6bd6;
+    font-size: 20px;
+}
+.se-period-card > span {
+    display: flex;
+    flex-direction: column;
+}
+.se-period-label {
+    font-size: 11px;
+    color: #999;
+}
+.se-period-value {
+    font-size: 15px;
+    font-weight: 800;
+    color: #333;
+}
+.se-rule-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.se-rule-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #f7f8fc;
+    border: 1px solid #e6e8f0;
+}
+.se-rule-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #6c5ce7, #8e7bff);
+    color: #fff;
+    font-size: 14px;
+}
+.se-rule-body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.se-rule-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #333;
+}
+.se-rule-text {
+    font-size: 12px;
+    line-height: 1.6;
+    color: #555;
+    white-space: pre-wrap;
+}
+.se-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+}
+.se-actions button {
+    margin: 0;
+}
+
+/* 一覧 */
+.se-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #f7f8fc;
+    border: 1px solid #e6e8f0;
+    margin-bottom: 6px;
+}
+.se-row-main {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.se-row-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #333;
+}
+.se-row-sub {
+    font-size: 11px;
+    color: #999;
+}
+.se-badge {
+    flex: none;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 4px 10px;
+    white-space: nowrap;
+}
+.se-badge-wait {
+    background: #fff5da;
+    color: #c99a00;
+}
+.se-badge-ok {
+    background: #e2f6ee;
+    color: #1c9c6d;
+}
+.se-badge-ng {
+    background: #fdeaea;
+    color: #d94a45;
+}
+
+body.dark-mode .se-lead,
+body.dark-mode .se-rule-text { color: #c5c8d4; }
+body.dark-mode .se-section-title { color: #c5c8d4; }
+body.dark-mode .se-pick,
+body.dark-mode .se-week,
+body.dark-mode .se-chip,
+body.dark-mode .se-rule-item,
+body.dark-mode .se-row {
+    background: #23273a;
+    border-color: #333a55;
+}
+body.dark-mode .se-pick-on,
+body.dark-mode .se-week-on,
+body.dark-mode .se-chip-on {
+    background: #2c3050;
+    border-color: #6c5ce7;
+}
+body.dark-mode .se-pick-name,
+body.dark-mode .se-week-monday,
+body.dark-mode .se-rule-name,
+body.dark-mode .se-row-title,
+body.dark-mode .se-period-value { color: #eef1fb; }
+body.dark-mode .se-period-card { background: #2c3050; }
+body.dark-mode .se-counter { background: #2c3050; }
+body.dark-mode .se-pick-icon { background: #333a55; color: #c5c8d4; }

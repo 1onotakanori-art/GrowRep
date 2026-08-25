@@ -499,6 +499,15 @@
                 <button id="logout-btn" class="btn-primary">ログアウト</button>
             </div>
 
+            <div id="special-event-section" class="profile-section">
+                <h3>特別イベントウィーク</h3>
+                <p class="profile-description">4種目・開始日（月曜）・承認者3人を選んで提案します。承認者全員が承認すると、その週の週間チャレンジが差し替わります。</p>
+                <div class="special-event-buttons">
+                    <button id="special-event-propose-btn" class="btn-primary"><i class="fa-solid fa-wand-magic-sparkles"></i> 特別イベント提案</button>
+                    <button id="special-event-approve-btn" class="btn-secondary"><i class="fa-solid fa-user-check"></i> イベント承認</button>
+                </div>
+            </div>
+
             <div id="username-section" class="profile-section">
                 <h3>ユーザー名</h3>
                 <p class="profile-description">他のユーザーに表示される名前です（2〜20文字）</p>
@@ -524,6 +533,15 @@
                 </div>
                 <p id="password-error" class="error-message"></p>
             </div>
+        </div>
+    </div>
+
+    <!-- 特別イベントウィーク（提案・承認） -->
+    <div id="special-event-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close-modal" id="special-event-close">&times;</span>
+            <h2 id="special-event-title"><i class="fa-solid fa-wand-magic-sparkles"></i> 特別イベント</h2>
+            <div id="special-event-body"></div>
         </div>
     </div>
 

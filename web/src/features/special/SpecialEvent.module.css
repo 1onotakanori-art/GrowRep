@@ -1,0 +1,362 @@
+/* 特別イベントウィーク（提案フォーム / 承認ポップアップ）共通スタイル */
+
+.form,
+.approval {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lead {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.muted {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+.err {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.warn {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--flame);
+  background: rgba(255, 107, 61, 0.1);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+.sectionTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.sectionTitle i {
+  color: var(--accent);
+  margin-right: 4px;
+}
+.counter {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+}
+
+/* --- 種目ピッカー --- */
+.pickList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40dvh;
+  overflow-y: auto;
+}
+.pick,
+.pickOn {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  transition: all 0.15s ease;
+}
+.pickOn {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.pick:disabled {
+  opacity: 0.45;
+}
+.pickIcon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 800;
+}
+.pickOn .pickIcon {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+.pickBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.pickName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.pickRule {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-3);
+  white-space: pre-wrap;
+}
+
+/* --- 開始日ピッカー --- */
+.weekList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.week,
+.weekOn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  transition: all 0.15s ease;
+}
+.weekOn {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.weekMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.weekMonday {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.weekPeriod {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.tagPending,
+.tagApproved {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: var(--radius-pill);
+  padding: 3px 8px;
+}
+.tagPending {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+.tagApproved {
+  background: rgba(34, 176, 125, 0.14);
+  color: var(--success);
+}
+
+/* --- 承認者チップ --- */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip,
+.chipOn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.chipOn {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chip:disabled {
+  opacity: 0.45;
+}
+.chipCount {
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+/* --- 承認ポップアップ --- */
+.progress {
+  align-self: flex-end;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+}
+
+.periodCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+.periodCard > i {
+  color: var(--accent);
+  font-size: 20px;
+}
+.periodCard > div {
+  display: flex;
+  flex-direction: column;
+}
+.periodLabel {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.periodValue {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.ruleList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+}
+.ruleItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.ruleIcon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--accent-grad);
+  color: var(--text-on-accent);
+  font-size: 14px;
+}
+.ruleBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.ruleName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.ruleText {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+
+.approvers {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* --- マイページの提案一覧 --- */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.rowTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.rowSub {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.badgePending,
+.badgeApproved,
+.badgeRejected {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+}
+.badgePending {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+.badgeApproved {
+  background: rgba(34, 176, 125, 0.14);
+  color: var(--success);
+}
+.badgeRejected {
+  background: rgba(239, 83, 80, 0.14);
+  color: var(--danger);
+}
