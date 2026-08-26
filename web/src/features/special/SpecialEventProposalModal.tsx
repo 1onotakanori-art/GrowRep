@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import {
   getProposableWeeks,
   validateProposalInput,
+  SPECIAL_EVENT_ACTIVE_DAYS,
   SPECIAL_EVENT_APPROVER_COUNT,
   SPECIAL_EVENT_EXERCISE_COUNT,
   type ApproverCandidate,
@@ -14,7 +15,7 @@ import {
 } from '../../lib/special-event';
 import {
   createSpecialEventProposal,
-  loadPreviousWeekParticipants,
+  loadApproverCandidates,
   loadProposalsByWeek,
 } from '../../lib/special-event-engine';
 import styles from './SpecialEvent.module.css';
@@ -57,18 +58,20 @@ export default function SpecialEventProposalModal({
     [freeExercises],
   );
 
+  // 承認者候補と週の利用状況は独立に描画する（片方の遅れでもう片方を待たせない）
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     (async () => {
       try {
-        const [list, usage] = await Promise.all([
-          loadPreviousWeekParticipants(usersMap, user.uid),
-          loadProposalsByWeek(),
-        ]);
+        const list = await loadApproverCandidates(usersMap, user.uid, {
+          // ローカルキャッシュ分を先に出し、サーバー確定で差し替える
+          onPartial: (partial) => {
+            if (!cancelled) setCandidates(partial);
+          },
+        });
         if (cancelled) return;
         setCandidates(list);
-        setWeekUsage(usage);
       } catch (e) {
         if (cancelled) return;
         console.error('[特別イベント] 承認者候補の取得に失敗:', e);
@@ -80,6 +83,22 @@ export default function SpecialEventProposalModal({
       cancelled = true;
     };
   }, [user, usersMap]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    loadProposalsByWeek(weeks.map((w) => w.mondayKey))
+      .then((usage) => {
+        if (!cancelled) setWeekUsage(usage);
+      })
+      .catch((e) => {
+        // 「申請中あり」のタグが出ないだけなので、提案自体は続けられる
+        console.warn('[特別イベント] 週別の提案状況の取得に失敗:', e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, weeks]);
 
   function toggleExercise(key: string) {
     setErr('');
@@ -255,14 +274,16 @@ export default function SpecialEventProposalModal({
             {approverIds.length}/{SPECIAL_EVENT_APPROVER_COUNT}
           </span>
         </div>
-        <p className={styles.muted}>前週の週間チャレンジに投稿した人から選べます</p>
+        <p className={styles.muted}>
+          過去{SPECIAL_EVENT_ACTIVE_DAYS}日以内に投稿した人から選べます
+        </p>
         {candidates === null ? (
           <p className={styles.muted}>読み込み中...</p>
         ) : candidates.length < SPECIAL_EVENT_APPROVER_COUNT ? (
           <p className={styles.warn}>
-            <i className="fa-solid fa-triangle-exclamation" /> 前週の投稿者が
-            {SPECIAL_EVENT_APPROVER_COUNT}人に届いていないため、いまは提案できません
-            （現在{candidates.length}人）
+            <i className="fa-solid fa-triangle-exclamation" /> 過去
+            {SPECIAL_EVENT_ACTIVE_DAYS}日の投稿者が{SPECIAL_EVENT_APPROVER_COUNT}
+            人に届いていないため、いまは提案できません（現在{candidates.length}人）
           </p>
         ) : (
           <div className={styles.chips}>

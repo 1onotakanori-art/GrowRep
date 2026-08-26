@@ -9,6 +9,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromCache,
   limit as fbLimit,
   orderBy,
   query,
@@ -16,6 +17,7 @@ import {
   updateDoc,
   where,
   Timestamp,
+  type Query,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { db } from './firebase';
@@ -64,6 +66,37 @@ export async function getWeeklyPosts(
     ),
   );
   return snap.docs.map((d) => ({ ...(d.data() as Post), id: d.id }));
+}
+
+/** since 以降の投稿だけを取る query（承認者候補などの「直近の投稿者」判定用）。 */
+function postsSinceQuery(since: Date): Query {
+  return query(
+    collection(db, COL),
+    where('timestamp', '>=', Timestamp.fromDate(since)),
+  );
+}
+
+/** since 以降の投稿を取得（サーバー）。 */
+export async function getPostsSince(since: Date): Promise<Post[]> {
+  const snap = await getDocs(postsSinceQuery(since));
+  return snap.docs.map((d) => ({ ...(d.data() as Post), id: d.id }));
+}
+
+/**
+ * since 以降の投稿をローカルキャッシュ（IndexedDB）だけから取得する。
+ * サーバー往復が無いので即返るが、未キャッシュなら null。
+ * 「まずキャッシュを描画 → 裏でサーバー最新に差し替え」に使う。
+ */
+export async function getPostsSinceFromCache(
+  since: Date,
+): Promise<Post[] | null> {
+  try {
+    const snap = await getDocsFromCache(postsSinceQuery(since));
+    if (snap.empty) return null;
+    return snap.docs.map((d) => ({ ...(d.data() as Post), id: d.id }));
+  } catch {
+    return null;
+  }
 }
 
 /** 全投稿を取得（フリー集計・成長グラフ用）。 */

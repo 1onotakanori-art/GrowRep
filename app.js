@@ -1549,6 +1549,11 @@ profileBtn.addEventListener('click', () => {
         confirmPasswordInput.value = '';
         passwordError.textContent = '';
         profileModal.style.display = 'block';
+
+        // 「特別イベント提案」を押した時に待たせないよう、ここで先読みしておく
+        if (!isGuest && typeof prefetchSpecialEventProposalData === 'function') {
+            prefetchSpecialEventProposalData();
+        }
     }
 });
 
@@ -12074,7 +12079,12 @@ const SPECIAL_EVENT_EXERCISE_COUNT = 4;
 const SPECIAL_EVENT_APPROVER_COUNT = 3;
 /** 開始日として選べる週数（次週の月曜から4週分）。 */
 const SPECIAL_EVENT_WEEK_CHOICES = 4;
+/** 承認者候補とみなす「直近の投稿」の日数。この期間に1回でも投稿があれば候補。 */
+const SPECIAL_EVENT_ACTIVE_DAYS = 5;
 const SPECIAL_EVENT_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const SPECIAL_EVENT_DAY_MS = 24 * 60 * 60 * 1000;
+/** 承認者候補・週別提案状況のキャッシュ寿命（users のキャッシュと同じ5分）。 */
+const SPECIAL_EVENT_CACHE_MS = 5 * 60 * 1000;
 
 // 提案フォームの選択状態
 let specialEventDraft = { exercises: [], weekIndex: -1, approvers: [] };
@@ -12191,9 +12201,25 @@ async function loadMySpecialEventProposals(userId) {
         .sort((a, b) => b.targetWeekStart.getTime() - a.targetWeekStart.getTime());
 }
 
-/** 対象週ごとの既存提案（開始日の選択肢に「申請中 / 確定済み」を出すため）。 */
-async function loadSpecialEventProposalsByWeek() {
-    const snap = await db.collection(SPECIAL_EVENT_COL).get();
+/**
+ * 対象週ごとの既存提案（開始日の選択肢に「申請中 / 確定済み」を出すため）。
+ * mondayKeys を渡すとその週だけを引く（コレクション全件スキャンを避ける）。
+ */
+let specialEventWeekUsageCache = null; // { at, key, data }
+
+async function loadSpecialEventProposalsByWeek(mondayKeys) {
+    // Firestore の in は最大10件。提案できるのは4週分なので通常はそのまま収まる。
+    const keys = Array.isArray(mondayKeys) ? mondayKeys.slice(0, 10) : null;
+    const cacheKey = keys ? keys.join(',') : '*';
+    if (specialEventWeekUsageCache
+        && specialEventWeekUsageCache.key === cacheKey
+        && Date.now() - specialEventWeekUsageCache.at < SPECIAL_EVENT_CACHE_MS) {
+        return specialEventWeekUsageCache.data;
+    }
+
+    let ref = db.collection(SPECIAL_EVENT_COL);
+    if (keys && keys.length > 0) ref = ref.where('mondayKey', 'in', keys);
+    const snap = await ref.get();
     const byWeek = {};
     snap.docs.forEach(d => {
         const p = toSpecialEventProposal(d.id, d.data());
@@ -12203,47 +12229,41 @@ async function loadSpecialEventProposalsByWeek() {
         else if (p.status === 'approved') slot.approved++;
         byWeek[p.mondayKey] = slot;
     });
+    specialEventWeekUsageCache = { at: Date.now(), key: cacheKey, data: byWeek };
     return byWeek;
 }
 
-/**
- * 前週の週間チャレンジに投稿しているユーザー（自分とゲストは除く）。
- * 種目は weekly_challenge_history に残る前週の選出種目で絞り込む。
- * 履歴が無い週（休止週など）は、その週の投稿者全員を候補にする。
- */
-async function loadSpecialEventApproverCandidates(userId, now = new Date()) {
-    const { start } = getWeekBoundaries(now);
-    const prevStart = new Date(start.getTime() - SPECIAL_EVENT_WEEK_MS);
-    const prevEnd = start;
+/** 承認者候補の判定に使う「これ以降の投稿」の境界時刻。 */
+function getSpecialEventActiveSince(now = new Date(), days = SPECIAL_EVENT_ACTIVE_DAYS) {
+    return new Date(now.getTime() - days * SPECIAL_EVENT_DAY_MS);
+}
 
-    let prevKeys = [];
-    try {
-        const { docId } = buildChampionDocMeta(prevStart);
-        const histDoc = await db.collection('weekly_challenge_history').doc(docId).get();
-        if (histDoc.exists && Array.isArray(histDoc.data().exercises)) {
-            prevKeys = histDoc.data().exercises;
-        }
-    } catch (e) {
-        console.warn('[特別イベント] 前週の種目取得に失敗、投稿者全員を候補にします:', e);
-    }
+/** ユーザーごとの直近投稿数のキャッシュ（モーダルの開き直しでサーバー往復を省く）。 */
+let specialEventPostCountsCache = null; // { at, counts }
 
+async function fetchSpecialEventRecentPostCounts(now = new Date()) {
+    const since = getSpecialEventActiveSince(now);
     const snap = await db.collection('posts_free')
-        .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(prevStart))
-        .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(prevEnd))
+        .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(since))
         .get();
 
     const counts = {};
     snap.forEach(doc => {
         const post = doc.data();
-        if (!post.timestamp) return;
-        if (!isWeekdayJST(post.timestamp.toDate())) return;
-        if (prevKeys.length > 0 && !prevKeys.includes(post.exerciseType)) return;
+        if (!post.userId || !post.timestamp) return;
         if (!(Number(post.value) > 0)) return;
         counts[post.userId] = (counts[post.userId] || 0) + 1;
     });
+    specialEventPostCountsCache = { at: Date.now(), counts };
+    return counts;
+}
 
-    const usersMap = await getUsersMap();
-    return Object.keys(counts)
+/**
+ * 承認者候補（過去 SPECIAL_EVENT_ACTIVE_DAYS 日以内に1回でも投稿した人。
+ * 自分とゲストは除く）。種目や曜日では絞らないので1クエリで済む。
+ */
+async function loadSpecialEventApproverCandidates(userId, now = new Date()) {
+    const build = (counts, usersMap) => Object.keys(counts)
         .filter(uid => uid !== userId && !(usersMap[uid] && usersMap[uid].isGuest))
         .map(uid => ({
             userId: uid,
@@ -12251,6 +12271,28 @@ async function loadSpecialEventApproverCandidates(userId, now = new Date()) {
             postCount: counts[uid]
         }))
         .sort((a, b) => b.postCount - a.postCount || a.userName.localeCompare(b.userName));
+
+    const usersMap = await getUsersMap();
+    if (specialEventPostCountsCache
+        && Date.now() - specialEventPostCountsCache.at < SPECIAL_EVENT_CACHE_MS) {
+        const cached = build(specialEventPostCountsCache.counts, usersMap);
+        // 人数が足りない時だけは、誰かが投稿した直後でも提案できるよう取り直す
+        if (cached.length >= SPECIAL_EVENT_APPROVER_COUNT) return cached;
+    }
+    return build(await fetchSpecialEventRecentPostCounts(now), usersMap);
+}
+
+/**
+ * 提案フォームで使うデータを先読みする（マイページ表示時など）。
+ * 失敗しても無視する。ボタンを押した時にはキャッシュ済みで即表示できる。
+ */
+function prefetchSpecialEventProposalData() {
+    if (!specialEventPostCountsCache
+        || Date.now() - specialEventPostCountsCache.at >= SPECIAL_EVENT_CACHE_MS) {
+        fetchSpecialEventRecentPostCounts().catch(() => {});
+    }
+    const keys = getSpecialEventProposableWeeks().map(w => w.mondayKey);
+    loadSpecialEventProposalsByWeek(keys).catch(() => {});
 }
 
 /** 提案を作成する。 */
@@ -12290,6 +12332,7 @@ async function createSpecialEventProposal(exercises, week, approvers) {
         status: 'pending',
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    specialEventWeekUsageCache = null;
 }
 
 /**
@@ -12338,6 +12381,7 @@ async function respondToSpecialEventProposal(proposalId, decision) {
         });
         return status;
     });
+    specialEventWeekUsageCache = null;
 
     if (nextStatus === 'approved') {
         const snap = await ref.get();
@@ -12402,13 +12446,20 @@ async function openSpecialEventProposalModal() {
     openSpecialEventModal('特別イベントを提案', 'fa-wand-magic-sparkles',
         '<p class="se-muted">読み込み中...</p>');
 
+    // 承認者候補と週の提案状況は独立に描画する（片方の遅れでもう片方を待たせない）
+    const mondayKeys = specialEventWeeks.map(w => w.mondayKey);
+    loadSpecialEventProposalsByWeek(mondayKeys)
+        .then(usage => {
+            specialEventWeekUsage = usage;
+            if (specialEventCandidates !== null) renderSpecialEventProposalForm();
+        })
+        .catch(e => {
+            // 「申請中あり」のタグが出ないだけなので、提案自体は続けられる
+            console.warn('[特別イベント] 週別の提案状況の取得に失敗:', e);
+        });
+
     try {
-        const [candidates, usage] = await Promise.all([
-            loadSpecialEventApproverCandidates(currentUser.uid),
-            loadSpecialEventProposalsByWeek()
-        ]);
-        specialEventCandidates = candidates;
-        specialEventWeekUsage = usage;
+        specialEventCandidates = await loadSpecialEventApproverCandidates(currentUser.uid);
     } catch (e) {
         console.error('[特別イベント] 承認者候補の取得に失敗:', e);
         specialEventCandidates = [];
@@ -12460,7 +12511,7 @@ function renderSpecialEventProposalForm(errorMessage = '') {
     if (specialEventCandidates === null) {
         approverHtml = '<p class="se-muted">読み込み中...</p>';
     } else if (candidates.length < SPECIAL_EVENT_APPROVER_COUNT) {
-        approverHtml = `<p class="se-warn"><i class="fa-solid fa-triangle-exclamation"></i> 前週の投稿者が${SPECIAL_EVENT_APPROVER_COUNT}人に届いていないため、いまは提案できません（現在${candidates.length}人）</p>`;
+        approverHtml = `<p class="se-warn"><i class="fa-solid fa-triangle-exclamation"></i> 過去${SPECIAL_EVENT_ACTIVE_DAYS}日の投稿者が${SPECIAL_EVENT_APPROVER_COUNT}人に届いていないため、いまは提案できません（現在${candidates.length}人）</p>`;
     } else {
         approverHtml = `<div class="se-chips">${candidates.map(c => {
             const on = selectedApprovers.includes(c.userId);
@@ -12491,7 +12542,7 @@ function renderSpecialEventProposalForm(errorMessage = '') {
             <span class="se-section-title"><i class="fa-solid fa-user-check"></i> 承認者</span>
             <span class="se-counter">${selectedApprovers.length}/${SPECIAL_EVENT_APPROVER_COUNT}</span>
         </div>
-        <p class="se-muted">前週の週間チャレンジに投稿した人から選べます</p>
+        <p class="se-muted">過去${SPECIAL_EVENT_ACTIVE_DAYS}日以内に投稿した人から選べます</p>
         ${approverHtml}
 
         ${errorMessage ? `<p class="error-message">${escapeHtml(errorMessage)}</p>` : ''}
