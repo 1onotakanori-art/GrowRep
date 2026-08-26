@@ -115,6 +115,27 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // special_event_proposals コレクション（特別イベントウィークの提案・承認）
+    // 提案は本人だけが作成でき、承認者に選ばれた人だけが回答（responses/status）
+    // を書き換えられる。承認が揃うと settings_free/weekly_override が更新される。
+    match /special_event_proposals/{proposalId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+                    && request.resource.data.proposerId == request.auth.uid
+                    && request.resource.data.status == 'pending'
+                    && (!('responses' in request.resource.data)
+                        || request.resource.data.responses.size() == 0);
+
+      allow update: if request.auth != null
+                    && request.auth.uid in resource.data.approverIds
+                    && request.resource.data.diff(resource.data)
+                         .affectedKeys()
+                         .hasOnly(['responses', 'status', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
     // exercise_ratings コレクション（種目評価）
     // 親ドキュメント: 集計データ（avgRating, ratingCount, ratingSum）
     // サブコレクション user_ratings: 個人の評価（本人のみ書き込み可）

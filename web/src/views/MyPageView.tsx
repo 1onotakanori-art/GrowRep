@@ -1,7 +1,13 @@
+import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useSpecialEvent } from '../context/SpecialEventContext';
 import { ViewHeader, Segmented } from '../components/ui';
 import ProgressChart from '../features/progress/ProgressChart';
+import SpecialEventProposalModal from '../features/special/SpecialEventProposalModal';
+import SpecialEventApprovalModal from '../features/special/SpecialEventApprovalModal';
+import SpecialEventInboxModal from '../features/special/SpecialEventInboxModal';
+import type { SpecialEventProposal } from '../lib/special-event';
 import styles from './MyPageView.module.css';
 
 export default function MyPageView({
@@ -11,7 +17,14 @@ export default function MyPageView({
 }) {
   const { user, userData, isGuest } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { pending, reload } = useSpecialEvent();
   const displayName = userData?.userName || (isGuest ? 'ゲスト' : 'ユーザー');
+
+  const [proposalOpen, setProposalOpen] = useState(false);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [approving, setApproving] = useState<SpecialEventProposal[] | null>(
+    null,
+  );
 
   return (
     <div className="fade-in">
@@ -25,6 +38,23 @@ export default function MyPageView({
         </div>
         <i className="fa-solid fa-chevron-right" />
       </button>
+
+      <div className={styles.eventRow}>
+        <button
+          className={styles.eventBtn}
+          onClick={() => setProposalOpen(true)}
+        >
+          <i className="fa-solid fa-wand-magic-sparkles" />
+          特別イベント提案
+        </button>
+        <button className={styles.eventBtn} onClick={() => setInboxOpen(true)}>
+          <i className="fa-solid fa-user-check" />
+          イベント承認
+          {pending.length > 0 && (
+            <span className={styles.eventBadge}>{pending.length}</span>
+          )}
+        </button>
+      </div>
 
       <div className={styles.themeRow}>
         <span className={styles.themeLabel}>
@@ -43,6 +73,29 @@ export default function MyPageView({
 
       {/* タイマーは専用タブへ移動（ボトムナビ）。ここは成長グラフのみ。 */}
       <ProgressChart />
+
+      {proposalOpen && (
+        <SpecialEventProposalModal
+          onClose={() => setProposalOpen(false)}
+          onSubmitted={reload}
+        />
+      )}
+      {inboxOpen && (
+        <SpecialEventInboxModal
+          onClose={() => setInboxOpen(false)}
+          onOpenApproval={(list) => {
+            setInboxOpen(false);
+            setApproving(list);
+          }}
+        />
+      )}
+      {approving && (
+        <SpecialEventApprovalModal
+          proposals={approving}
+          onClose={() => setApproving(null)}
+          onResolved={reload}
+        />
+      )}
     </div>
   );
 }

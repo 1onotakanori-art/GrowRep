@@ -8,22 +8,30 @@ export default function Modal({
   onClose,
   children,
   maxWidth,
+  dismissible = true,
 }: {
   title: ReactNode;
   icon?: string;
   onClose: () => void;
   children: ReactNode;
   maxWidth?: number;
+  /**
+   * false にすると ✕ / Escape / 背景タップで閉じられなくなる。
+   * 回答するまで閉じさせたくない通知（特別イベントの承認依頼）で使う。
+   */
+  dismissible?: boolean;
 }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (dismissible && e.key === 'Escape') onClose();
+    };
     window.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     return () => {
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
     };
-  }, [onClose]);
+  }, [onClose, dismissible]);
 
   // ⚠️ 必ず body 直下へポータルする。
   // ビュー側は `.fade-in`（transform を animate する）の中でモーダルを描画するが、
@@ -31,7 +39,10 @@ export default function Modal({
   // オーバーレイがビューポートではなくリスト全体の高さに広がり、
   // シートが画面外（リスト末尾）へ飛んで「背景だけ暗くなって何も出ない」状態になる。
   return createPortal(
-    <div className={styles.overlay} onMouseDown={onClose}>
+    <div
+      className={styles.overlay}
+      onMouseDown={dismissible ? onClose : undefined}
+    >
       <div
         className={styles.sheet}
         style={maxWidth ? { maxWidth } : undefined}
@@ -43,9 +54,15 @@ export default function Modal({
           <h2 className={styles.title}>
             {icon && <i className={`fa-solid ${icon}`} />} {title}
           </h2>
-          <button className={styles.close} onClick={onClose} aria-label="閉じる">
-            <i className="fa-solid fa-xmark" />
-          </button>
+          {dismissible && (
+            <button
+              className={styles.close}
+              onClick={onClose}
+              aria-label="閉じる"
+            >
+              <i className="fa-solid fa-xmark" />
+            </button>
+          )}
         </div>
         <div className={styles.body}>{children}</div>
       </div>

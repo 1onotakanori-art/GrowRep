@@ -1321,6 +1321,9 @@ auth.onAuthStateChanged(async (user) => {
         // 今日のデイリーミッションが未クリアなら、まずその画面を開く（起動時1回のみ）
         maybeOpenDailyMissionOnStart();
 
+        // 自分あての特別イベント承認依頼があればポップアップで聞く（回答するまで毎回）
+        maybeShowSpecialEventApprovalOnStart();
+
         // 初期表示は投稿タブのみ。掲示板の投稿一覧を読み込む。
         loadPosts();
         // ランキングは表示中でないため初期ロードしない（ランキングタブを開いた時に読み込む）。
@@ -1351,6 +1354,9 @@ auth.onAuthStateChanged(async (user) => {
         if (profileModal) profileModal.style.display = 'none';
         if (championDetailModal) championDetailModal.style.display = 'none';
         if (resetPasswordModal) resetPasswordModal.style.display = 'none';
+        closeSpecialEventModal();
+        // 次のログインで承認依頼をもう一度チェックする
+        specialEventStartCheckDone = false;
     }
 });
 
@@ -12049,6 +12055,698 @@ document.getElementById('submit-rating-btn')?.addEventListener('click', async ()
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 評価を送信';
     }
+});
+
+
+// ====================================================================
+// 特別イベントウィーク（ユーザー提案 → 3人承認 → 週間チャレンジ上書き）
+//
+// ⚠️ web/src/lib/special-event.ts / special-event-engine.ts の「ミラー」。
+//    両アプリが同じ special_event_proposals と settings_free/weekly_override
+//    を読み書きするため、フィールド形状・週境界・承認条件を変えたら
+//    必ずもう片方も同じに更新すること。
+// ====================================================================
+
+const SPECIAL_EVENT_COL = 'special_event_proposals';
+/** 提案に必要な種目数。週間チャレンジの exerciseCount と揃えている。 */
+const SPECIAL_EVENT_EXERCISE_COUNT = 4;
+/** 提案に必要な承認者の人数。全員が承認して初めて成立する。 */
+const SPECIAL_EVENT_APPROVER_COUNT = 3;
+/** 開始日として選べる週数（次週の月曜から4週分）。 */
+const SPECIAL_EVENT_WEEK_CHOICES = 4;
+const SPECIAL_EVENT_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// 提案フォームの選択状態
+let specialEventDraft = { exercises: [], weekIndex: -1, approvers: [] };
+let specialEventWeeks = [];
+let specialEventCandidates = null;
+let specialEventWeekUsage = {};
+// 承認ポップアップの状態
+let specialEventQueue = [];
+let specialEventQueueIndex = 0;
+let specialEventMandatory = false;
+let specialEventStartCheckDone = false;
+
+/**
+ * 提案できる週の一覧。開始日は月曜のみ・次週の月曜から4週分。
+ * 週境界は既存の週間チャレンジと同じ「日曜17:00 JST」起点。
+ */
+function getSpecialEventProposableWeeks(now = new Date(), count = SPECIAL_EVENT_WEEK_CHOICES) {
+    const { start } = getWeekBoundaries(now);
+    const weeks = [];
+    for (let i = 1; i <= count; i++) {
+        const weekStart = new Date(start.getTime() + i * SPECIAL_EVENT_WEEK_MS);
+        const { monJST, friJST } = buildChampionDocMeta(weekStart);
+        const y = monJST.getUTCFullYear();
+        const m = String(monJST.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(monJST.getUTCDate()).padStart(2, '0');
+        weeks.push({
+            weekStart,
+            mondayKey: `${y}-${m}-${d}`,
+            periodLabel: formatWeeklyPeriodLabel(monJST, friJST),
+            weeksAhead: i
+        });
+    }
+    return weeks;
+}
+
+/** 対象週の開始前で、まだ weekly_override に反映できるか。 */
+function isSpecialEventWeekUpcoming(targetWeekStart, now = new Date()) {
+    return targetWeekStart instanceof Date && targetWeekStart.getTime() > now.getTime();
+}
+
+/** 承認者全員の回答から提案のステータスを求める。1人でも否認すれば却下。 */
+function resolveSpecialEventStatus(approverIds, responses) {
+    const ids = approverIds || [];
+    const res = responses || {};
+    if (ids.length === 0) return 'pending';
+    if (ids.some(uid => res[uid] && res[uid].decision === 'rejected')) return 'rejected';
+    if (ids.every(uid => res[uid] && res[uid].decision === 'approved')) return 'approved';
+    return 'pending';
+}
+
+/**
+ * この提案について、そのユーザーにポップアップで聞くべきか。
+ * 承認か否認を選ぶまで true を返し続けるので、回答漏れが起きない。
+ */
+function needsSpecialEventResponse(proposal, userId, now = new Date()) {
+    if (!proposal || proposal.status !== 'pending') return false;
+    if (!(proposal.approverIds || []).includes(userId)) return false;
+    if (proposal.responses && proposal.responses[userId]) return false;
+    return isSpecialEventWeekUpcoming(proposal.targetWeekStart, now);
+}
+
+/** 「承認2/3」のような進捗サマリ。 */
+function summarizeSpecialEventResponses(approverIds, responses) {
+    let approved = 0;
+    let rejected = 0;
+    (approverIds || []).forEach(uid => {
+        const d = responses && responses[uid] ? responses[uid].decision : null;
+        if (d === 'approved') approved++;
+        else if (d === 'rejected') rejected++;
+    });
+    const total = (approverIds || []).length;
+    return { approved, rejected, pending: total - approved - rejected, total };
+}
+
+/** Firestore ドキュメントを画面で使う形に整える。 */
+function toSpecialEventProposal(id, data) {
+    const approverIds = data.approverIds || [];
+    const responses = data.responses || {};
+    return {
+        id,
+        proposerId: data.proposerId || '',
+        proposerName: data.proposerName || '名無しさん',
+        exercises: data.exercises || [],
+        exerciseNames: data.exerciseNames || [],
+        targetWeekStart: data.targetWeekStart ? data.targetWeekStart.toDate() : new Date(0),
+        mondayKey: data.mondayKey || '',
+        periodLabel: data.periodLabel || '',
+        label: data.label || '特別イベントウィーク',
+        approverIds,
+        approverNames: data.approverNames || {},
+        responses,
+        status: data.status || resolveSpecialEventStatus(approverIds, responses)
+    };
+}
+
+/** 自分が承認者になっている提案（対象週の新しい順）。 */
+async function loadSpecialEventProposalsForApprover(userId) {
+    // array-contains 単体なら自動インデックスで済むので status はクライアント側で絞る
+    const snap = await db.collection(SPECIAL_EVENT_COL)
+        .where('approverIds', 'array-contains', userId)
+        .get();
+    return snap.docs
+        .map(d => toSpecialEventProposal(d.id, d.data()))
+        .sort((a, b) => b.targetWeekStart.getTime() - a.targetWeekStart.getTime());
+}
+
+/** 自分が出した提案（対象週の新しい順）。 */
+async function loadMySpecialEventProposals(userId) {
+    const snap = await db.collection(SPECIAL_EVENT_COL)
+        .where('proposerId', '==', userId)
+        .get();
+    return snap.docs
+        .map(d => toSpecialEventProposal(d.id, d.data()))
+        .sort((a, b) => b.targetWeekStart.getTime() - a.targetWeekStart.getTime());
+}
+
+/** 対象週ごとの既存提案（開始日の選択肢に「申請中 / 確定済み」を出すため）。 */
+async function loadSpecialEventProposalsByWeek() {
+    const snap = await db.collection(SPECIAL_EVENT_COL).get();
+    const byWeek = {};
+    snap.docs.forEach(d => {
+        const p = toSpecialEventProposal(d.id, d.data());
+        if (!p.mondayKey) return;
+        const slot = byWeek[p.mondayKey] || { pending: 0, approved: 0 };
+        if (p.status === 'pending') slot.pending++;
+        else if (p.status === 'approved') slot.approved++;
+        byWeek[p.mondayKey] = slot;
+    });
+    return byWeek;
+}
+
+/**
+ * 前週の週間チャレンジに投稿しているユーザー（自分とゲストは除く）。
+ * 種目は weekly_challenge_history に残る前週の選出種目で絞り込む。
+ * 履歴が無い週（休止週など）は、その週の投稿者全員を候補にする。
+ */
+async function loadSpecialEventApproverCandidates(userId, now = new Date()) {
+    const { start } = getWeekBoundaries(now);
+    const prevStart = new Date(start.getTime() - SPECIAL_EVENT_WEEK_MS);
+    const prevEnd = start;
+
+    let prevKeys = [];
+    try {
+        const { docId } = buildChampionDocMeta(prevStart);
+        const histDoc = await db.collection('weekly_challenge_history').doc(docId).get();
+        if (histDoc.exists && Array.isArray(histDoc.data().exercises)) {
+            prevKeys = histDoc.data().exercises;
+        }
+    } catch (e) {
+        console.warn('[特別イベント] 前週の種目取得に失敗、投稿者全員を候補にします:', e);
+    }
+
+    const snap = await db.collection('posts_free')
+        .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(prevStart))
+        .where('timestamp', '<', firebase.firestore.Timestamp.fromDate(prevEnd))
+        .get();
+
+    const counts = {};
+    snap.forEach(doc => {
+        const post = doc.data();
+        if (!post.timestamp) return;
+        if (!isWeekdayJST(post.timestamp.toDate())) return;
+        if (prevKeys.length > 0 && !prevKeys.includes(post.exerciseType)) return;
+        if (!(Number(post.value) > 0)) return;
+        counts[post.userId] = (counts[post.userId] || 0) + 1;
+    });
+
+    const usersMap = await getUsersMap();
+    return Object.keys(counts)
+        .filter(uid => uid !== userId && !(usersMap[uid] && usersMap[uid].isGuest))
+        .map(uid => ({
+            userId: uid,
+            userName: (usersMap[uid] && usersMap[uid].userName) || '名無しさん',
+            postCount: counts[uid]
+        }))
+        .sort((a, b) => b.postCount - a.postCount || a.userName.localeCompare(b.userName));
+}
+
+/** 提案を作成する。 */
+async function createSpecialEventProposal(exercises, week, approvers) {
+    if (!currentUser) throw new Error('ログインが必要です');
+    if (exercises.length !== SPECIAL_EVENT_EXERCISE_COUNT) {
+        throw new Error(`種目を${SPECIAL_EVENT_EXERCISE_COUNT}種類選んでください`);
+    }
+    if (new Set(exercises).size !== exercises.length) throw new Error('同じ種目は選べません');
+    if (!week) throw new Error('開始日を選んでください');
+    if (approvers.length !== SPECIAL_EVENT_APPROVER_COUNT) {
+        throw new Error(`承認者を${SPECIAL_EVENT_APPROVER_COUNT}人選んでください`);
+    }
+    if (new Set(approvers.map(a => a.userId)).size !== approvers.length) {
+        throw new Error('同じ人を複数選べません');
+    }
+    if (!isSpecialEventWeekUpcoming(week.weekStart)) {
+        throw new Error('開始日が過ぎています。読み込み直してください');
+    }
+
+    const proposerName = (currentUserData && currentUserData.userName) || currentUser.email || '名無しさん';
+    const approverNames = {};
+    approvers.forEach(a => { approverNames[a.userId] = a.userName; });
+
+    await db.collection(SPECIAL_EVENT_COL).add({
+        proposerId: currentUser.uid,
+        proposerName,
+        exercises,
+        exerciseNames: exercises.map(k => (freeExercises[k] && freeExercises[k].name) || k),
+        targetWeekStart: firebase.firestore.Timestamp.fromDate(week.weekStart),
+        mondayKey: week.mondayKey,
+        periodLabel: week.periodLabel,
+        label: `特別イベント（${proposerName}提案）`,
+        approverIds: approvers.map(a => a.userId),
+        approverNames,
+        responses: {},
+        status: 'pending',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+}
+
+/**
+ * 承認済みの提案を weekly_override に反映する。
+ * 対象週が始まる前だけ書き込む（過ぎていたら反映しない）。
+ */
+async function applyApprovedSpecialEventProposal(proposal, now = new Date()) {
+    if (!isSpecialEventWeekUpcoming(proposal.targetWeekStart, now)) return false;
+    await db.collection('settings_free').doc('weekly_override').set({
+        exercises: proposal.exercises,
+        label: proposal.label,
+        targetWeekStart: firebase.firestore.Timestamp.fromDate(proposal.targetWeekStart),
+        invalidated: false,
+        setAt: firebase.firestore.FieldValue.serverTimestamp(),
+        setBy: proposal.proposerId,
+        source: 'special_event_proposal',
+        proposalId: proposal.id
+    });
+    return true;
+}
+
+/**
+ * 承認/否認を記録する。承認者全員の承認で weekly_override へ反映。
+ * 同時回答に備えてトランザクションで読み直してから書く。
+ */
+async function respondToSpecialEventProposal(proposalId, decision) {
+    if (!currentUser) throw new Error('ログインが必要です');
+    const ref = db.collection(SPECIAL_EVENT_COL).doc(proposalId);
+
+    const nextStatus = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new Error('提案が見つかりません');
+        const data = snap.data();
+        const approverIds = data.approverIds || [];
+        if (!approverIds.includes(currentUser.uid)) throw new Error('この提案の承認者ではありません');
+        const current = data.status || 'pending';
+        if (current !== 'pending') return current;
+
+        const responses = Object.assign({}, data.responses || {});
+        responses[currentUser.uid] = { decision, at: firebase.firestore.Timestamp.now() };
+        const status = resolveSpecialEventStatus(approverIds, responses);
+        tx.update(ref, {
+            responses,
+            status,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        return status;
+    });
+
+    if (nextStatus === 'approved') {
+        const snap = await ref.get();
+        if (snap.exists) await applyApprovedSpecialEventProposal(toSpecialEventProposal(snap.id, snap.data()));
+    }
+    return nextStatus;
+}
+
+// --------------------------------------------------------------------
+// UI
+// --------------------------------------------------------------------
+function specialEventModalEl() {
+    return document.getElementById('special-event-modal');
+}
+
+function openSpecialEventModal(title, icon, bodyHtml, { dismissible = true } = {}) {
+    const modal = specialEventModalEl();
+    if (!modal) return;
+    document.getElementById('special-event-title').innerHTML =
+        `<i class="fa-solid ${icon}"></i> ${escapeHtml(title)}`;
+    document.getElementById('special-event-body').innerHTML = bodyHtml;
+    const closeBtn = document.getElementById('special-event-close');
+    if (closeBtn) closeBtn.style.display = dismissible ? '' : 'none';
+    modal.dataset.dismissible = dismissible ? '1' : '0';
+    modal.style.display = 'block';
+}
+
+function closeSpecialEventModal() {
+    const modal = specialEventModalEl();
+    if (!modal) return;
+    modal.style.display = 'none';
+    specialEventMandatory = false;
+}
+
+function specialEventStatusBadge(proposal) {
+    if (proposal.status === 'approved') return '<span class="se-badge se-badge-ok">承認済み</span>';
+    if (proposal.status === 'rejected') return '<span class="se-badge se-badge-ng">否認</span>';
+    const s = summarizeSpecialEventResponses(proposal.approverIds, proposal.responses);
+    return `<span class="se-badge se-badge-wait">承認待ち ${s.approved}/${s.total}</span>`;
+}
+
+/** 週間チャレンジの対象になる種目だけを候補にする。 */
+function getSpecialEventPickableKeys() {
+    return Object.keys(freeExercises)
+        .filter(k => freeExercises[k] && !freeExercises[k].excludeFromWeekly)
+        .sort((a, b) => (freeExercises[a].name || a).localeCompare(freeExercises[b].name || b));
+}
+
+async function openSpecialEventProposalModal() {
+    if (!currentUser) return;
+    if (currentUser.email === GUEST_EMAIL) {
+        alert('ゲストアカウントからは提案できません');
+        return;
+    }
+    if (!freeExercisesLoaded) await loadFreeExercises();
+
+    specialEventDraft = { exercises: [], weekIndex: -1, approvers: [] };
+    specialEventWeeks = getSpecialEventProposableWeeks();
+    specialEventCandidates = null;
+    specialEventWeekUsage = {};
+
+    openSpecialEventModal('特別イベントを提案', 'fa-wand-magic-sparkles',
+        '<p class="se-muted">読み込み中...</p>');
+
+    try {
+        const [candidates, usage] = await Promise.all([
+            loadSpecialEventApproverCandidates(currentUser.uid),
+            loadSpecialEventProposalsByWeek()
+        ]);
+        specialEventCandidates = candidates;
+        specialEventWeekUsage = usage;
+    } catch (e) {
+        console.error('[特別イベント] 承認者候補の取得に失敗:', e);
+        specialEventCandidates = [];
+    }
+    renderSpecialEventProposalForm();
+}
+
+function renderSpecialEventProposalForm(errorMessage = '') {
+    const pickable = getSpecialEventPickableKeys();
+    const selectedEx = specialEventDraft.exercises;
+    const selectedApprovers = specialEventDraft.approvers;
+    const candidates = specialEventCandidates || [];
+
+    const exerciseHtml = pickable.length === 0
+        ? '<p class="se-muted">選べる種目がありません</p>'
+        : pickable.map(key => {
+            const ex = freeExercises[key];
+            const on = selectedEx.includes(key);
+            const order = selectedEx.indexOf(key) + 1;
+            const full = !on && selectedEx.length >= SPECIAL_EVENT_EXERCISE_COUNT;
+            const badge = ex.barbarian ? '<span class="se-ta">タイムアタック</span>' : '';
+            return `
+                <button type="button" class="se-pick${on ? ' se-pick-on' : ''}" data-se-exercise="${escapeHtml(key)}"${full ? ' disabled' : ''}>
+                    <span class="se-pick-icon">${on ? order : `<i class="fa-solid ${escapeHtml(ex.icon || 'fa-dumbbell')}"></i>`}</span>
+                    <span class="se-pick-body">
+                        <span class="se-pick-name">${escapeHtml(ex.name || key)}${badge}</span>
+                        <span class="se-pick-rule">${escapeHtml(ex.rule || '')}</span>
+                    </span>
+                </button>`;
+        }).join('');
+
+    const weekHtml = specialEventWeeks.map((w, i) => {
+        const on = specialEventDraft.weekIndex === i;
+        const usage = specialEventWeekUsage[w.mondayKey];
+        let tag = '';
+        if (usage && usage.approved) tag = '<span class="se-badge se-badge-ok">確定済みあり</span>';
+        else if (usage && usage.pending) tag = '<span class="se-badge se-badge-wait">申請中あり</span>';
+        return `
+            <button type="button" class="se-week${on ? ' se-week-on' : ''}" data-se-week="${i}">
+                <span class="se-week-main">
+                    <span class="se-week-monday">${escapeHtml(w.mondayKey)} (月)</span>
+                    <span class="se-week-period">${escapeHtml(w.periodLabel)}</span>
+                </span>
+                ${tag}
+            </button>`;
+    }).join('');
+
+    let approverHtml;
+    if (specialEventCandidates === null) {
+        approverHtml = '<p class="se-muted">読み込み中...</p>';
+    } else if (candidates.length < SPECIAL_EVENT_APPROVER_COUNT) {
+        approverHtml = `<p class="se-warn"><i class="fa-solid fa-triangle-exclamation"></i> 前週の投稿者が${SPECIAL_EVENT_APPROVER_COUNT}人に届いていないため、いまは提案できません（現在${candidates.length}人）</p>`;
+    } else {
+        approverHtml = `<div class="se-chips">${candidates.map(c => {
+            const on = selectedApprovers.includes(c.userId);
+            const full = !on && selectedApprovers.length >= SPECIAL_EVENT_APPROVER_COUNT;
+            return `<button type="button" class="se-chip${on ? ' se-chip-on' : ''}" data-se-approver="${escapeHtml(c.userId)}"${full ? ' disabled' : ''}>${on ? '<i class="fa-solid fa-check"></i> ' : ''}${escapeHtml(c.userName)}<span class="se-chip-count">${c.postCount}投稿</span></button>`;
+        }).join('')}</div>`;
+    }
+
+    const ready = selectedEx.length === SPECIAL_EVENT_EXERCISE_COUNT
+        && specialEventDraft.weekIndex >= 0
+        && selectedApprovers.length === SPECIAL_EVENT_APPROVER_COUNT;
+
+    document.getElementById('special-event-body').innerHTML = `
+        <p class="se-lead">承認者${SPECIAL_EVENT_APPROVER_COUNT}人全員が承認すると、その週の週間チャレンジがこの${SPECIAL_EVENT_EXERCISE_COUNT}種目に差し替わります。</p>
+
+        <div class="se-section-head">
+            <span class="se-section-title"><i class="fa-solid fa-dumbbell"></i> 種目</span>
+            <span class="se-counter">${selectedEx.length}/${SPECIAL_EVENT_EXERCISE_COUNT}</span>
+        </div>
+        <div class="se-pick-list">${exerciseHtml}</div>
+
+        <div class="se-section-head">
+            <span class="se-section-title"><i class="fa-solid fa-calendar-day"></i> 開始日（月曜）</span>
+        </div>
+        <div class="se-week-list">${weekHtml}</div>
+
+        <div class="se-section-head">
+            <span class="se-section-title"><i class="fa-solid fa-user-check"></i> 承認者</span>
+            <span class="se-counter">${selectedApprovers.length}/${SPECIAL_EVENT_APPROVER_COUNT}</span>
+        </div>
+        <p class="se-muted">前週の週間チャレンジに投稿した人から選べます</p>
+        ${approverHtml}
+
+        ${errorMessage ? `<p class="error-message">${escapeHtml(errorMessage)}</p>` : ''}
+        <button id="se-submit-btn" class="btn-primary"${ready ? '' : ' disabled'}><i class="fa-solid fa-paper-plane"></i> 送信する</button>
+    `;
+
+    document.querySelectorAll('[data-se-exercise]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const key = btn.dataset.seExercise;
+            const list = specialEventDraft.exercises;
+            const at = list.indexOf(key);
+            if (at >= 0) list.splice(at, 1);
+            else if (list.length < SPECIAL_EVENT_EXERCISE_COUNT) list.push(key);
+            renderSpecialEventProposalForm();
+        });
+    });
+    document.querySelectorAll('[data-se-week]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            specialEventDraft.weekIndex = parseInt(btn.dataset.seWeek, 10);
+            renderSpecialEventProposalForm();
+        });
+    });
+    document.querySelectorAll('[data-se-approver]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const uid = btn.dataset.seApprover;
+            const list = specialEventDraft.approvers;
+            const at = list.indexOf(uid);
+            if (at >= 0) list.splice(at, 1);
+            else if (list.length < SPECIAL_EVENT_APPROVER_COUNT) list.push(uid);
+            renderSpecialEventProposalForm();
+        });
+    });
+
+    const submitBtn = document.getElementById('se-submit-btn');
+    if (submitBtn) {
+        submitBtn.addEventListener('click', async () => {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 送信中...';
+            try {
+                const week = specialEventWeeks[specialEventDraft.weekIndex];
+                const approvers = specialEventDraft.approvers.map(uid => ({
+                    userId: uid,
+                    userName: (specialEventCandidates.find(c => c.userId === uid) || {}).userName || '名無しさん'
+                }));
+                await createSpecialEventProposal(specialEventDraft.exercises, week, approvers);
+                closeSpecialEventModal();
+                alert('特別イベントを提案しました。承認を待ちましょう');
+            } catch (e) {
+                renderSpecialEventProposalForm(e.message || '送信に失敗しました');
+            }
+        });
+    }
+}
+
+/** 承認依頼と自分の提案の一覧。 */
+async function openSpecialEventInboxModal() {
+    if (!currentUser) return;
+    openSpecialEventModal('イベント承認', 'fa-user-check', '<p class="se-muted">読み込み中...</p>');
+
+    let inbox = [];
+    let mine = [];
+    try {
+        [inbox, mine] = await Promise.all([
+            loadSpecialEventProposalsForApprover(currentUser.uid),
+            loadMySpecialEventProposals(currentUser.uid)
+        ]);
+    } catch (e) {
+        document.getElementById('special-event-body').innerHTML =
+            `<p class="error-message">${escapeHtml(e.message || '読み込みに失敗しました')}</p>`;
+        return;
+    }
+
+    const pending = inbox.filter(p => needsSpecialEventResponse(p, currentUser.uid));
+    const answered = inbox.filter(p => !pending.includes(p));
+
+    const rowHtml = (p, sub) => `
+        <div class="se-row">
+            <span class="se-row-main">
+                <span class="se-row-title">${escapeHtml(p.periodLabel)}</span>
+                <span class="se-row-sub">${escapeHtml(sub)}</span>
+            </span>
+            ${specialEventStatusBadge(p)}
+        </div>`;
+
+    let html = `
+        <div class="se-section-head">
+            <span class="se-section-title"><i class="fa-solid fa-bell"></i> 未回答の依頼</span>
+            ${pending.length ? `<span class="se-counter">${pending.length}件</span>` : ''}
+        </div>`;
+    if (pending.length === 0) {
+        html += '<p class="se-muted">承認待ちの依頼はありません</p>';
+    } else {
+        html += pending.map(p => rowHtml(p, `${p.proposerName} さんの提案 / ${p.exerciseNames.join('・')}`)).join('');
+        html += '<button id="se-open-approval-btn" class="btn-primary"><i class="fa-solid fa-check-double"></i> 内容を確認して回答する</button>';
+    }
+
+    if (answered.length) {
+        html += `
+            <div class="se-section-head">
+                <span class="se-section-title"><i class="fa-solid fa-clock-rotate-left"></i> 回答済みの依頼</span>
+            </div>`;
+        html += answered.map(p => {
+            const mineDecision = p.responses[currentUser.uid];
+            const you = mineDecision
+                ? (mineDecision.decision === 'rejected' ? 'あなた: 否認' : 'あなた: 承認')
+                : '未回答';
+            return rowHtml(p, `${p.proposerName} さんの提案 / ${you}`);
+        }).join('');
+    }
+
+    html += `
+        <div class="se-section-head">
+            <span class="se-section-title"><i class="fa-solid fa-paper-plane"></i> 自分の提案</span>
+        </div>`;
+    html += mine.length === 0
+        ? '<p class="se-muted">まだ提案していません</p>'
+        : mine.map(p => rowHtml(p, `承認者: ${p.approverIds.map(uid => p.approverNames[uid] || '名無しさん').join('・')}`)).join('');
+
+    document.getElementById('special-event-body').innerHTML = html;
+
+    const openBtn = document.getElementById('se-open-approval-btn');
+    if (openBtn) {
+        openBtn.addEventListener('click', () => openSpecialEventApprovalModal(pending, false));
+    }
+}
+
+/**
+ * 承認依頼ポップアップ。mandatory=true（起動時の通知）では
+ * 承認/否認を選ぶまで閉じられない。
+ */
+async function openSpecialEventApprovalModal(proposals, mandatory) {
+    if (!proposals || proposals.length === 0) return;
+    if (!freeExercisesLoaded) await loadFreeExercises();
+    specialEventQueue = proposals;
+    specialEventQueueIndex = 0;
+    specialEventMandatory = !!mandatory;
+    renderSpecialEventApproval();
+}
+
+function renderSpecialEventApproval(errorMessage = '') {
+    const proposal = specialEventQueue[specialEventQueueIndex];
+    if (!proposal) {
+        closeSpecialEventModal();
+        return;
+    }
+    const summary = summarizeSpecialEventResponses(proposal.approverIds, proposal.responses);
+
+    const rulesHtml = proposal.exercises.map((key, i) => {
+        const ex = freeExercises[key];
+        const name = (ex && ex.name) || proposal.exerciseNames[i] || key;
+        const badge = ex && ex.barbarian ? '<span class="se-ta">タイムアタック</span>' : '';
+        return `
+            <li class="se-rule-item">
+                <span class="se-rule-icon"><i class="fa-solid ${escapeHtml((ex && ex.icon) || 'fa-dumbbell')}"></i></span>
+                <span class="se-rule-body">
+                    <span class="se-rule-name">${escapeHtml(name)}${badge}</span>
+                    <span class="se-rule-text">${escapeHtml((ex && ex.rule) || 'ルールの記載がありません')}</span>
+                </span>
+            </li>`;
+    }).join('');
+
+    const bodyHtml = `
+        ${specialEventQueue.length > 1 ? `<p class="se-progress">${specialEventQueueIndex + 1} / ${specialEventQueue.length} 件</p>` : ''}
+        <p class="se-lead"><strong>${escapeHtml(proposal.proposerName)}</strong> さんから特別イベントウィークの提案が届いています。内容を確認して承認/否認を選んでください。</p>
+
+        <div class="se-period-card">
+            <i class="fa-solid fa-calendar-day"></i>
+            <span>
+                <span class="se-period-label">対象週</span>
+                <span class="se-period-value">${escapeHtml(proposal.periodLabel)}</span>
+            </span>
+        </div>
+
+        <div class="se-section-head">
+            <span class="se-section-title"><i class="fa-solid fa-dumbbell"></i> 種目とルール</span>
+        </div>
+        <ol class="se-rule-list">${rulesHtml}</ol>
+
+        <p class="se-muted">承認状況: ${summary.approved}/${summary.total}（${escapeHtml(proposal.approverIds.map(uid => proposal.approverNames[uid] || '名無しさん').join('・'))}）</p>
+
+        ${errorMessage ? `<p class="error-message">${escapeHtml(errorMessage)}</p>` : ''}
+        <div class="se-actions">
+            <button id="se-reject-btn" class="btn-secondary"><i class="fa-solid fa-xmark"></i> 否認する</button>
+            <button id="se-approve-btn" class="btn-primary"><i class="fa-solid fa-check"></i> 承認する</button>
+        </div>
+        ${specialEventMandatory ? '<p class="se-muted se-center">承認か否認を選ぶまで、アプリを開くたびにこの確認が表示されます</p>' : ''}
+    `;
+
+    openSpecialEventModal('特別イベントの承認', 'fa-wand-magic-sparkles', bodyHtml, {
+        dismissible: !specialEventMandatory
+    });
+
+    const respond = async (decision) => {
+        const approveBtn = document.getElementById('se-approve-btn');
+        const rejectBtn = document.getElementById('se-reject-btn');
+        approveBtn.disabled = true;
+        rejectBtn.disabled = true;
+        const target = decision === 'approved' ? approveBtn : rejectBtn;
+        target.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 送信中...';
+        try {
+            const status = await respondToSpecialEventProposal(proposal.id, decision);
+            if (status === 'approved') {
+                alert(`${proposal.periodLabel} の特別イベントが決定しました！`);
+            }
+            specialEventQueueIndex++;
+            if (specialEventQueueIndex < specialEventQueue.length) {
+                renderSpecialEventApproval();
+            } else {
+                closeSpecialEventModal();
+            }
+        } catch (e) {
+            renderSpecialEventApproval(e.message || '送信に失敗しました');
+        }
+    };
+
+    document.getElementById('se-approve-btn').addEventListener('click', () => respond('approved'));
+    document.getElementById('se-reject-btn').addEventListener('click', () => respond('rejected'));
+}
+
+/**
+ * 起動時、自分あての未回答の提案があればポップアップで聞く。
+ * 承認/否認を選ぶまでは毎回表示されるので、回答漏れが起きない。
+ */
+async function maybeShowSpecialEventApprovalOnStart() {
+    if (specialEventStartCheckDone || !currentUser) return;
+    specialEventStartCheckDone = true;
+    try {
+        const inbox = await loadSpecialEventProposalsForApprover(currentUser.uid);
+        const pending = inbox
+            .filter(p => needsSpecialEventResponse(p, currentUser.uid))
+            .sort((a, b) => a.targetWeekStart.getTime() - b.targetWeekStart.getTime());
+        if (pending.length > 0) await openSpecialEventApprovalModal(pending, true);
+    } catch (e) {
+        // 提案機能が落ちても本体は動かす
+        console.warn('[特別イベント] 起動時チェック失敗:', e);
+    }
+}
+
+// --------------------------------------------------------------------
+// イベントリスナー
+// --------------------------------------------------------------------
+document.getElementById('special-event-close')?.addEventListener('click', closeSpecialEventModal);
+specialEventModalEl()?.addEventListener('click', (e) => {
+    // 起動時の承認依頼は回答するまで閉じさせない
+    if (e.target === specialEventModalEl() && specialEventModalEl().dataset.dismissible !== '0') {
+        closeSpecialEventModal();
+    }
+});
+document.getElementById('special-event-propose-btn')?.addEventListener('click', () => {
+    if (profileModal) profileModal.style.display = 'none';
+    openSpecialEventProposalModal();
+});
+document.getElementById('special-event-approve-btn')?.addEventListener('click', () => {
+    if (profileModal) profileModal.style.display = 'none';
+    openSpecialEventInboxModal();
 });
 
 // ====================================================================
