@@ -4,8 +4,12 @@
 // 流れ:
 //   1. 誰でもマイページから提案できる（4種目 / 開始月曜 / 承認者3人）
 //   2. 承認者に選ばれた人はアプリを開くたびにポップアップで承認/否認を求められる
-//   3. 3人全員が承認 → settings_free/weekly_override に書き込み、対象週の
-//      週間チャレンジが提案どおりの4種目になる（1人でも否認すれば却下）
+//      （否認する場合は理由コメントが必須）
+//   3. 3人全員の回答が揃った時点で確定。全員承認なら settings_free/weekly_override
+//      に書き込み、対象週の週間チャレンジが提案どおりの4種目になる。
+//      1人でも否認していれば却下。
+//   4. 確定したら提案者にポップアップで結果を通知する（否認理由も表示）。
+//      一度確認したら resultSeenAt を書き込み、二度は出さない。
 //
 // Firestore アクセスは special-event-engine.ts 側。
 // =====================================================================
@@ -28,6 +32,8 @@ export const SPECIAL_EVENT_APPROVER_COUNT = 3;
 export const SPECIAL_EVENT_WEEK_CHOICES = 4;
 /** 承認者候補とみなす「直近の投稿」の日数。この期間に1回でも投稿があれば候補。 */
 export const SPECIAL_EVENT_ACTIVE_DAYS = 5;
+/** 否認理由コメントの最大文字数。提案者へのポップアップで読み切れる長さ。 */
+export const SPECIAL_EVENT_COMMENT_MAX = 200;
 
 export type ApprovalDecision = 'approved' | 'rejected';
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
@@ -35,6 +41,8 @@ export type ProposalStatus = 'pending' | 'approved' | 'rejected';
 export interface ApprovalResponse {
   decision: ApprovalDecision;
   at?: Timestamp | null;
+  /** 否認理由（decision === 'rejected' のときは必須）。承認時は空。 */
+  comment?: string;
 }
 
 export interface SpecialEventProposal {
@@ -58,6 +66,8 @@ export interface SpecialEventProposal {
   responses: Record<string, ApprovalResponse>;
   status: ProposalStatus;
   createdAt?: Date | null;
+  /** 提案者が結果ポップアップを確認した時刻。未確認なら null。 */
+  resultSeenAt?: Date | null;
 }
 
 export interface ApproverCandidate {
@@ -181,20 +191,24 @@ export function isTargetWeekUpcoming(
 // ---------------------------------------------------------------------
 // 承認状態の判定
 // ---------------------------------------------------------------------
-/** 承認者全員の回答から提案のステータスを求める。1人でも否認すれば却下。 */
+/**
+ * 承認者全員の回答から提案のステータスを求める。
+ *
+ * 全員（SPECIAL_EVENT_APPROVER_COUNT 人）の回答が揃うまでは pending のまま。
+ * 揃った時点で、1人でも否認していれば rejected、全員承認なら approved。
+ * 早い者勝ちで打ち切らないのは、提案者に3人ぶんの結果（否認理由を含む）を
+ * まとめて返すため。
+ */
 export function resolveProposalStatus(
   approverIds: string[],
   responses: Record<string, ApprovalResponse>,
 ): ProposalStatus {
   const ids = approverIds || [];
   if (ids.length === 0) return 'pending';
-  if (ids.some((uid) => responses?.[uid]?.decision === 'rejected')) {
-    return 'rejected';
-  }
-  if (ids.every((uid) => responses?.[uid]?.decision === 'approved')) {
-    return 'approved';
-  }
-  return 'pending';
+  if (!ids.every((uid) => responses?.[uid]?.decision)) return 'pending';
+  return ids.some((uid) => responses[uid].decision === 'rejected')
+    ? 'rejected'
+    : 'approved';
 }
 
 /**
@@ -211,6 +225,7 @@ export function needsResponseFrom(
 ): boolean {
   if (proposal.status !== 'pending') return false;
   if (!proposal.approverIds.includes(userId)) return false;
+  // 他の誰かが先に否認していても、3人ぶんの意見を集めるので最後まで聞く
   if (proposal.responses?.[userId]) return false;
   // 対象週が始まってしまった提案はもう反映できないので聞かない
   return isTargetWeekUpcoming(proposal.targetWeekStart, now);
@@ -230,6 +245,90 @@ export function summarizeResponses(
   });
   const total = (approverIds || []).length;
   return { approved, rejected, pending: total - approved - rejected, total };
+}
+
+// ---------------------------------------------------------------------
+// 否認コメント
+// ---------------------------------------------------------------------
+/**
+ * 否認理由コメントの入力チェック。エラー文言（問題なければ null）を返す。
+ * 否認は必ず一言そえてもらう（提案者が次に活かせるようにするため）。
+ */
+export function validateDecisionComment(
+  decision: ApprovalDecision,
+  comment: string,
+): string | null {
+  if (decision !== 'rejected') return null;
+  const trimmed = (comment || '').trim();
+  if (!trimmed) return '否認する場合は理由を入力してください';
+  if (trimmed.length > SPECIAL_EVENT_COMMENT_MAX) {
+    return `理由は${SPECIAL_EVENT_COMMENT_MAX}文字以内で入力してください`;
+  }
+  return null;
+}
+
+/** 保存用に整えたコメント。承認時は空文字（Firestore に undefined を渡さない）。 */
+export function normalizeDecisionComment(
+  decision: ApprovalDecision,
+  comment: string,
+): string {
+  if (decision !== 'rejected') return '';
+  return (comment || '').trim().slice(0, SPECIAL_EVENT_COMMENT_MAX);
+}
+
+// ---------------------------------------------------------------------
+// 提案者への結果通知
+// ---------------------------------------------------------------------
+export interface ProposalDecisionEntry {
+  userId: string;
+  userName: string;
+  decision: ApprovalDecision | null;
+  /** 否認理由（否認以外は空） */
+  comment: string;
+}
+
+/**
+ * 提案者に結果ポップアップを出すべきか。
+ * 3人の回答が揃って status が確定し、まだ本人が確認していない提案が対象。
+ */
+export function needsResultNoticeFor(
+  proposal: Pick<
+    SpecialEventProposal,
+    'status' | 'proposerId' | 'resultSeenAt'
+  >,
+  userId: string,
+): boolean {
+  if (proposal.proposerId !== userId) return false;
+  if (proposal.status === 'pending') return false;
+  return !proposal.resultSeenAt;
+}
+
+/** 承認者ごとの回答一覧（提案時に選んだ順）。結果ポップアップの明細に使う。 */
+export function listDecisions(
+  proposal: Pick<
+    SpecialEventProposal,
+    'approverIds' | 'approverNames' | 'responses'
+  >,
+): ProposalDecisionEntry[] {
+  return (proposal.approverIds || []).map((uid) => {
+    const res = proposal.responses?.[uid];
+    return {
+      userId: uid,
+      userName: proposal.approverNames?.[uid] || '名無しさん',
+      decision: res?.decision || null,
+      comment: res?.decision === 'rejected' ? res.comment || '' : '',
+    };
+  });
+}
+
+/** 否認した人だけを抜き出す（提案者に見せる否認理由の一覧）。 */
+export function listRejections(
+  proposal: Pick<
+    SpecialEventProposal,
+    'approverIds' | 'approverNames' | 'responses'
+  >,
+): ProposalDecisionEntry[] {
+  return listDecisions(proposal).filter((d) => d.decision === 'rejected');
 }
 
 /** 提案フォームの入力チェック。エラー文言（無ければ null）を返す。 */

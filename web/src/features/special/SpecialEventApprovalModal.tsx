@@ -6,6 +6,8 @@ import { useData } from '../../context/DataContext';
 import { useToast } from '../../context/ToastContext';
 import {
   summarizeResponses,
+  validateDecisionComment,
+  SPECIAL_EVENT_COMMENT_MAX,
   type ApprovalDecision,
   type SpecialEventProposal,
 } from '../../lib/special-event';
@@ -16,6 +18,9 @@ import styles from './SpecialEvent.module.css';
  * 特別イベントの承認依頼ポップアップ。
  * mandatory=true（起動時の通知）では承認/否認を選ぶまで閉じられない。
  * 判断できるように、各種目の名前とルールを必ず表示する。
+ *
+ * 否認するときは理由コメントが必須。入力した理由は、3人の回答が
+ * 揃ったあとに提案者へ結果ポップアップで返される。
  */
 export default function SpecialEventApprovalModal({
   proposals,
@@ -37,18 +42,40 @@ export default function SpecialEventApprovalModal({
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState<ApprovalDecision | null>(null);
   const [err, setErr] = useState('');
+  // 「否認する」を押すと理由の入力欄が開く（空のままでは確定できない）
+  const [rejecting, setRejecting] = useState(false);
+  const [comment, setComment] = useState('');
 
   const proposal = queue[index];
   if (!user || !proposal) return null;
 
   const summary = summarizeResponses(proposal.approverIds, proposal.responses);
+  const commentError = validateDecisionComment('rejected', comment);
+
+  /** 次の1件へ進む。最後まで答えたら閉じる。 */
+  function advance() {
+    setRejecting(false);
+    setComment('');
+    setErr('');
+    if (index + 1 < queue.length) setIndex(index + 1);
+    else onClose();
+  }
 
   async function respond(decision: ApprovalDecision) {
     if (!user) return;
+    if (decision === 'rejected' && commentError) {
+      setErr(commentError);
+      return;
+    }
     setBusy(decision);
     setErr('');
     try {
-      const status = await respondToProposal(proposal.id, user.uid, decision);
+      const status = await respondToProposal(
+        proposal.id,
+        user.uid,
+        decision,
+        decision === 'rejected' ? comment : '',
+      );
       if (status === 'approved') {
         toast(
           `${proposal.periodLabel} の特別イベントが決定しました！`,
@@ -60,11 +87,7 @@ export default function SpecialEventApprovalModal({
         toast('否認しました', 'info');
       }
       onResolved?.();
-      if (index + 1 < queue.length) {
-        setIndex(index + 1);
-      } else {
-        onClose();
-      }
+      advance();
     } catch (e) {
       setErr(e instanceof Error ? e.message : '送信に失敗しました');
     } finally {
@@ -128,43 +151,94 @@ export default function SpecialEventApprovalModal({
         </ol>
 
         <p className={styles.approvers}>
-          承認状況: {summary.approved}/{summary.total}（
+          回答状況: 承認 {summary.approved} / 否認 {summary.rejected} / 未回答{' '}
+          {summary.pending}（
           {proposal.approverIds
             .map((uid) => proposal.approverNames[uid] || '名無しさん')
             .join('・')}
           ）
         </p>
 
+        {rejecting && (
+          <div className={styles.commentBox}>
+            <div className={styles.sectionHead}>
+              <span className={styles.sectionTitle}>
+                <i className="fa-solid fa-comment-dots" /> 否認する理由（必須）
+              </span>
+              <span className={styles.counter}>
+                {comment.trim().length}/{SPECIAL_EVENT_COMMENT_MAX}
+              </span>
+            </div>
+            <textarea
+              className={styles.commentInput}
+              value={comment}
+              maxLength={SPECIAL_EVENT_COMMENT_MAX}
+              rows={3}
+              autoFocus
+              placeholder="例: この週は出張で参加できない人が多そうなので、別の週にしてほしいです"
+              onChange={(e) => setComment(e.target.value)}
+            />
+            <p className={styles.muted}>
+              入力した理由は、3人の回答が揃ったあとに提案者へ通知されます
+            </p>
+          </div>
+        )}
+
         {err && <p className={styles.err}>{err}</p>}
 
-        <div className={styles.actions}>
-          <button
-            className="btn-secondary"
-            disabled={busy !== null}
-            onClick={() => respond('rejected')}
-          >
-            {busy === 'rejected' ? (
-              <i className="fa-solid fa-circle-notch spin" />
-            ) : (
-              <>
-                <i className="fa-solid fa-xmark" /> 否認する
-              </>
-            )}
-          </button>
-          <button
-            className="btn-primary"
-            disabled={busy !== null}
-            onClick={() => respond('approved')}
-          >
-            {busy === 'approved' ? (
-              <i className="fa-solid fa-circle-notch spin" />
-            ) : (
-              <>
-                <i className="fa-solid fa-check" /> 承認する
-              </>
-            )}
-          </button>
-        </div>
+        {rejecting ? (
+          <div className={styles.actions}>
+            <button
+              className="btn-secondary"
+              disabled={busy !== null}
+              onClick={() => {
+                setRejecting(false);
+                setErr('');
+              }}
+            >
+              <i className="fa-solid fa-arrow-left" /> やめる
+            </button>
+            <button
+              className="btn-primary"
+              disabled={busy !== null || commentError !== null}
+              onClick={() => respond('rejected')}
+            >
+              {busy === 'rejected' ? (
+                <i className="fa-solid fa-circle-notch spin" />
+              ) : (
+                <>
+                  <i className="fa-solid fa-xmark" /> この理由で否認する
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          <div className={styles.actions}>
+            <button
+              className="btn-secondary"
+              disabled={busy !== null}
+              onClick={() => {
+                setErr('');
+                setRejecting(true);
+              }}
+            >
+              <i className="fa-solid fa-xmark" /> 否認する
+            </button>
+            <button
+              className="btn-primary"
+              disabled={busy !== null}
+              onClick={() => respond('approved')}
+            >
+              {busy === 'approved' ? (
+                <i className="fa-solid fa-circle-notch spin" />
+              ) : (
+                <>
+                  <i className="fa-solid fa-check" /> 承認する
+                </>
+              )}
+            </button>
+          </div>
+        )}
         {mandatory && (
           <p className={styles.hint}>
             承認か否認を選ぶまで、アプリを開くたびにこの確認が表示されます

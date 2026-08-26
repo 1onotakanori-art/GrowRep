@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   getProposableWeeks,
+  listDecisions,
+  listRejections,
+  needsResultNoticeFor,
+  normalizeDecisionComment,
   resolveProposalStatus,
   needsResponseFrom,
   isTargetWeekUpcoming,
@@ -8,7 +12,9 @@ import {
   buildApproverCandidates,
   countRecentPosts,
   getApproverActiveSince,
+  validateDecisionComment,
   SPECIAL_EVENT_ACTIVE_DAYS,
+  SPECIAL_EVENT_COMMENT_MAX,
   SPECIAL_EVENT_WEEK_CHOICES,
   type ApprovalResponse,
   type CandidatePost,
@@ -75,9 +81,18 @@ describe('resolveProposalStatus', () => {
     ).toBe('approved');
   });
 
-  it('1人でも否認すれば、残りが未回答でも rejected', () => {
+  it('全員が回答して1人でも否認していれば rejected', () => {
+    expect(
+      resolveProposalStatus(ids, { a: approve(), b: reject(), c: approve() }),
+    ).toBe('rejected');
+    expect(
+      resolveProposalStatus(ids, { a: reject(), b: reject(), c: reject() }),
+    ).toBe('rejected');
+  });
+
+  it('否認が出ても、3人ぶん揃うまでは pending のまま（全員の意見を集める）', () => {
     expect(resolveProposalStatus(ids, { a: approve(), b: reject() })).toBe(
-      'rejected',
+      'pending',
     );
   });
 
@@ -86,6 +101,143 @@ describe('resolveProposalStatus', () => {
       'pending',
     );
     expect(resolveProposalStatus(ids, {})).toBe('pending');
+  });
+});
+
+describe('needsResponseFrom（他の人が先に否認していても最後まで聞く）', () => {
+  it('誰かが否認済みでも status が pending なら自分には聞く', () => {
+    const p = {
+      status: 'pending' as const,
+      approverIds: ['a', 'b', 'c'],
+      responses: { b: { decision: 'rejected' } as ApprovalResponse },
+      targetWeekStart: jst(2026, 8, 2, 17),
+    };
+    expect(needsResponseFrom(p, 'a', jst(2026, 7, 29, 12))).toBe(true);
+  });
+});
+
+describe('validateDecisionComment（否認理由は必須）', () => {
+  it('承認ならコメントは不要', () => {
+    expect(validateDecisionComment('approved', '')).toBeNull();
+  });
+
+  it('否認で空・空白だけならエラー', () => {
+    expect(validateDecisionComment('rejected', '')).toBe(
+      '否認する場合は理由を入力してください',
+    );
+    expect(validateDecisionComment('rejected', '  \n ')).toBe(
+      '否認する場合は理由を入力してください',
+    );
+  });
+
+  it('否認で一言あればOK', () => {
+    expect(validateDecisionComment('rejected', 'この週は厳しいです')).toBeNull();
+  });
+
+  it('長すぎるコメントはエラー', () => {
+    const tooLong = 'あ'.repeat(SPECIAL_EVENT_COMMENT_MAX + 1);
+    expect(validateDecisionComment('rejected', tooLong)).toBe(
+      `理由は${SPECIAL_EVENT_COMMENT_MAX}文字以内で入力してください`,
+    );
+  });
+});
+
+describe('normalizeDecisionComment（保存する形）', () => {
+  it('承認時は空文字（undefined を Firestore に渡さない）', () => {
+    expect(normalizeDecisionComment('approved', 'なにか')).toBe('');
+  });
+
+  it('否認時は前後の空白を落として保存する', () => {
+    expect(normalizeDecisionComment('rejected', '  きつい  ')).toBe('きつい');
+  });
+
+  it('上限を超えたぶんは切り詰める', () => {
+    const long = 'あ'.repeat(SPECIAL_EVENT_COMMENT_MAX + 50);
+    expect(normalizeDecisionComment('rejected', long)).toHaveLength(
+      SPECIAL_EVENT_COMMENT_MAX,
+    );
+  });
+});
+
+describe('提案者への結果通知', () => {
+  const base = {
+    proposerId: 'me',
+    approverIds: ['a', 'b', 'c'],
+    approverNames: { a: 'あー', b: 'びー', c: 'しー' },
+    responses: {
+      a: { decision: 'approved' } as ApprovalResponse,
+      b: { decision: 'rejected', comment: '種目が偏っている' } as ApprovalResponse,
+      c: { decision: 'rejected', comment: '' } as ApprovalResponse,
+    },
+  };
+
+  it('回答が揃うまでは出さない', () => {
+    expect(
+      needsResultNoticeFor(
+        { proposerId: 'me', status: 'pending', resultSeenAt: null },
+        'me',
+      ),
+    ).toBe(false);
+  });
+
+  it('確定していて未確認なら出す', () => {
+    expect(
+      needsResultNoticeFor(
+        { proposerId: 'me', status: 'rejected', resultSeenAt: null },
+        'me',
+      ),
+    ).toBe(true);
+    expect(
+      needsResultNoticeFor(
+        { proposerId: 'me', status: 'approved', resultSeenAt: null },
+        'me',
+      ),
+    ).toBe(true);
+  });
+
+  it('確認済みなら二度と出さない', () => {
+    expect(
+      needsResultNoticeFor(
+        { proposerId: 'me', status: 'rejected', resultSeenAt: new Date() },
+        'me',
+      ),
+    ).toBe(false);
+  });
+
+  it('提案者本人以外には出さない', () => {
+    expect(
+      needsResultNoticeFor(
+        { proposerId: 'me', status: 'rejected', resultSeenAt: null },
+        'other',
+      ),
+    ).toBe(false);
+  });
+
+  it('listDecisions は承認者順に回答を並べる', () => {
+    expect(listDecisions(base)).toEqual([
+      { userId: 'a', userName: 'あー', decision: 'approved', comment: '' },
+      {
+        userId: 'b',
+        userName: 'びー',
+        decision: 'rejected',
+        comment: '種目が偏っている',
+      },
+      { userId: 'c', userName: 'しー', decision: 'rejected', comment: '' },
+    ]);
+  });
+
+  it('未回答の承認者は decision=null で並ぶ', () => {
+    const partial = { ...base, responses: { a: base.responses.a } };
+    expect(listDecisions(partial).map((d) => d.decision)).toEqual([
+      'approved',
+      null,
+      null,
+    ]);
+  });
+
+  it('listRejections は否認した人のコメントだけを返す', () => {
+    expect(listRejections(base).map((d) => d.userName)).toEqual(['びー', 'しー']);
+    expect(listRejections(base)[0].comment).toBe('種目が偏っている');
   });
 });
 

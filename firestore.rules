@@ -117,7 +117,9 @@ service cloud.firestore {
 
     // special_event_proposals コレクション（特別イベントウィークの提案・承認）
     // 提案は本人だけが作成でき、承認者に選ばれた人だけが回答（responses/status）
-    // を書き換えられる。承認が揃うと settings_free/weekly_override が更新される。
+    // を書き換えられる。3人の回答が揃い、全員承認なら
+    // settings_free/weekly_override が更新される。
+    // 提案者は結果ポップアップの既読（resultSeenAt）だけを書き込める。
     match /special_event_proposals/{proposalId} {
       allow read: if request.auth != null;
 
@@ -127,11 +129,19 @@ service cloud.firestore {
                     && (!('responses' in request.resource.data)
                         || request.resource.data.responses.size() == 0);
 
+      // 承認者: 承認/否認の回答（否認理由コメントを含む）
       allow update: if request.auth != null
                     && request.auth.uid in resource.data.approverIds
                     && request.resource.data.diff(resource.data)
                          .affectedKeys()
                          .hasOnly(['responses', 'status', 'updatedAt']);
+
+      // 提案者: 結果ポップアップを確認したことの記録だけ
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.proposerId
+                    && request.resource.data.diff(resource.data)
+                         .affectedKeys()
+                         .hasOnly(['resultSeenAt']);
 
       allow delete: if false;
     }

@@ -1355,8 +1355,11 @@ auth.onAuthStateChanged(async (user) => {
         if (championDetailModal) championDetailModal.style.display = 'none';
         if (resetPasswordModal) resetPasswordModal.style.display = 'none';
         closeSpecialEventModal();
-        // 次のログインで承認依頼をもう一度チェックする
+        // 次のログインで承認依頼と結果通知をもう一度チェックする
         specialEventStartCheckDone = false;
+        specialEventAfterApproval = null;
+        specialEventResultQueue = [];
+        specialEventResultIndex = 0;
     }
 });
 
@@ -12064,7 +12067,11 @@ document.getElementById('submit-rating-btn')?.addEventListener('click', async ()
 
 
 // ====================================================================
-// 特別イベントウィーク（ユーザー提案 → 3人承認 → 週間チャレンジ上書き）
+// 特別イベントウィーク（ユーザー提案 → 3人の承認/否認 → 週間チャレンジ上書き）
+//
+// 3人ぶんの回答が揃った時点で結果が確定する（全員承認なら成立、1人でも
+// 否認していれば却下）。否認には理由コメントが必須で、確定後に提案者へ
+// 結果ポップアップで返す。
 //
 // ⚠️ web/src/lib/special-event.ts / special-event-engine.ts の「ミラー」。
 //    両アプリが同じ special_event_proposals と settings_free/weekly_override
@@ -12081,6 +12088,8 @@ const SPECIAL_EVENT_APPROVER_COUNT = 3;
 const SPECIAL_EVENT_WEEK_CHOICES = 4;
 /** 承認者候補とみなす「直近の投稿」の日数。この期間に1回でも投稿があれば候補。 */
 const SPECIAL_EVENT_ACTIVE_DAYS = 5;
+/** 否認理由コメントの最大文字数。提案者へのポップアップで読み切れる長さ。 */
+const SPECIAL_EVENT_COMMENT_MAX = 200;
 const SPECIAL_EVENT_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const SPECIAL_EVENT_DAY_MS = 24 * 60 * 60 * 1000;
 /** 承認者候補・週別提案状況のキャッシュ寿命（users のキャッシュと同じ5分）。 */
@@ -12096,6 +12105,14 @@ let specialEventQueue = [];
 let specialEventQueueIndex = 0;
 let specialEventMandatory = false;
 let specialEventStartCheckDone = false;
+// 否認理由の入力状態（「否認する」を押すと入力欄が開く）
+let specialEventRejecting = false;
+let specialEventComment = '';
+// 承認依頼をすべて答え終わった後にやること（起動時に結果ポップアップへ繋ぐ）
+let specialEventAfterApproval = null;
+// 提案者向け結果ポップアップの状態
+let specialEventResultQueue = [];
+let specialEventResultIndex = 0;
 
 /**
  * 提案できる週の一覧。開始日は月曜のみ・次週の月曜から4週分。
@@ -12125,14 +12142,40 @@ function isSpecialEventWeekUpcoming(targetWeekStart, now = new Date()) {
     return targetWeekStart instanceof Date && targetWeekStart.getTime() > now.getTime();
 }
 
-/** 承認者全員の回答から提案のステータスを求める。1人でも否認すれば却下。 */
+/**
+ * 承認者全員の回答から提案のステータスを求める。
+ *
+ * 全員（SPECIAL_EVENT_APPROVER_COUNT 人）の回答が揃うまでは pending のまま。
+ * 揃った時点で、1人でも否認していれば rejected、全員承認なら approved。
+ * 早い者勝ちで打ち切らないのは、提案者に3人ぶんの結果（否認理由を含む）を
+ * まとめて返すため。
+ */
 function resolveSpecialEventStatus(approverIds, responses) {
     const ids = approverIds || [];
     const res = responses || {};
     if (ids.length === 0) return 'pending';
-    if (ids.some(uid => res[uid] && res[uid].decision === 'rejected')) return 'rejected';
-    if (ids.every(uid => res[uid] && res[uid].decision === 'approved')) return 'approved';
-    return 'pending';
+    if (!ids.every(uid => res[uid] && res[uid].decision)) return 'pending';
+    return ids.some(uid => res[uid].decision === 'rejected') ? 'rejected' : 'approved';
+}
+
+/**
+ * 否認理由コメントの入力チェック。エラー文言（問題なければ null）を返す。
+ * 否認は必ず一言そえてもらう（提案者が次に活かせるようにするため）。
+ */
+function validateSpecialEventComment(decision, comment) {
+    if (decision !== 'rejected') return null;
+    const trimmed = (comment || '').trim();
+    if (!trimmed) return '否認する場合は理由を入力してください';
+    if (trimmed.length > SPECIAL_EVENT_COMMENT_MAX) {
+        return `理由は${SPECIAL_EVENT_COMMENT_MAX}文字以内で入力してください`;
+    }
+    return null;
+}
+
+/** 保存用に整えたコメント。承認時は空文字（Firestore に undefined を渡さない）。 */
+function normalizeSpecialEventComment(decision, comment) {
+    if (decision !== 'rejected') return '';
+    return (comment || '').trim().slice(0, SPECIAL_EVENT_COMMENT_MAX);
 }
 
 /**
@@ -12142,8 +12185,37 @@ function resolveSpecialEventStatus(approverIds, responses) {
 function needsSpecialEventResponse(proposal, userId, now = new Date()) {
     if (!proposal || proposal.status !== 'pending') return false;
     if (!(proposal.approverIds || []).includes(userId)) return false;
+    // 他の誰かが先に否認していても、3人ぶんの意見を集めるので最後まで聞く
     if (proposal.responses && proposal.responses[userId]) return false;
     return isSpecialEventWeekUpcoming(proposal.targetWeekStart, now);
+}
+
+/**
+ * 提案者に結果ポップアップを出すべきか。
+ * 3人の回答が揃って status が確定し、まだ本人が確認していない提案が対象。
+ */
+function needsSpecialEventResultNotice(proposal, userId) {
+    if (!proposal || proposal.proposerId !== userId) return false;
+    if (proposal.status === 'pending') return false;
+    return !proposal.resultSeenAt;
+}
+
+/** 承認者ごとの回答一覧（提案時に選んだ順）。結果ポップアップの明細に使う。 */
+function listSpecialEventDecisions(proposal) {
+    return (proposal.approverIds || []).map(uid => {
+        const res = (proposal.responses || {})[uid];
+        return {
+            userId: uid,
+            userName: (proposal.approverNames || {})[uid] || '名無しさん',
+            decision: (res && res.decision) || null,
+            comment: res && res.decision === 'rejected' ? (res.comment || '') : ''
+        };
+    });
+}
+
+/** 否認した人だけを抜き出す（提案者に見せる否認理由の一覧）。 */
+function listSpecialEventRejections(proposal) {
+    return listSpecialEventDecisions(proposal).filter(d => d.decision === 'rejected');
 }
 
 /** 「承認2/3」のような進捗サマリ。 */
@@ -12176,7 +12248,8 @@ function toSpecialEventProposal(id, data) {
         approverIds,
         approverNames: data.approverNames || {},
         responses,
-        status: data.status || resolveSpecialEventStatus(approverIds, responses)
+        status: data.status || resolveSpecialEventStatus(approverIds, responses),
+        resultSeenAt: data.resultSeenAt ? data.resultSeenAt.toDate() : null
     };
 }
 
@@ -12355,11 +12428,16 @@ async function applyApprovedSpecialEventProposal(proposal, now = new Date()) {
 }
 
 /**
- * 承認/否認を記録する。承認者全員の承認で weekly_override へ反映。
- * 同時回答に備えてトランザクションで読み直してから書く。
+ * 承認/否認を記録する。3人の回答が揃い、全員承認だった時だけ
+ * weekly_override へ反映する。同時回答に備えてトランザクションで
+ * 読み直してから書く。
+ *
+ * 否認の場合は理由コメントが必須（提案者へのポップアップで表示する）。
  */
-async function respondToSpecialEventProposal(proposalId, decision) {
+async function respondToSpecialEventProposal(proposalId, decision, comment = '') {
     if (!currentUser) throw new Error('ログインが必要です');
+    const invalidComment = validateSpecialEventComment(decision, comment);
+    if (invalidComment) throw new Error(invalidComment);
     const ref = db.collection(SPECIAL_EVENT_COL).doc(proposalId);
 
     const nextStatus = await db.runTransaction(async (tx) => {
@@ -12372,7 +12450,11 @@ async function respondToSpecialEventProposal(proposalId, decision) {
         if (current !== 'pending') return current;
 
         const responses = Object.assign({}, data.responses || {});
-        responses[currentUser.uid] = { decision, at: firebase.firestore.Timestamp.now() };
+        responses[currentUser.uid] = {
+            decision,
+            at: firebase.firestore.Timestamp.now(),
+            comment: normalizeSpecialEventComment(decision, comment)
+        };
         const status = resolveSpecialEventStatus(approverIds, responses);
         tx.update(ref, {
             responses,
@@ -12388,6 +12470,16 @@ async function respondToSpecialEventProposal(proposalId, decision) {
         if (snap.exists) await applyApprovedSpecialEventProposal(toSpecialEventProposal(snap.id, snap.data()));
     }
     return nextStatus;
+}
+
+/**
+ * 提案者が結果ポップアップを確認したことを記録する。
+ * これを書いた提案は二度とポップアップに出てこない。
+ */
+async function markSpecialEventResultSeen(proposalId) {
+    await db.collection(SPECIAL_EVENT_COL).doc(proposalId).update({
+        resultSeenAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
 }
 
 // --------------------------------------------------------------------
@@ -12419,8 +12511,9 @@ function closeSpecialEventModal() {
 function specialEventStatusBadge(proposal) {
     if (proposal.status === 'approved') return '<span class="se-badge se-badge-ok">承認済み</span>';
     if (proposal.status === 'rejected') return '<span class="se-badge se-badge-ng">否認</span>';
+    // 3人ぶん揃って初めて結果が決まるので、進捗は「回答した人数」で出す
     const s = summarizeSpecialEventResponses(proposal.approverIds, proposal.responses);
-    return `<span class="se-badge se-badge-wait">承認待ち ${s.approved}/${s.total}</span>`;
+    return `<span class="se-badge se-badge-wait">回答待ち ${s.approved + s.rejected}/${s.total}</span>`;
 }
 
 /** 週間チャレンジの対象になる種目だけを候補にする。 */
@@ -12647,7 +12740,9 @@ async function openSpecialEventInboxModal() {
         html += answered.map(p => {
             const mineDecision = p.responses[currentUser.uid];
             const you = mineDecision
-                ? (mineDecision.decision === 'rejected' ? 'あなた: 否認' : 'あなた: 承認')
+                ? (mineDecision.decision === 'rejected'
+                    ? `あなた: 否認（${mineDecision.comment || '理由なし'}）`
+                    : 'あなた: 承認')
                 : '未回答';
             return rowHtml(p, `${p.proposerName} さんの提案 / ${you}`);
         }).join('');
@@ -12659,7 +12754,17 @@ async function openSpecialEventInboxModal() {
         </div>`;
     html += mine.length === 0
         ? '<p class="se-muted">まだ提案していません</p>'
-        : mine.map(p => rowHtml(p, `承認者: ${p.approverIds.map(uid => p.approverNames[uid] || '名無しさん').join('・')}`)).join('');
+        : mine.map(p => {
+            const row = rowHtml(p, `承認者: ${p.approverIds.map(uid => p.approverNames[uid] || '名無しさん').join('・')}`);
+            // 否認された提案は、結果ポップアップを閉じたあとでもここから理由を読み返せる
+            if (p.status !== 'rejected') return row;
+            const comments = listSpecialEventRejections(p).map(d => `
+                <div class="se-comment-card">
+                    <span class="se-comment-who"><i class="fa-solid fa-comment-dots"></i> ${escapeHtml(d.userName)}の否認理由</span>
+                    <span class="se-comment-text">${escapeHtml(d.comment || '（理由の記載がありません）')}</span>
+                </div>`).join('');
+            return row + comments;
+        }).join('');
 
     document.getElementById('special-event-body').innerHTML = html;
 
@@ -12679,6 +12784,8 @@ async function openSpecialEventApprovalModal(proposals, mandatory) {
     specialEventQueue = proposals;
     specialEventQueueIndex = 0;
     specialEventMandatory = !!mandatory;
+    specialEventRejecting = false;
+    specialEventComment = '';
     renderSpecialEventApproval();
 }
 
@@ -12721,13 +12828,30 @@ function renderSpecialEventApproval(errorMessage = '') {
         </div>
         <ol class="se-rule-list">${rulesHtml}</ol>
 
-        <p class="se-muted">承認状況: ${summary.approved}/${summary.total}（${escapeHtml(proposal.approverIds.map(uid => proposal.approverNames[uid] || '名無しさん').join('・'))}）</p>
+        <p class="se-muted">回答状況: 承認 ${summary.approved} / 否認 ${summary.rejected} / 未回答 ${summary.pending}（${escapeHtml(proposal.approverIds.map(uid => proposal.approverNames[uid] || '名無しさん').join('・'))}）</p>
+
+        ${specialEventRejecting ? `
+            <div class="se-section-head">
+                <span class="se-section-title"><i class="fa-solid fa-comment-dots"></i> 否認する理由（必須）</span>
+                <span class="se-counter" id="se-comment-count">${specialEventComment.trim().length}/${SPECIAL_EVENT_COMMENT_MAX}</span>
+            </div>
+            <textarea id="se-comment" class="se-comment-input" rows="3" maxlength="${SPECIAL_EVENT_COMMENT_MAX}"
+                placeholder="例: この週は出張で参加できない人が多そうなので、別の週にしてほしいです">${escapeHtml(specialEventComment)}</textarea>
+            <p class="se-muted">入力した理由は、3人の回答が揃ったあとに提案者へ通知されます</p>
+        ` : ''}
 
         ${errorMessage ? `<p class="error-message">${escapeHtml(errorMessage)}</p>` : ''}
-        <div class="se-actions">
-            <button id="se-reject-btn" class="btn-secondary"><i class="fa-solid fa-xmark"></i> 否認する</button>
-            <button id="se-approve-btn" class="btn-primary"><i class="fa-solid fa-check"></i> 承認する</button>
-        </div>
+        ${specialEventRejecting ? `
+            <div class="se-actions">
+                <button id="se-cancel-reject-btn" class="btn-secondary"><i class="fa-solid fa-arrow-left"></i> やめる</button>
+                <button id="se-reject-btn" class="btn-primary"><i class="fa-solid fa-xmark"></i> この理由で否認する</button>
+            </div>
+        ` : `
+            <div class="se-actions">
+                <button id="se-open-reject-btn" class="btn-secondary"><i class="fa-solid fa-xmark"></i> 否認する</button>
+                <button id="se-approve-btn" class="btn-primary"><i class="fa-solid fa-check"></i> 承認する</button>
+            </div>
+        `}
         ${specialEventMandatory ? '<p class="se-muted se-center">承認か否認を選ぶまで、アプリを開くたびにこの確認が表示されます</p>' : ''}
     `;
 
@@ -12735,46 +12859,189 @@ function renderSpecialEventApproval(errorMessage = '') {
         dismissible: !specialEventMandatory
     });
 
+    const commentInput = document.getElementById('se-comment');
+    if (commentInput) {
+        commentInput.focus();
+        // 再描画（エラー表示など）でも入力済みの続きから打てるよう末尾へ
+        commentInput.setSelectionRange(commentInput.value.length, commentInput.value.length);
+        commentInput.addEventListener('input', () => {
+            specialEventComment = commentInput.value;
+            const counter = document.getElementById('se-comment-count');
+            if (counter) counter.textContent = `${specialEventComment.trim().length}/${SPECIAL_EVENT_COMMENT_MAX}`;
+        });
+    }
+
     const respond = async (decision) => {
-        const approveBtn = document.getElementById('se-approve-btn');
-        const rejectBtn = document.getElementById('se-reject-btn');
-        approveBtn.disabled = true;
-        rejectBtn.disabled = true;
-        const target = decision === 'approved' ? approveBtn : rejectBtn;
-        target.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 送信中...';
+        const comment = decision === 'rejected' ? specialEventComment : '';
+        const invalid = validateSpecialEventComment(decision, comment);
+        if (invalid) {
+            renderSpecialEventApproval(invalid);
+            return;
+        }
+        document.querySelectorAll('.se-actions button').forEach(b => { b.disabled = true; });
+        const target = document.getElementById(decision === 'approved' ? 'se-approve-btn' : 'se-reject-btn');
+        if (target) target.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 送信中...';
         try {
-            const status = await respondToSpecialEventProposal(proposal.id, decision);
+            const status = await respondToSpecialEventProposal(proposal.id, decision, comment);
             if (status === 'approved') {
                 alert(`${proposal.periodLabel} の特別イベントが決定しました！`);
             }
             specialEventQueueIndex++;
+            specialEventRejecting = false;
+            specialEventComment = '';
             if (specialEventQueueIndex < specialEventQueue.length) {
                 renderSpecialEventApproval();
             } else {
                 closeSpecialEventModal();
+                // 起動時チェックから来た場合は、続けて自分の提案の結果を出す
+                const after = specialEventAfterApproval;
+                specialEventAfterApproval = null;
+                if (after) after();
             }
         } catch (e) {
             renderSpecialEventApproval(e.message || '送信に失敗しました');
         }
     };
 
-    document.getElementById('se-approve-btn').addEventListener('click', () => respond('approved'));
-    document.getElementById('se-reject-btn').addEventListener('click', () => respond('rejected'));
+    document.getElementById('se-approve-btn')?.addEventListener('click', () => respond('approved'));
+    document.getElementById('se-reject-btn')?.addEventListener('click', () => respond('rejected'));
+    document.getElementById('se-open-reject-btn')?.addEventListener('click', () => {
+        specialEventRejecting = true;
+        renderSpecialEventApproval();
+    });
+    document.getElementById('se-cancel-reject-btn')?.addEventListener('click', () => {
+        specialEventRejecting = false;
+        renderSpecialEventApproval();
+    });
 }
 
 /**
- * 起動時、自分あての未回答の提案があればポップアップで聞く。
- * 承認/否認を選ぶまでは毎回表示されるので、回答漏れが起きない。
+ * 提案者向けの結果ポップアップ。3人ぶんの回答が揃った自分の提案について、
+ * 結果（否認なら理由コメント）を表示する。「確認しました」を押すまで閉じない。
+ */
+function openSpecialEventResultModal(proposals) {
+    if (!proposals || proposals.length === 0) return;
+    specialEventResultQueue = proposals;
+    specialEventResultIndex = 0;
+    renderSpecialEventResult();
+}
+
+function renderSpecialEventResult(errorMessage = '') {
+    const proposal = specialEventResultQueue[specialEventResultIndex];
+    if (!proposal) {
+        closeSpecialEventModal();
+        return;
+    }
+    const approved = proposal.status === 'approved';
+    const decisions = listSpecialEventDecisions(proposal);
+    const rejections = decisions.filter(d => d.decision === 'rejected');
+
+    const commentsHtml = rejections.map(d => `
+        <div class="se-comment-card">
+            <span class="se-comment-who"><i class="fa-solid fa-user"></i> ${escapeHtml(d.userName)}</span>
+            <span class="se-comment-text">${escapeHtml(d.comment || '（理由の記載がありません）')}</span>
+        </div>`).join('');
+
+    const decisionsHtml = decisions.map(d => {
+        const badge = d.decision === 'approved'
+            ? '<span class="se-badge se-badge-ok">承認</span>'
+            : d.decision === 'rejected'
+                ? '<span class="se-badge se-badge-ng">否認</span>'
+                : '<span class="se-badge se-badge-wait">未回答</span>';
+        return `
+            <div class="se-row">
+                <span class="se-row-main"><span class="se-row-title">${escapeHtml(d.userName)}</span></span>
+                ${badge}
+            </div>`;
+    }).join('');
+
+    const bodyHtml = `
+        ${specialEventResultQueue.length > 1 ? `<p class="se-progress">${specialEventResultIndex + 1} / ${specialEventResultQueue.length} 件</p>` : ''}
+
+        <div class="${approved ? 'se-result-ok' : 'se-result-ng'}">
+            <i class="fa-solid ${approved ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>
+            <span class="se-result-title">${approved ? '承認されました' : '否認されました'}</span>
+            <span class="se-result-sub">${escapeHtml(approved
+                ? `${proposal.periodLabel} の週間チャレンジが、あなたの提案した種目に差し替わります`
+                : `${proposal.periodLabel} の提案は見送りになりました`)}</span>
+        </div>
+
+        <div class="se-period-card">
+            <i class="fa-solid fa-dumbbell"></i>
+            <span>
+                <span class="se-period-label">提案した種目</span>
+                <span class="se-period-value">${escapeHtml(proposal.exerciseNames.join('・'))}</span>
+            </span>
+        </div>
+
+        ${!approved && rejections.length ? `
+            <div class="se-section-head">
+                <span class="se-section-title"><i class="fa-solid fa-comment-dots"></i> 否認の理由</span>
+                <span class="se-counter">${rejections.length}件</span>
+            </div>
+            ${commentsHtml}
+        ` : ''}
+
+        <div class="se-section-head">
+            <span class="se-section-title"><i class="fa-solid fa-user-check"></i> 承認者の回答</span>
+        </div>
+        ${decisionsHtml}
+
+        ${errorMessage ? `<p class="error-message">${escapeHtml(errorMessage)}</p>` : ''}
+        <button id="se-result-ok-btn" class="btn-primary"><i class="fa-solid fa-check"></i> 確認しました</button>
+    `;
+
+    // 結果を読まずに閉じられると否認理由が伝わらないので、閉じるボタンは出さない
+    openSpecialEventModal('特別イベントの結果', 'fa-clipboard-check', bodyHtml, { dismissible: false });
+
+    document.getElementById('se-result-ok-btn')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 送信中...';
+        try {
+            await markSpecialEventResultSeen(proposal.id);
+        } catch (err) {
+            // 既読化に失敗しても結果は読めているので先へ進む（次回もう一度出るだけ）
+            console.warn('[特別イベント] 結果の既読化に失敗:', err);
+        }
+        specialEventResultIndex++;
+        if (specialEventResultIndex < specialEventResultQueue.length) {
+            renderSpecialEventResult();
+        } else {
+            closeSpecialEventModal();
+        }
+    });
+}
+
+/**
+ * 起動時のポップアップ。
+ *   1. 自分あての未回答の提案（承認/否認を選ぶまで毎回表示される）
+ *   2. そのあと、3人の回答が揃った自分の提案の結果（否認なら理由つき）
  */
 async function maybeShowSpecialEventApprovalOnStart() {
     if (specialEventStartCheckDone || !currentUser) return;
     specialEventStartCheckDone = true;
     try {
-        const inbox = await loadSpecialEventProposalsForApprover(currentUser.uid);
+        const [inbox, mine] = await Promise.all([
+            loadSpecialEventProposalsForApprover(currentUser.uid),
+            loadMySpecialEventProposals(currentUser.uid)
+        ]);
         const pending = inbox
             .filter(p => needsSpecialEventResponse(p, currentUser.uid))
             .sort((a, b) => a.targetWeekStart.getTime() - b.targetWeekStart.getTime());
-        if (pending.length > 0) await openSpecialEventApprovalModal(pending, true);
+        const results = mine
+            .filter(p => needsSpecialEventResultNotice(p, currentUser.uid))
+            .sort((a, b) => a.targetWeekStart.getTime() - b.targetWeekStart.getTime());
+
+        if (pending.length > 0) {
+            // 承認依頼を全部答え終えてから結果を出す（モーダルは1枚しかない）
+            specialEventAfterApproval = results.length
+                ? () => openSpecialEventResultModal(results)
+                : null;
+            await openSpecialEventApprovalModal(pending, true);
+        } else if (results.length > 0) {
+            openSpecialEventResultModal(results);
+        }
     } catch (e) {
         // 提案機能が落ちても本体は動かす
         console.warn('[特別イベント] 起動時チェック失敗:', e);
