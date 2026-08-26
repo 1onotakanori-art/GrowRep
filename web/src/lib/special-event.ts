@@ -15,8 +15,10 @@ import {
   formatWeeklyPeriodLabel,
   getWeekBoundaries,
 } from './time-jst';
+import type { UserData } from './types';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** 提案に必要な種目数。週間チャレンジの exerciseCount と揃えている。 */
 export const SPECIAL_EVENT_EXERCISE_COUNT = 4;
@@ -24,6 +26,8 @@ export const SPECIAL_EVENT_EXERCISE_COUNT = 4;
 export const SPECIAL_EVENT_APPROVER_COUNT = 3;
 /** 開始日として選べる週数（次週の月曜から4週分）。 */
 export const SPECIAL_EVENT_WEEK_CHOICES = 4;
+/** 承認者候補とみなす「直近の投稿」の日数。この期間に1回でも投稿があれば候補。 */
+export const SPECIAL_EVENT_ACTIVE_DAYS = 5;
 
 export type ApprovalDecision = 'approved' | 'rejected';
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
@@ -59,8 +63,63 @@ export interface SpecialEventProposal {
 export interface ApproverCandidate {
   userId: string;
   userName: string;
-  /** 前週の週間チャレンジ種目への投稿数 */
+  /** 直近 SPECIAL_EVENT_ACTIVE_DAYS 日の投稿数 */
   postCount: number;
+}
+
+// ---------------------------------------------------------------------
+// 承認者候補（直近に投稿している人）
+// ---------------------------------------------------------------------
+/** 承認者候補の判定に使う「これ以降の投稿」の境界時刻。 */
+export function getApproverActiveSince(
+  now: Date = new Date(),
+  days: number = SPECIAL_EVENT_ACTIVE_DAYS,
+): Date {
+  return new Date(now.getTime() - days * DAY_MS);
+}
+
+/** 投稿数の集計に渡す最小限の形（Firestore の Post から詰め替える）。 */
+export interface CandidatePost {
+  userId: string;
+  value: unknown;
+  postedAt: Date | null;
+}
+
+/**
+ * ユーザーごとの直近投稿数。種目や曜日では絞らない
+ * （「過去5日以内に1回でも投稿していれば承認者になれる」ため）。
+ */
+export function countRecentPosts(
+  posts: CandidatePost[],
+  since: Date,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  const from = since.getTime();
+  posts.forEach((post) => {
+    if (!post.userId) return;
+    if (!post.postedAt || post.postedAt.getTime() < from) return;
+    if (!(Number(post.value) > 0)) return;
+    counts[post.userId] = (counts[post.userId] || 0) + 1;
+  });
+  return counts;
+}
+
+/** 投稿数マップを候補リストへ。自分とゲストは除き、投稿数の多い順に並べる。 */
+export function buildApproverCandidates(
+  postCounts: Record<string, number>,
+  usersMap: Record<string, UserData>,
+  selfUserId: string,
+): ApproverCandidate[] {
+  return Object.keys(postCounts)
+    .filter((uid) => uid !== selfUserId && !usersMap[uid]?.isGuest)
+    .map((uid) => ({
+      userId: uid,
+      userName: usersMap[uid]?.userName || '名無しさん',
+      postCount: postCounts[uid],
+    }))
+    .sort(
+      (a, b) => b.postCount - a.postCount || a.userName.localeCompare(b.userName),
+    );
 }
 
 // ---------------------------------------------------------------------

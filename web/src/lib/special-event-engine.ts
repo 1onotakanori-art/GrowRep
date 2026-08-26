@@ -22,78 +22,108 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { getWeeklyPosts } from './posts';
-import { buildChampionDocMeta, getWeekBoundaries, isWeekdayJST } from './time-jst';
+import { getPostsSince, getPostsSinceFromCache } from './posts';
 import {
+  buildApproverCandidates,
+  countRecentPosts,
+  getApproverActiveSince,
   isTargetWeekUpcoming,
   resolveProposalStatus,
   validateProposalInput,
+  SPECIAL_EVENT_APPROVER_COUNT,
   type ApprovalDecision,
   type ApprovalResponse,
   type ApproverCandidate,
+  type CandidatePost,
   type ProposableWeek,
   type ProposalStatus,
   type SpecialEventProposal,
 } from './special-event';
-import type { FreeExerciseMap, UserData } from './types';
+import type { FreeExerciseMap, Post, UserData } from './types';
 
 const COL = 'special_event_proposals';
 const SETTINGS = 'settings_free';
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+/** 承認者候補・週別利用状況のメモリキャッシュ寿命。users のキャッシュと同じ5分。 */
+const CANDIDATE_CACHE_MS = 5 * 60 * 1000;
 
 // ---------------------------------------------------------------------
-// 承認者候補（前週の週間チャレンジに投稿した人）
+// 承認者候補（過去5日以内に投稿した人）
 // ---------------------------------------------------------------------
+function toCandidatePosts(posts: Post[]): CandidatePost[] {
+  return posts.map((p) => {
+    const ts = p.timestamp as Timestamp | null | undefined;
+    return {
+      userId: p.userId,
+      value: p.value,
+      postedAt: ts ? ts.toDate() : null,
+    };
+  });
+}
+
+/** 直近投稿数のメモリキャッシュ。モーダルの開き直しでサーバー往復を省く。 */
+let postCountsCache: { at: number; counts: Record<string, number> } | null =
+  null;
+
+async function fetchRecentPostCounts(
+  now: Date,
+): Promise<Record<string, number>> {
+  const since = getApproverActiveSince(now);
+  const posts = await getPostsSince(since);
+  const counts = countRecentPosts(toCandidatePosts(posts), since);
+  postCountsCache = { at: Date.now(), counts };
+  return counts;
+}
+
 /**
- * 前週の週間チャレンジに投稿しているユーザーを返す（自分とゲストは除く）。
- * 種目は weekly_challenge_history に残る前週の選出種目で絞り込む。
- * 履歴が無い週（休止週など）は、その週の投稿者全員を候補にする。
+ * 承認者候補（過去5日以内に1回でも投稿しているユーザー。自分とゲストは除く）。
+ *
+ * 速度のための3段構え:
+ *   1. メモリキャッシュが新しければ即返す（サーバー往復ゼロ）
+ *   2. onPartial 指定時は IndexedDB キャッシュ分を先に渡して即描画
+ *   3. サーバーの最新で確定させる
  */
-export async function loadPreviousWeekParticipants(
+export async function loadApproverCandidates(
   usersMap: Record<string, UserData>,
   selfUserId: string,
-  now: Date = new Date(),
+  opts: {
+    now?: Date;
+    /** キャッシュ由来の暫定リスト（サーバー確定前に描画するため） */
+    onPartial?: (list: ApproverCandidate[]) => void;
+  } = {},
 ): Promise<ApproverCandidate[]> {
-  const { start } = getWeekBoundaries(now);
-  const prevStart = new Date(start.getTime() - WEEK_MS);
-  const prevEnd = start;
+  const now = opts.now || new Date();
+  const build = (counts: Record<string, number>) =>
+    buildApproverCandidates(counts, usersMap, selfUserId);
 
-  let prevKeys: string[] = [];
-  try {
-    const { docId } = buildChampionDocMeta(prevStart);
-    const snap = await getDoc(doc(db, 'weekly_challenge_history', docId));
-    if (snap.exists()) {
-      const data = snap.data() as { exercises?: string[] };
-      prevKeys = Array.isArray(data.exercises) ? data.exercises : [];
-    }
-  } catch (e) {
-    console.warn(
-      '[特別イベント] 前週の種目取得に失敗、投稿者全員を候補にします:',
-      e,
-    );
+  if (postCountsCache && Date.now() - postCountsCache.at < CANDIDATE_CACHE_MS) {
+    const cached = build(postCountsCache.counts);
+    // 人数が足りない時だけは、誰かが投稿した直後でも提案できるよう取り直す
+    if (cached.length >= SPECIAL_EVENT_APPROVER_COUNT) return cached;
   }
 
-  const posts = await getWeeklyPosts(prevStart, prevEnd);
-  const counts: Record<string, number> = {};
-  posts.forEach((post) => {
-    const ts = post.timestamp as Timestamp | null | undefined;
-    if (!ts) return;
-    if (!isWeekdayJST(ts.toDate())) return;
-    if (prevKeys.length > 0 && !prevKeys.includes(post.exerciseType)) return;
-    if (!(Number(post.value) > 0)) return;
-    counts[post.userId] = (counts[post.userId] || 0) + 1;
-  });
+  // サーバー取得は先に走らせ、その裏でローカルキャッシュ分を暫定表示する
+  const fresh = fetchRecentPostCounts(now);
+  fresh.catch(() => {}); // await 前に失敗しても unhandledrejection にしない
+  if (opts.onPartial) {
+    const since = getApproverActiveSince(now);
+    const cached = await getPostsSinceFromCache(since);
+    if (cached) {
+      opts.onPartial(build(countRecentPosts(toCandidatePosts(cached), since)));
+    }
+  }
 
-  return Object.keys(counts)
-    .filter((uid) => uid !== selfUserId && !usersMap[uid]?.isGuest)
-    .map((uid) => ({
-      userId: uid,
-      userName: usersMap[uid]?.userName || '名無しさん',
-      postCount: counts[uid],
-    }))
-    .sort(
-      (a, b) => b.postCount - a.postCount || a.userName.localeCompare(b.userName),
-    );
+  return build(await fresh);
+}
+
+/**
+ * 提案フォームで使うデータを先読みしておく（マイページを開いた時点など）。
+ * 失敗しても無視する。ボタンを押した時にはキャッシュ済みで即表示できる。
+ */
+export function prefetchProposalFormData(mondayKeys?: string[]): void {
+  if (!postCountsCache || Date.now() - postCountsCache.at >= CANDIDATE_CACHE_MS) {
+    fetchRecentPostCounts(new Date()).catch(() => {});
+  }
+  loadProposalsByWeek(mondayKeys).catch(() => {});
 }
 
 // ---------------------------------------------------------------------
@@ -164,12 +194,33 @@ export async function loadMyProposals(
     .sort((a, b) => b.targetWeekStart.getTime() - a.targetWeekStart.getTime());
 }
 
-/** 対象週ごとの既存提案（開始日の選択肢に「申請中 / 確定済み」を出すため）。 */
-export async function loadProposalsByWeek(): Promise<
-  Record<string, { pending: number; approved: number }>
-> {
-  const snap = await getDocs(collection(db, COL));
-  const byWeek: Record<string, { pending: number; approved: number }> = {};
+type WeekUsage = Record<string, { pending: number; approved: number }>;
+
+let weekUsageCache: { at: number; key: string; data: WeekUsage } | null = null;
+
+/**
+ * 対象週ごとの既存提案（開始日の選択肢に「申請中 / 確定済み」を出すため）。
+ * mondayKeys を渡すとその週だけを引く（コレクション全件スキャンを避ける）。
+ */
+export async function loadProposalsByWeek(
+  mondayKeys?: string[],
+): Promise<WeekUsage> {
+  // Firestore の in は最大10件。提案できるのは4週分なので通常はそのまま収まる。
+  const keys = mondayKeys?.slice(0, 10);
+  const cacheKey = keys ? keys.join(',') : '*';
+  if (
+    weekUsageCache &&
+    weekUsageCache.key === cacheKey &&
+    Date.now() - weekUsageCache.at < CANDIDATE_CACHE_MS
+  ) {
+    return weekUsageCache.data;
+  }
+
+  const ref = collection(db, COL);
+  const snap = await getDocs(
+    keys && keys.length > 0 ? query(ref, where('mondayKey', 'in', keys)) : ref,
+  );
+  const byWeek: WeekUsage = {};
   snap.docs.forEach((d) => {
     const p = toProposal(d.id, d.data() as ProposalDoc);
     if (!p.mondayKey) return;
@@ -178,6 +229,7 @@ export async function loadProposalsByWeek(): Promise<
     else if (p.status === 'approved') slot.approved++;
     byWeek[p.mondayKey] = slot;
   });
+  weekUsageCache = { at: Date.now(), key: cacheKey, data: byWeek };
   return byWeek;
 }
 
@@ -227,6 +279,7 @@ export async function createSpecialEventProposal(
     status: 'pending' as ProposalStatus,
     createdAt: serverTimestamp(),
   });
+  weekUsageCache = null;
   return ref.id;
 }
 
@@ -260,6 +313,7 @@ export async function respondToProposal(
     tx.update(ref, { responses, status, updatedAt: serverTimestamp() });
     return status;
   });
+  weekUsageCache = null;
 
   if (nextStatus === 'approved') {
     const snap = await getDoc(ref);

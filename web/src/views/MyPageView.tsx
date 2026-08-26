@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSpecialEvent } from '../context/SpecialEventContext';
+import { getProposableWeeks } from '../lib/special-event';
+import { prefetchProposalFormData } from '../lib/special-event-engine';
 import { ViewHeader, Segmented } from '../components/ui';
 import ProgressChart from '../features/progress/ProgressChart';
 import SpecialEventProposalModal from '../features/special/SpecialEventProposalModal';
@@ -25,6 +27,13 @@ export default function MyPageView({
   const [approving, setApproving] = useState<SpecialEventProposal[] | null>(
     null,
   );
+
+  // 「特別イベント提案」を押した時に待たせないよう、マイページを開いた時点で
+  // 承認者候補と週の提案状況を先読みしておく（失敗は無視）。
+  useEffect(() => {
+    if (!user || isGuest) return;
+    prefetchProposalFormData(getProposableWeeks().map((w) => w.mondayKey));
+  }, [user, isGuest]);
 
   return (
     <div className="fade-in">

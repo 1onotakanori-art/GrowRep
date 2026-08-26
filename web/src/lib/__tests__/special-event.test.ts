@@ -5,8 +5,13 @@ import {
   needsResponseFrom,
   isTargetWeekUpcoming,
   summarizeResponses,
+  buildApproverCandidates,
+  countRecentPosts,
+  getApproverActiveSince,
+  SPECIAL_EVENT_ACTIVE_DAYS,
   SPECIAL_EVENT_WEEK_CHOICES,
   type ApprovalResponse,
+  type CandidatePost,
 } from '../special-event';
 
 // JST の壁時計時刻から UTC の Date を作るヘルパー（JST = UTC+9）
@@ -132,5 +137,67 @@ describe('summarizeResponses', () => {
       b: { decision: 'rejected' },
     });
     expect(s).toEqual({ approved: 1, rejected: 1, pending: 1, total: 3 });
+  });
+});
+
+describe('承認者候補（過去5日以内に投稿した人）', () => {
+  const now = jst(2026, 7, 29, 12);
+  const post = (
+    userId: string,
+    postedAt: Date | null,
+    value: number = 10,
+  ): CandidatePost => ({ userId, value, postedAt });
+
+  it('境界はちょうど5日前', () => {
+    const since = getApproverActiveSince(now);
+    expect(SPECIAL_EVENT_ACTIVE_DAYS).toBe(5);
+    expect(since.toISOString()).toBe(jst(2026, 7, 24, 12).toISOString());
+  });
+
+  it('5日以内の投稿だけを数える（種目・曜日は問わない）', () => {
+    const since = getApproverActiveSince(now);
+    const counts = countRecentPosts(
+      [
+        post('a', jst(2026, 7, 29, 9)), // 当日
+        post('a', jst(2026, 7, 26, 9)), // 日曜（週末でも数える）
+        post('b', jst(2026, 7, 24, 12)), // ちょうど境界 = 含む
+        post('c', jst(2026, 7, 24, 11, 59)), // 5日より前 = 除外
+      ],
+      since,
+    );
+    expect(counts).toEqual({ a: 2, b: 1 });
+  });
+
+  it('タイムスタンプ無し・値0の投稿は数えない', () => {
+    const since = getApproverActiveSince(now);
+    const counts = countRecentPosts(
+      [post('a', null), post('b', jst(2026, 7, 28, 9), 0)],
+      since,
+    );
+    expect(counts).toEqual({});
+  });
+
+  it('1回でも投稿していれば候補になる', () => {
+    const list = buildApproverCandidates({ a: 1 }, { a: { userName: 'A' } }, 'me');
+    expect(list).toEqual([{ userId: 'a', userName: 'A', postCount: 1 }]);
+  });
+
+  it('自分とゲストは候補から外し、投稿数の多い順に並べる', () => {
+    const list = buildApproverCandidates(
+      { me: 9, guest: 5, a: 1, b: 3 },
+      {
+        me: { userName: '自分' },
+        guest: { userName: 'ゲスト', isGuest: true },
+        a: { userName: 'あ' },
+        b: { userName: 'い' },
+      },
+      'me',
+    );
+    expect(list.map((c) => c.userId)).toEqual(['b', 'a']);
+  });
+
+  it('users に名前が無ければ「名無しさん」', () => {
+    const list = buildApproverCandidates({ x: 2 }, {}, 'me');
+    expect(list[0].userName).toBe('名無しさん');
   });
 });
