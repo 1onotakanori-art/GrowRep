@@ -3,6 +3,7 @@ import { EmptyState } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useSpecialEvent } from '../../context/SpecialEventContext';
 import {
+  listRejections,
   needsResponseFrom,
   summarizeResponses,
   type SpecialEventProposal,
@@ -16,10 +17,11 @@ function StatusBadge({ proposal }: { proposal: SpecialEventProposal }) {
   if (proposal.status === 'rejected') {
     return <span className={styles.badgeRejected}>否認</span>;
   }
+  // 3人ぶん揃って初めて結果が決まるので、進捗は「回答した人数」で出す
   const s = summarizeResponses(proposal.approverIds, proposal.responses);
   return (
     <span className={styles.badgePending}>
-      承認待ち {s.approved}/{s.total}
+      回答待ち {s.approved + s.rejected}/{s.total}
     </span>
   );
 }
@@ -98,7 +100,7 @@ export default function SpecialEventInboxModal({
                     <span className={styles.rowSub}>
                       {p.proposerName} さんの提案 /{' '}
                       {user && p.responses[user.uid]?.decision === 'rejected'
-                        ? 'あなた: 否認'
+                        ? `あなた: 否認（${p.responses[user.uid].comment || '理由なし'}）`
                         : 'あなた: 承認'}
                     </span>
                   </span>
@@ -118,20 +120,39 @@ export default function SpecialEventInboxModal({
           <p className={styles.muted}>まだ提案していません</p>
         ) : (
           <div className={styles.list}>
-            {mine.map((p) => (
-              <div key={p.id} className={styles.row}>
-                <span className={styles.rowMain}>
-                  <span className={styles.rowTitle}>{p.periodLabel}</span>
-                  <span className={styles.rowSub}>
-                    承認者:{' '}
-                    {p.approverIds
-                      .map((uid) => p.approverNames[uid] || '名無しさん')
-                      .join('・')}
-                  </span>
-                </span>
-                <StatusBadge proposal={p} />
-              </div>
-            ))}
+            {mine.map((p) => {
+              // 否認された提案は、結果ポップアップを閉じたあとでも
+              // ここから理由を読み返せるようにする
+              const rejections =
+                p.status === 'rejected' ? listRejections(p) : [];
+              return (
+                <div key={p.id}>
+                  <div className={styles.row}>
+                    <span className={styles.rowMain}>
+                      <span className={styles.rowTitle}>{p.periodLabel}</span>
+                      <span className={styles.rowSub}>
+                        承認者:{' '}
+                        {p.approverIds
+                          .map((uid) => p.approverNames[uid] || '名無しさん')
+                          .join('・')}
+                      </span>
+                    </span>
+                    <StatusBadge proposal={p} />
+                  </div>
+                  {rejections.map((d) => (
+                    <div key={d.userId} className={styles.commentCard}>
+                      <span className={styles.commentWho}>
+                        <i className="fa-solid fa-comment-dots" /> {d.userName}
+                        の否認理由
+                      </span>
+                      <span className={styles.commentText}>
+                        {d.comment || '（理由の記載がありません）'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
 

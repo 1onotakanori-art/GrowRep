@@ -13,6 +13,7 @@ import {
 } from '../lib/special-event-engine';
 import {
   needsResponseFrom,
+  needsResultNoticeFor,
   type SpecialEventProposal,
 } from '../lib/special-event';
 
@@ -23,6 +24,11 @@ interface SpecialEventCtx {
   inbox: SpecialEventProposal[];
   /** 自分が出した提案 */
   mine: SpecialEventProposal[];
+  /**
+   * 自分の提案のうち、3人ぶんの回答が揃って結果が確定し、
+   * まだ本人が結果ポップアップを見ていないもの。
+   */
+  results: SpecialEventProposal[];
   loading: boolean;
   reload: () => Promise<void>;
 }
@@ -34,6 +40,7 @@ export function SpecialEventProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<SpecialEventProposal[]>([]);
   const [inbox, setInbox] = useState<SpecialEventProposal[]>([]);
   const [mine, setMine] = useState<SpecialEventProposal[]>([]);
+  const [results, setResults] = useState<SpecialEventProposal[]>([]);
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
@@ -41,6 +48,7 @@ export function SpecialEventProvider({ children }: { children: ReactNode }) {
       setPending([]);
       setInbox([]);
       setMine([]);
+      setResults([]);
       setLoading(false);
       return;
     }
@@ -52,6 +60,13 @@ export function SpecialEventProvider({ children }: { children: ReactNode }) {
       ]);
       setInbox(inboxList);
       setMine(mineList);
+      setResults(
+        mineList
+          .filter((p) => needsResultNoticeFor(p, user.uid))
+          .sort(
+            (a, b) => a.targetWeekStart.getTime() - b.targetWeekStart.getTime(),
+          ),
+      );
       setPending(
         inboxList
           .filter((p) => needsResponseFrom(p, user.uid))
@@ -72,7 +87,7 @@ export function SpecialEventProvider({ children }: { children: ReactNode }) {
   }, [reload]);
 
   return (
-    <Ctx.Provider value={{ pending, inbox, mine, loading, reload }}>
+    <Ctx.Provider value={{ pending, inbox, mine, results, loading, reload }}>
       {children}
     </Ctx.Provider>
   );

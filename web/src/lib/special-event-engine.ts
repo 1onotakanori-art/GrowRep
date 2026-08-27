@@ -2,8 +2,10 @@
 // 特別イベントウィーク — Firestore オーケストレーション
 //
 // コレクション: special_event_proposals
-// 3人全員の承認が揃った時点で settings_free/weekly_override を書き込み、
-// 対象週の週間チャレンジを提案どおりの種目に差し替える。
+// 3人全員の回答が揃った時点で結果が確定し、全員承認なら
+// settings_free/weekly_override を書き込んで対象週の週間チャレンジを
+// 提案どおりの種目に差し替える。否認理由は responses[uid].comment に残り、
+// 提案者への結果ポップアップで表示される。
 //
 // ⚠️ weekly_override のフィールド形状は app.js / admin.html /
 //    lib/weekly-engine.ts が読む既存仕様。変更しないこと。
@@ -19,6 +21,7 @@ import {
   serverTimestamp,
   setDoc,
   Timestamp,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -28,7 +31,9 @@ import {
   countRecentPosts,
   getApproverActiveSince,
   isTargetWeekUpcoming,
+  normalizeDecisionComment,
   resolveProposalStatus,
+  validateDecisionComment,
   validateProposalInput,
   SPECIAL_EVENT_APPROVER_COUNT,
   type ApprovalDecision,
@@ -143,6 +148,7 @@ interface ProposalDoc {
   responses?: Record<string, ApprovalResponse>;
   status?: ProposalStatus;
   createdAt?: Timestamp;
+  resultSeenAt?: Timestamp;
 }
 
 function toProposal(id: string, data: ProposalDoc): SpecialEventProposal {
@@ -165,6 +171,7 @@ function toProposal(id: string, data: ProposalDoc): SpecialEventProposal {
     responses,
     status: data.status || resolveProposalStatus(approverIds, responses),
     createdAt: data.createdAt ? data.createdAt.toDate() : null,
+    resultSeenAt: data.resultSeenAt ? data.resultSeenAt.toDate() : null,
   };
 }
 
@@ -284,14 +291,20 @@ export async function createSpecialEventProposal(
 }
 
 /**
- * 承認/否認を記録する。承認者全員の承認で weekly_override へ反映。
- * 同時回答に備えてトランザクションで読み直してから書く。
+ * 承認/否認を記録する。3人の回答が揃い、全員承認だった時だけ
+ * weekly_override へ反映する。同時回答に備えてトランザクションで
+ * 読み直してから書く。
+ *
+ * 否認の場合は理由コメントが必須（提案者へのポップアップで表示する）。
  */
 export async function respondToProposal(
   proposalId: string,
   userId: string,
   decision: ApprovalDecision,
+  comment: string = '',
 ): Promise<ProposalStatus> {
+  const invalidComment = validateDecisionComment(decision, comment);
+  if (invalidComment) throw new Error(invalidComment);
   const ref = doc(db, COL, proposalId);
 
   const nextStatus = await runTransaction(db, async (tx) => {
@@ -307,7 +320,11 @@ export async function respondToProposal(
 
     const responses: Record<string, ApprovalResponse> = {
       ...(data.responses || {}),
-      [userId]: { decision, at: Timestamp.now() },
+      [userId]: {
+        decision,
+        at: Timestamp.now(),
+        comment: normalizeDecisionComment(decision, comment),
+      },
     };
     const status = resolveProposalStatus(approverIds, responses);
     tx.update(ref, { responses, status, updatedAt: serverTimestamp() });
@@ -324,6 +341,16 @@ export async function respondToProposal(
     }
   }
   return nextStatus;
+}
+
+/**
+ * 提案者が結果ポップアップを確認したことを記録する。
+ * これを書いた提案は二度とポップアップに出てこない。
+ */
+export async function markProposalResultSeen(proposalId: string): Promise<void> {
+  await updateDoc(doc(db, COL, proposalId), {
+    resultSeenAt: serverTimestamp(),
+  });
 }
 
 /**

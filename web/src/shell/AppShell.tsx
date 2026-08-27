@@ -18,12 +18,17 @@ import ChallengeView from '../views/ChallengeView';
 import ExercisesView from '../views/ExercisesView';
 import RaidScoreView from '../views/RaidScoreView';
 import SpecialEventApprovalModal from '../features/special/SpecialEventApprovalModal';
+import SpecialEventResultModal from '../features/special/SpecialEventResultModal';
 import styles from './AppShell.module.css';
 
 function ShellInner() {
   const { mode } = useMode();
   const { dailyMission, dailyLoading, loading: dataLoading } = useData();
-  const { pending, reload: reloadSpecialEvents } = useSpecialEvent();
+  const {
+    pending,
+    results,
+    reload: reloadSpecialEvents,
+  } = useSpecialEvent();
   const [nav, setNav] = useState<NavKey>('home');
   const [profileOpen, setProfileOpen] = useState(false);
   const autoNavDone = useRef(false);
@@ -79,6 +84,19 @@ function ShellInner() {
           mandatory
           onClose={reloadSpecialEvents}
           onResolved={reloadSpecialEvents}
+        />
+      )}
+
+      {/*
+        自分の提案に3人ぶんの回答が揃ったら、結果（否認なら理由つき）を返す。
+        承認依頼のほうが先。両方ある場合は回答し終えてからこちらが出る。
+      */}
+      {!dataLoading && pending.length === 0 && results.length > 0 && (
+        <SpecialEventResultModal
+          key={results.map((p) => p.id).join(',')}
+          proposals={results}
+          onClose={reloadSpecialEvents}
+          onSeen={reloadSpecialEvents}
         />
       )}
     </div>

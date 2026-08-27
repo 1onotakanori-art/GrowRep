@@ -56,7 +56,7 @@ web/src/
                 weekly / profile / special
 ```
 
-## 特別イベントウィーク（ユーザー提案 → 3人承認）
+## 特別イベントウィーク（ユーザー提案 → 3人の承認/否認）
 
 マイページの「特別イベント提案」から、**4種目 / 開始日（月曜）/ 承認者3人**を選んで
 週間チャレンジの差し替えを提案できます。
@@ -68,9 +68,15 @@ web/src/
 - 承認者に選ばれた人は、**アプリを開くたびにポップアップ**で承認/否認を求められます。
   承認か否認を選ぶまで閉じられないため、回答漏れが起きません
   （判断できるよう、各種目の**名前とルール**をポップアップ内に表示）
-- **3人全員が承認**すると `settings_free/weekly_override` に書き込まれ、対象週の
-  週間チャレンジがその4種目になります。**1人でも否認すれば却下**
-- 回答状況はマイページの「イベント承認」から確認できます
+- **否認するときは理由コメントが必須**です（200文字以内）。他の人が先に否認していても、
+  提案者に3人ぶんの意見を返すため、残りの承認者にも最後まで回答を求めます
+- **3人ぶんの回答が揃った時点で結果が確定**します。全員承認なら
+  `settings_free/weekly_override` に書き込まれ、対象週の週間チャレンジがその4種目に
+  なります。**1人でも否認していれば却下**
+- 確定すると、**提案者にポップアップで結果を通知**します。否認された場合は
+  否認した人ごとの理由コメントをそのまま表示します。「確認しました」を押すと
+  `resultSeenAt` が書かれ、二度と表示されません
+- 回答状況・否認理由はマイページの「イベント承認」からいつでも確認できます
 
 Firestore コレクション `special_event_proposals`（1提案 = 1ドキュメント）:
 
@@ -85,14 +91,22 @@ Firestore コレクション `special_event_proposals`（1提案 = 1ドキュメ
   label,                           // weekly_override.label に入る文言
   approverIds: [uid, uid, uid],
   approverNames: { uid: '名前' },
-  responses: { uid: { decision: 'approved' | 'rejected', at } },
-  status: 'pending' | 'approved' | 'rejected',
-  createdAt, updatedAt
+  responses: {
+    uid: {
+      decision: 'approved' | 'rejected',
+      at,
+      comment: '否認理由（承認時は空文字）'
+    }
+  },
+  status: 'pending' | 'approved' | 'rejected',  // 3人の回答が揃うまで pending
+  createdAt, updatedAt,
+  resultSeenAt                     // 提案者が結果ポップアップを確認した時刻
 }
 ```
 
 セキュリティルール（`firestore.rules`）では、作成は提案者本人のみ、更新は
-**承認者本人が `responses` / `status` / `updatedAt` を変更する場合のみ**許可しています。
+**承認者本人が `responses` / `status` / `updatedAt` を変更する場合**か、
+**提案者本人が `resultSeenAt` だけを変更する場合**のみ許可しています。
 
 ### ⚠️ 週間ロジックの二重管理に関する注意
 
