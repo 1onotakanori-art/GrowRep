@@ -1,4 +1,19 @@
 rules_version = '2';
+
+// =====================================================================
+// ⚠️ このファイルは GitHub Actions では配信されない
+//
+// GitHub Actions（.github/workflows/deploy.yml）が配信するのは
+// GitHub Pages のフロントエンドだけ。Firestore のルールは別物なので、
+// このファイルを変更したら必ず本番へデプロイすること:
+//
+//     ./scripts/deploy-firestore-rules.sh
+//     （中身は firebase deploy --only firestore:rules --project prod）
+//
+// デプロイし忘れると、新しく足したコレクション（special_event_proposals
+// など）は「ルール未定義＝すべて拒否」になり、アプリ側には
+// "Missing or insufficient permissions." としか出ないので気づきにくい。
+// =====================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
     
@@ -126,8 +141,7 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.resource.data.proposerId == request.auth.uid
                     && request.resource.data.status == 'pending'
-                    && (!('responses' in request.resource.data)
-                        || request.resource.data.responses.size() == 0);
+                    && request.resource.data.get('responses', {}).size() == 0;
 
       // 承認者: 承認/否認の回答（否認理由コメントを含む）
       allow update: if request.auth != null

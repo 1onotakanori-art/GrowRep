@@ -13,6 +13,7 @@ import {
   countRecentPosts,
   getApproverActiveSince,
   validateDecisionComment,
+  validateProposalInput,
   SPECIAL_EVENT_ACTIVE_DAYS,
   SPECIAL_EVENT_COMMENT_MAX,
   SPECIAL_EVENT_WEEK_CHOICES,
@@ -351,5 +352,60 @@ describe('承認者候補（過去5日以内に投稿した人）', () => {
   it('users に名前が無ければ「名無しさん」', () => {
     const list = buildApproverCandidates({ x: 2 }, {}, 'me');
     expect(list[0].userName).toBe('名無しさん');
+  });
+});
+
+describe('validateProposalInput（特別イベントに種目の組み合わせ制限は無い）', () => {
+  const weekStart = jst(2026, 9, 7);
+  const approvers = ['a', 'b', 'c'];
+
+  it('4種目・開始日・承認者3人が揃っていれば通る', () => {
+    expect(
+      validateProposalInput({
+        exercises: ['pushup', 'dips', 'squat', 'pullup'],
+        weekStart,
+        approverIds: approvers,
+      }),
+    ).toBeNull();
+  });
+
+  it('タイムアタック種目だけを4つ選んでも通る（週間チャレンジの自動選出と違い1種目までの制限は無い）', () => {
+    expect(
+      validateProposalInput({
+        exercises: ['ta1', 'ta2', 'ta3', 'ta4'],
+        weekStart,
+        approverIds: approvers,
+      }),
+    ).toBeNull();
+  });
+
+  it('種目数が足りなければ弾く', () => {
+    expect(
+      validateProposalInput({
+        exercises: ['pushup', 'dips'],
+        weekStart,
+        approverIds: approvers,
+      }),
+    ).toBe('種目を4種類選んでください');
+  });
+
+  it('同じ種目の重複は弾く', () => {
+    expect(
+      validateProposalInput({
+        exercises: ['pushup', 'pushup', 'dips', 'squat'],
+        weekStart,
+        approverIds: approvers,
+      }),
+    ).toBe('同じ種目は選べません');
+  });
+
+  it('承認者が3人でなければ弾く', () => {
+    expect(
+      validateProposalInput({
+        exercises: ['pushup', 'dips', 'squat', 'pullup'],
+        weekStart,
+        approverIds: ['a', 'b'],
+      }),
+    ).toBe('承認者を3人選んでください');
   });
 });
