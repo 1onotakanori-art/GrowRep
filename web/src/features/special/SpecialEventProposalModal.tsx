@@ -249,6 +249,8 @@ export default function SpecialEventProposalModal({
                 key={w.mondayKey}
                 type="button"
                 className={on ? styles.weekOn : styles.week}
+                // 休止週は週間チャレンジ自体が動かないので提案しても種目にならない
+                disabled={w.paused}
                 onClick={() => {
                   setErr('');
                   setWeek(w);
@@ -259,7 +261,9 @@ export default function SpecialEventProposalModal({
                   <span className={styles.weekMonday}>{w.mondayKey} (月)</span>
                   <span className={styles.weekPeriod}>{w.periodLabel}</span>
                 </span>
-                {usage?.approved ? (
+                {w.paused ? (
+                  <span className={styles.tagPending}>休止週</span>
+                ) : usage?.approved ? (
                   <span className={styles.tagApproved}>確定済みあり</span>
                 ) : usage?.pending ? (
                   <span className={styles.tagPending}>申請中あり</span>
@@ -268,6 +272,12 @@ export default function SpecialEventProposalModal({
             );
           })}
         </div>
+        {week && weekUsage[week.mondayKey]?.approved ? (
+          <p className={styles.muted}>
+            この週にはすでに確定済みの特別イベントがあります。あとから承認された方が
+            その週の種目になります（先に確定していた提案は上書きされます）
+          </p>
+        ) : null}
 
         {/* --- 承認者 --- */}
         <div className={styles.sectionHead}>

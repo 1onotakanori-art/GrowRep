@@ -1,5 +1,5 @@
 // モードに応じた投稿可能な種目リストを解決するヘルパー
-import { getActiveWeeklyKeys } from './time-jst';
+import { activeWeeklyKeysOf } from './time-jst';
 import type { DailyMissionState } from './daily-mission';
 import type { FreeExercise, FreeExerciseMap, Mode, WeeklyChallenge } from './types';
 
@@ -52,7 +52,7 @@ export function getModeExercises(
   // weekly
   if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) return [];
   const all = weeklyChallenge.exercises;
-  const active = new Set(getActiveWeeklyKeys(all, now));
+  const active = new Set(activeWeeklyKeysOf(weeklyChallenge, now));
   const dailyLocked = isWeeklyPostLockedByDailyMission(dailyMission);
   return all
     .filter((key) => freeExercises[key])
@@ -79,6 +79,6 @@ export function lockedWeeklyCount(
 ): number {
   if (!weeklyChallenge) return 0;
   const all = weeklyChallenge.exercises;
-  const active = getActiveWeeklyKeys(all, now);
+  const active = activeWeeklyKeysOf(weeklyChallenge, now);
   return Math.max(0, all.length - active.length);
 }

@@ -4,6 +4,7 @@ import {
   isWeekdayJST,
   isRevealUnlockedJST,
   getActiveWeeklyKeys,
+  activeWeeklyKeysOf,
   isPredictionOpenJST,
   weekdayIndexJST,
   buildChampionDocMeta,
@@ -111,5 +112,38 @@ describe('buildChampionDocMeta', () => {
     // 月曜 JST が正しく算出されているか
     expect(meta.monJST.getUTCDay()).toBe(1);
     expect(meta.friJST.getUTCDay()).toBe(5);
+  });
+});
+
+
+describe('特別イベント週は4種目目を伏せない', () => {
+  const four = ['a', 'b', 'c', 'd'];
+  // 2026-07-22(水) 12:00 JST は水曜13時前＝通常週なら4種目目は未解禁
+  const beforeReveal = jst(2026, 7, 22, 12);
+
+  it('revealAll を渡すと解禁前でも全種目を返す', () => {
+    expect(getActiveWeeklyKeys(four, beforeReveal, true)).toEqual(four);
+  });
+
+  it('isManualOverride の週は水曜解禁を適用しない', () => {
+    expect(
+      activeWeeklyKeysOf(
+        { exercises: four, isManualOverride: true },
+        beforeReveal,
+      ),
+    ).toEqual(four);
+  });
+
+  it('通常の週はこれまで通り先頭3種目だけ', () => {
+    expect(
+      activeWeeklyKeysOf(
+        { exercises: four, isManualOverride: false },
+        beforeReveal,
+      ),
+    ).toEqual(['a', 'b', 'c']);
+  });
+
+  it('週間チャレンジ未取得なら空配列', () => {
+    expect(activeWeeklyKeysOf(null, beforeReveal)).toEqual([]);
   });
 });

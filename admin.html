@@ -345,8 +345,8 @@ function fmtTs(ts) { if (!ts) return '—'; const d = ts.toDate ? ts.toDate() : 
 function fmtDate(ts) { if (!ts) return '—'; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', weekday: 'short' }); }
 function tog(el) { el.classList.toggle('shut'); el.nextElementSibling.classList.toggle('shut'); }
 
-// 来週の開始日時（JST 日曜17:00, UTC換算）を返す
-function getNextWeekStart() {
+// 今週の開始日時（JST 日曜17:00, UTC換算）を返す
+function getCurrentWeekStart() {
     const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
     const now = new Date();
     const jstMs = now.getTime() + JST_OFFSET_MS;
@@ -359,9 +359,28 @@ function getNextWeekStart() {
     const todayJstDayStartMs = jstMs - (jstHour * 3600 + jstMin * 60 + jstSec) * 1000 - jstMsec;
     let daysBack = (jstDayOfWeek === 0 && jstHour < 17) ? 7 : jstDayOfWeek;
     const lastSundayJstDayStartMs = todayJstDayStartMs - daysBack * 24 * 60 * 60 * 1000;
-    const currentWeekStartUTC = new Date(lastSundayJstDayStartMs + 17 * 60 * 60 * 1000 - JST_OFFSET_MS);
-    return new Date(currentWeekStartUTC.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return new Date(lastSundayJstDayStartMs + 17 * 60 * 60 * 1000 - JST_OFFSET_MS);
 }
+
+// 来週の開始日時（JST 日曜17:00, UTC換算）を返す
+function getNextWeekStart() {
+    return new Date(getCurrentWeekStart().getTime() + 7 * 24 * 60 * 60 * 1000);
+}
+
+// 週の開始境界（日曜17:00 JST）から対象週の月曜キー（JST, YYYY-MM-DD）。
+// ⚠️ app.js: mondayKeyOfWeekStart / web: mondayKeyOfWeekStart と同じ計算にすること
+function mondayKeyOfWeekStart(weekStart) {
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const monJST = new Date(weekStart.getTime() + JST_OFFSET_MS + 24 * 60 * 60 * 1000);
+    const y = monJST.getUTCFullYear();
+    const m = String(monJST.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(monJST.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+// 対象週の上書き設定ドキュメントID。週ごとに分けているので、
+// 別々の週を狙った設定（承認済みの特別イベントを含む）が潰し合わない
+function weeklyOverrideDocId(mondayKey) { return `weekly_override_${mondayKey}`; }
 
 // Toast
 function toast(msg, dur = 2000) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), dur); }
@@ -409,11 +428,12 @@ $('refresh-btn').addEventListener('click', () => loadAll());
 async function loadAll() {
     $('loading').classList.remove('hide');
     try {
-        const [exDoc, wcDoc, cfgDoc, overrideDoc, raidDoc, mFree, mNorm, mInt, champSnap, histSnap, usrSnap] = await Promise.all([
+        const [exDoc, wcDoc, cfgDoc, legacyOverrideDoc, nextWeekOverrideDoc, raidDoc, mFree, mNorm, mInt, champSnap, histSnap, usrSnap] = await Promise.all([
             db.collection('settings_free').doc('exercises').get(),
             db.collection('settings_free').doc('weekly_challenge').get(),
             db.collection('settings_free').doc('weekly_config').get(),
             db.collection('settings_free').doc('weekly_override').get(),
+            db.collection('settings_free').doc(weeklyOverrideDocId(mondayKeyOfWeekStart(getNextWeekStart()))).get(),
             db.collection('settings_free').doc('raid_config').get(),
             db.collection('settings_free').doc('multipliers').get(),
             db.collection('settings').doc('multipliers').get(),
@@ -425,7 +445,16 @@ async function loadAll() {
         _exercises = exDoc.exists ? (exDoc.data().exercises || {}) : {};
         _wc = wcDoc.exists ? wcDoc.data() : null;
         _wcConfig = cfgDoc.exists ? cfgDoc.data() : { weightExponent: 2 };
-        _override = overrideDoc.exists ? overrideDoc.data() : null;
+        // 来週ぶんの上書き設定。週ごとドキュメントを優先し、無ければ旧単一ドキュメント
+        // （旧形式は targetWeekStart が来週のときだけ来週ぶんとして扱う）
+        const nextWeekStartMs = getNextWeekStart().getTime();
+        const legacy = legacyOverrideDoc.exists ? legacyOverrideDoc.data() : null;
+        const legacyIsNextWeek = !!legacy && (!legacy.targetWeekStart
+            || Math.abs(legacy.targetWeekStart.toDate().getTime() - nextWeekStartMs) < 60 * 1000);
+        const nextWeekOverride = nextWeekOverrideDoc.exists ? nextWeekOverrideDoc.data() : null;
+        const usable = (o) => !!o && !o.invalidated && Array.isArray(o.exercises) && o.exercises.length > 0;
+        _override = usable(nextWeekOverride) ? nextWeekOverride
+            : (usable(legacy) && legacyIsNextWeek ? legacy : null);
         _raidGoals = raidDoc.exists ? sanitizeRaidGoals(raidDoc.data().goals) : {};
         _raidExercises = raidDoc.exists ? sanitizeRaidExercises(raidDoc.data().exercises) : {};
         _raidMembers = raidDoc.exists ? (raidDoc.data().memberCounts || {}) : {};
@@ -503,7 +532,10 @@ function renderWeekly() {
     <div style="font-size:11px;font-weight:700;color:var(--pri);margin-bottom:8px"><i class="fa-solid fa-wand-magic-sparkles"></i> 来週のチャレンジを手動設定</div>`;
     if (_override) {
         const targetWeekStr = _override.targetWeekStart ? fmtDate(_override.targetWeekStart) + '週' : '来週';
-        html += `<div class="cfg-result" style="margin-bottom:8px"><i class="fa-solid fa-circle-check"></i> 設定済み（対象: ${esc(targetWeekStr)}）: ${esc(preLabel)} — ${preKeys.map(k => esc((_exercises[k] && _exercises[k].name) || k)).join(' / ')}</div>`;
+        // ユーザー提案が承認されたものか、管理者が手で入れたものかを見分けられるようにする
+        const srcStr = _override.source === 'special_event_proposal' ? '承認済みの特別イベント' : '手動設定';
+        const allNames = (_override.exercises || []).map(k => esc((_exercises[k] && _exercises[k].name) || k)).join(' / ');
+        html += `<div class="cfg-result" style="margin-bottom:8px"><i class="fa-solid fa-circle-check"></i> 設定済み（対象: ${esc(targetWeekStr)} / ${esc(srcStr)}）: ${esc(preLabel)} — ${allNames}</div>`;
     }
     html += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
         <select id="override-ex-0" style="padding:6px 8px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px"><option value="">— 種目1を選択 —</option>${makeOpts(preKeys[0])}</select>
@@ -1105,10 +1137,19 @@ async function forceReselect() {
                     isManualOverride: firebase.firestore.FieldValue.delete(),
                     overrideLabel: firebase.firestore.FieldValue.delete()
                 });
-                // weekly_override を無効化（削除不可のため invalidated フラグを立てる）
-                if (_override) {
-                    await db.collection('settings_free').doc('weekly_override')
-                        .set({ invalidated: true }).catch(() => {});
+                // 今週ぶんの上書き設定だけ無効化する（削除不可のため invalidated フラグ）。
+                // 来週以降を狙った承認済みイベントの予約には触らない
+                const curWeekStart = getCurrentWeekStart();
+                await db.collection('settings_free')
+                    .doc(weeklyOverrideDocId(mondayKeyOfWeekStart(curWeekStart)))
+                    .set({ invalidated: true }, { merge: true }).catch(() => {});
+                const legacy = await db.collection('settings_free').doc('weekly_override').get();
+                if (legacy.exists && !legacy.data().invalidated) {
+                    const t = legacy.data().targetWeekStart;
+                    if (!t || Math.abs(t.toDate().getTime() - curWeekStart.getTime()) < 60 * 1000) {
+                        await db.collection('settings_free').doc('weekly_override')
+                            .set({ invalidated: true }, { merge: true }).catch(() => {});
+                    }
                 }
                 toast('再選定の準備完了。チャレンジページを開くと自動的に新しい種目が選定されます。');
                 await loadAll();
@@ -1136,31 +1177,66 @@ async function saveWeeklyOverride() {
 
     const hasBarb = keys.some(k => _exercises[k] && _exercises[k].barbarian);
 
+    const nextWeekStart = getNextWeekStart();
+    const mondayKey = mondayKeyOfWeekStart(nextWeekStart);
+
     const doSave = async () => {
         $('loading').classList.remove('hide');
         try {
-            await db.collection('settings_free').doc('weekly_override').set({
+            await db.collection('settings_free').doc(weeklyOverrideDocId(mondayKey)).set({
                 exercises: keys,
                 label,
-                targetWeekStart: firebase.firestore.Timestamp.fromDate(getNextWeekStart()),
+                targetWeekStart: firebase.firestore.Timestamp.fromDate(nextWeekStart),
+                mondayKey,
+                invalidated: false,
                 setAt: firebase.firestore.FieldValue.serverTimestamp(),
-                setBy: auth.currentUser ? auth.currentUser.uid : ''
+                setBy: auth.currentUser ? auth.currentUser.uid : '',
+                source: 'admin'
             });
+            // 旧単一ドキュメントが同じ週を狙っていると二重適用になりうるので無効化する
+            const legacy = await db.collection('settings_free').doc('weekly_override').get();
+            if (legacy.exists && !legacy.data().invalidated) {
+                const t = legacy.data().targetWeekStart;
+                if (!t || Math.abs(t.toDate().getTime() - nextWeekStart.getTime()) < 60 * 1000) {
+                    await db.collection('settings_free').doc('weekly_override')
+                        .set({ invalidated: true }, { merge: true }).catch(() => {});
+                }
+            }
             toast('来週の手動設定を保存しました');
             await loadAll();
         } catch (e) { toast('エラー: ' + e.message); }
         finally { $('loading').classList.add('hide'); }
     };
 
-    if (!hasBarb) {
+    const confirmBarbarian = () => {
+        if (hasBarb) return doSave();
         showConfirm(
             'Barbarian種目が含まれていません',
             'Barbarian（TA）種目が選ばれていません。通常は1種目含めることを推奨しています。このまま設定しますか？',
             doSave
         );
-    } else {
-        await doSave();
+    };
+
+    // 承認済みの特別イベントを黙って潰さない。上書きするか確認してから進む
+    $('loading').classList.remove('hide');
+    let approvedEvent = null;
+    try {
+        const cur = await db.collection('settings_free').doc(weeklyOverrideDocId(mondayKey)).get();
+        if (cur.exists && cur.data().source === 'special_event_proposal') approvedEvent = cur.data();
+    } catch (e) { /* 読めなければ確認を挟まずに進む */ }
+    finally { $('loading').classList.add('hide'); }
+
+    if (approvedEvent) {
+        const exNames = (approvedEvent.exercises || [])
+            .map(k => (_exercises[k] && _exercises[k].name) || k).join(' / ');
+        showConfirm(
+            '承認済みの特別イベントがあります',
+            `来週は承認された特別イベント「${approvedEvent.label || '特別イベント'}」（${exNames}）が設定されています。手動設定で上書きしますか？（提案者には「別の設定に上書きされた」と表示されます）`,
+            confirmBarbarian
+        );
+        return;
     }
+    await confirmBarbarian();
 }
 </script>
 </body>
