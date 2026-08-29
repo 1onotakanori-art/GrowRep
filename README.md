@@ -217,6 +217,24 @@ git push -u origin main
 
 **重要**: Firestoreのセキュリティルールを必ず設定してください（`firestore.rules` を参照）
 
+#### ⚠️ ルールは GitHub Actions では配信されない
+
+`.github/workflows/deploy.yml` が配信するのは GitHub Pages のフロントエンドだけです。
+`firestore.rules` を書き換えたら、必ず別途デプロイしてください。
+
+```bash
+./scripts/deploy-firestore-rules.sh
+# 中身: npx firebase-tools deploy --only firestore:rules --project prod
+```
+
+デプロイし忘れると、**新しく追加したコレクション（`special_event_proposals` など）は
+「ルール未定義＝すべて拒否」** になります。アプリ側には
+`Missing or insufficient permissions.` としか出ないため原因に気づきにくいので注意。
+
+リポジトリ Secrets に `FIREBASE_SERVICE_ACCOUNT`（Firebase コンソールで発行した
+サービスアカウント JSON）を登録しておくと、`.github/workflows/firestore-rules.yml`
+が `firestore.rules` の変更を検知して自動デプロイします。未登録の場合はスキップされます。
+
 ### 2. XSS対策
 - すべてのユーザー入力値に対してHTMLエスケープ処理を実施
 - `innerHTML` 使用時は必ずエスケープ済みデータを使用

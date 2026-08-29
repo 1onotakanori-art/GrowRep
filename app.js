@@ -12368,7 +12368,25 @@ function prefetchSpecialEventProposalData() {
     loadSpecialEventProposalsByWeek(keys).catch(() => {});
 }
 
-/** 提案を作成する。 */
+/**
+ * Firestore の permission-denied を、原因の分かる日本語にして返す。
+ *
+ * special_event_proposals は後から足したコレクションなので、
+ * firestore.rules を本番へデプロイし忘れていると「ルール未定義＝全拒否」で
+ * 落ちる。素の "Missing or insufficient permissions." のままだと
+ * 何が悪いのか分からないため、対処法まで書いて投げ直す。
+ */
+function toSpecialEventError(e, fallbackMessage) {
+    if (e && e.code === 'permission-denied') {
+        return new Error(
+            'Firestore に拒否されました。firestore.rules が本番に反映されていない可能性があります'
+            + '（./scripts/deploy-firestore-rules.sh を実行してください）'
+        );
+    }
+    return e instanceof Error ? e : new Error(fallbackMessage || '処理に失敗しました');
+}
+
+/** 提案を作成する。種目の組み合わせに制限はない（タイムアタックは何個でも可）。 */
 async function createSpecialEventProposal(exercises, week, approvers) {
     if (!currentUser) throw new Error('ログインが必要です');
     if (exercises.length !== SPECIAL_EVENT_EXERCISE_COUNT) {
@@ -12390,21 +12408,26 @@ async function createSpecialEventProposal(exercises, week, approvers) {
     const approverNames = {};
     approvers.forEach(a => { approverNames[a.userId] = a.userName; });
 
-    await db.collection(SPECIAL_EVENT_COL).add({
-        proposerId: currentUser.uid,
-        proposerName,
-        exercises,
-        exerciseNames: exercises.map(k => (freeExercises[k] && freeExercises[k].name) || k),
-        targetWeekStart: firebase.firestore.Timestamp.fromDate(week.weekStart),
-        mondayKey: week.mondayKey,
-        periodLabel: week.periodLabel,
-        label: `特別イベント（${proposerName}提案）`,
-        approverIds: approvers.map(a => a.userId),
-        approverNames,
-        responses: {},
-        status: 'pending',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    try {
+        await db.collection(SPECIAL_EVENT_COL).add({
+            proposerId: currentUser.uid,
+            proposerName,
+            exercises,
+            exerciseNames: exercises.map(k => (freeExercises[k] && freeExercises[k].name) || k),
+            targetWeekStart: firebase.firestore.Timestamp.fromDate(week.weekStart),
+            mondayKey: week.mondayKey,
+            periodLabel: week.periodLabel,
+            label: `特別イベント（${proposerName}提案）`,
+            approverIds: approvers.map(a => a.userId),
+            approverNames,
+            responses: {},
+            status: 'pending',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (e) {
+        console.error('[特別イベント] 提案の作成に失敗:', e);
+        throw toSpecialEventError(e, '提案の送信に失敗しました');
+    }
     specialEventWeekUsageCache = null;
 }
 
@@ -12440,29 +12463,35 @@ async function respondToSpecialEventProposal(proposalId, decision, comment = '')
     if (invalidComment) throw new Error(invalidComment);
     const ref = db.collection(SPECIAL_EVENT_COL).doc(proposalId);
 
-    const nextStatus = await db.runTransaction(async (tx) => {
-        const snap = await tx.get(ref);
-        if (!snap.exists) throw new Error('提案が見つかりません');
-        const data = snap.data();
-        const approverIds = data.approverIds || [];
-        if (!approverIds.includes(currentUser.uid)) throw new Error('この提案の承認者ではありません');
-        const current = data.status || 'pending';
-        if (current !== 'pending') return current;
+    let nextStatus;
+    try {
+        nextStatus = await db.runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            if (!snap.exists) throw new Error('提案が見つかりません');
+            const data = snap.data();
+            const approverIds = data.approverIds || [];
+            if (!approverIds.includes(currentUser.uid)) throw new Error('この提案の承認者ではありません');
+            const current = data.status || 'pending';
+            if (current !== 'pending') return current;
 
-        const responses = Object.assign({}, data.responses || {});
-        responses[currentUser.uid] = {
-            decision,
-            at: firebase.firestore.Timestamp.now(),
-            comment: normalizeSpecialEventComment(decision, comment)
-        };
-        const status = resolveSpecialEventStatus(approverIds, responses);
-        tx.update(ref, {
-            responses,
-            status,
-            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            const responses = Object.assign({}, data.responses || {});
+            responses[currentUser.uid] = {
+                decision,
+                at: firebase.firestore.Timestamp.now(),
+                comment: normalizeSpecialEventComment(decision, comment)
+            };
+            const status = resolveSpecialEventStatus(approverIds, responses);
+            tx.update(ref, {
+                responses,
+                status,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            return status;
         });
-        return status;
-    });
+    } catch (e) {
+        console.error('[特別イベント] 承認/否認の記録に失敗:', e);
+        throw toSpecialEventError(e, '回答の送信に失敗しました');
+    }
     specialEventWeekUsageCache = null;
 
     if (nextStatus === 'approved') {
@@ -12624,6 +12653,7 @@ function renderSpecialEventProposalForm(errorMessage = '') {
             <span class="se-section-title"><i class="fa-solid fa-dumbbell"></i> 種目</span>
             <span class="se-counter">${selectedEx.length}/${SPECIAL_EVENT_EXERCISE_COUNT}</span>
         </div>
+        <p class="se-muted">組み合わせは自由です。自動選出とは違い、タイムアタック種目は何個選んでも構いません（0個でも可）</p>
         <div class="se-pick-list">${exerciseHtml}</div>
 
         <div class="se-section-head">

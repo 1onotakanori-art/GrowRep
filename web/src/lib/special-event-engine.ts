@@ -46,6 +46,28 @@ import {
 } from './special-event';
 import type { FreeExerciseMap, Post, UserData } from './types';
 
+/**
+ * Firestore の permission-denied を、原因の分かる日本語にして返す。
+ *
+ * special_event_proposals は後から足したコレクションなので、
+ * firestore.rules を本番へデプロイし忘れていると「ルール未定義＝全拒否」で
+ * 落ちる。素の "Missing or insufficient permissions." のままだと
+ * 何が悪いのか分からないため、対処法まで書いて投げ直す。
+ */
+function toSpecialEventError(e: unknown, fallbackMessage: string): Error {
+  if (
+    typeof e === 'object' &&
+    e !== null &&
+    (e as { code?: string }).code === 'permission-denied'
+  ) {
+    return new Error(
+      'Firestore に拒否されました。firestore.rules が本番に反映されていない可能性があります' +
+        '（./scripts/deploy-firestore-rules.sh を実行してください）',
+    );
+  }
+  return e instanceof Error ? e : new Error(fallbackMessage);
+}
+
 const COL = 'special_event_proposals';
 const SETTINGS = 'settings_free';
 /** 承認者候補・週別利用状況のメモリキャッシュ寿命。users のキャッシュと同じ5分。 */
@@ -251,7 +273,10 @@ export interface CreateProposalInput {
   freeExercises: FreeExerciseMap;
 }
 
-/** 提案を作成する。入力の妥当性はここでも最終チェックする。 */
+/**
+ * 提案を作成する。入力の妥当性はここでも最終チェックする。
+ * 種目の組み合わせに制限はない（タイムアタックは何個でも選べる）。
+ */
 export async function createSpecialEventProposal(
   input: CreateProposalInput,
 ): Promise<string> {
@@ -271,21 +296,27 @@ export async function createSpecialEventProposal(
     approverNames[a.userId] = a.userName;
   });
 
-  const ref = await addDoc(collection(db, COL), {
-    proposerId: proposer.uid,
-    proposerName: proposer.name,
-    exercises,
-    exerciseNames: exercises.map((k) => freeExercises[k]?.name || k),
-    targetWeekStart: Timestamp.fromDate(week.weekStart),
-    mondayKey: week.mondayKey,
-    periodLabel: week.periodLabel,
-    label: `特別イベント（${proposer.name}提案）`,
-    approverIds: approvers.map((a) => a.userId),
-    approverNames,
-    responses: {},
-    status: 'pending' as ProposalStatus,
-    createdAt: serverTimestamp(),
-  });
+  let ref;
+  try {
+    ref = await addDoc(collection(db, COL), {
+      proposerId: proposer.uid,
+      proposerName: proposer.name,
+      exercises,
+      exerciseNames: exercises.map((k) => freeExercises[k]?.name || k),
+      targetWeekStart: Timestamp.fromDate(week.weekStart),
+      mondayKey: week.mondayKey,
+      periodLabel: week.periodLabel,
+      label: `特別イベント（${proposer.name}提案）`,
+      approverIds: approvers.map((a) => a.userId),
+      approverNames,
+      responses: {},
+      status: 'pending' as ProposalStatus,
+      createdAt: serverTimestamp(),
+    });
+  } catch (e) {
+    console.error('[特別イベント] 提案の作成に失敗:', e);
+    throw toSpecialEventError(e, '提案の送信に失敗しました');
+  }
   weekUsageCache = null;
   return ref.id;
 }
@@ -307,29 +338,35 @@ export async function respondToProposal(
   if (invalidComment) throw new Error(invalidComment);
   const ref = doc(db, COL, proposalId);
 
-  const nextStatus = await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('提案が見つかりません');
-    const data = snap.data() as ProposalDoc;
-    const approverIds = data.approverIds || [];
-    if (!approverIds.includes(userId)) {
-      throw new Error('この提案の承認者ではありません');
-    }
-    const current = data.status || 'pending';
-    if (current !== 'pending') return current;
+  let nextStatus: ProposalStatus;
+  try {
+    nextStatus = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error('提案が見つかりません');
+      const data = snap.data() as ProposalDoc;
+      const approverIds = data.approverIds || [];
+      if (!approverIds.includes(userId)) {
+        throw new Error('この提案の承認者ではありません');
+      }
+      const current = data.status || 'pending';
+      if (current !== 'pending') return current;
 
-    const responses: Record<string, ApprovalResponse> = {
-      ...(data.responses || {}),
-      [userId]: {
-        decision,
-        at: Timestamp.now(),
-        comment: normalizeDecisionComment(decision, comment),
-      },
-    };
-    const status = resolveProposalStatus(approverIds, responses);
-    tx.update(ref, { responses, status, updatedAt: serverTimestamp() });
-    return status;
-  });
+      const responses: Record<string, ApprovalResponse> = {
+        ...(data.responses || {}),
+        [userId]: {
+          decision,
+          at: Timestamp.now(),
+          comment: normalizeDecisionComment(decision, comment),
+        },
+      };
+      const status = resolveProposalStatus(approverIds, responses);
+      tx.update(ref, { responses, status, updatedAt: serverTimestamp() });
+      return status;
+    });
+  } catch (e) {
+    console.error('[特別イベント] 承認/否認の記録に失敗:', e);
+    throw toSpecialEventError(e, '回答の送信に失敗しました');
+  }
   weekUsageCache = null;
 
   if (nextStatus === 'approved') {

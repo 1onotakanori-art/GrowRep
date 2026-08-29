@@ -193,6 +193,10 @@ export default function SpecialEventProposalModal({
             {exercises.length}/{SPECIAL_EVENT_EXERCISE_COUNT}
           </span>
         </div>
+        <p className={styles.muted}>
+          組み合わせは自由です。自動選出とは違い、タイムアタック種目は何個選んでも
+          構いません（0個でも可）
+        </p>
         {pickable.length === 0 ? (
           <p className={styles.muted}>選べる種目がありません</p>
         ) : (

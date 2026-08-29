@@ -104,9 +104,19 @@ Firestore コレクション `special_event_proposals`（1提案 = 1ドキュメ
 }
 ```
 
+種目の組み合わせに制限はありません。週間チャレンジの**自動選出**はタイムアタック
+（barbarian）種目をちょうど1つ含める仕様ですが、特別イベントは提案者が選んだ4種目を
+そのまま `weekly_override` に流すため、タイムアタックを2つ以上選んでも、逆に0にしても
+構いません。
+
 セキュリティルール（`firestore.rules`）では、作成は提案者本人のみ、更新は
 **承認者本人が `responses` / `status` / `updatedAt` を変更する場合**か、
 **提案者本人が `resultSeenAt` だけを変更する場合**のみ許可しています。
+
+⚠️ `firestore.rules` は GitHub Actions のフロントエンド配信では反映されません。
+変更したら `./scripts/deploy-firestore-rules.sh` を実行してください。未反映のままだと
+`special_event_proposals` への書き込みが `Missing or insufficient permissions.` で
+失敗します。
 
 ### ⚠️ 週間ロジックの二重管理に関する注意
 

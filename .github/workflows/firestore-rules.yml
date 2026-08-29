@@ -1,0 +1,58 @@
+name: Deploy Firestore Rules
+
+# firestore.rules は GitHub Pages のデプロイ（deploy.yml）では配信されない。
+# 反映し忘れると新しいコレクションが「ルール未定義＝全拒否」になり、アプリには
+# "Missing or insufficient permissions." としか出ないため、ここで自動化する。
+#
+# 必要な設定（未設定なら安全にスキップする）:
+#   リポジトリ Secrets に FIREBASE_SERVICE_ACCOUNT を登録する。
+#   値は Firebase コンソール → プロジェクトの設定 → サービスアカウント →
+#   「新しい秘密鍵の生成」で落とした JSON をそのまま貼り付ける。
+#   （手元から流す場合は ./scripts/deploy-firestore-rules.sh でも同じことができる）
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firestore.rules'
+      - 'firebase.json'
+      - '.firebaserc'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for service account secret
+        id: check
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "has_secret=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::FIREBASE_SERVICE_ACCOUNT が未設定のためスキップします。手元から ./scripts/deploy-firestore-rules.sh を実行してください。"
+          else
+            echo "has_secret=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        if: steps.check.outputs.has_secret == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Deploy firestore.rules
+        if: steps.check.outputs.has_secret == 'true'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/service-account.json
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$SA" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          npx --yes firebase-tools deploy --only firestore:rules --project prod --non-interactive
+          rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
