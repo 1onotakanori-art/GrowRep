@@ -7,7 +7,7 @@ import {
   type PostInput,
   type UserRecords,
 } from './scoring';
-import { getActiveWeeklyKeys } from './time-jst';
+import { activeWeeklyKeysOf } from './time-jst';
 import type {
   FreeExerciseMap,
   Post,
@@ -49,7 +49,7 @@ export async function loadWeeklyScores(
   weeklyConfig: WeeklyConfig,
 ): Promise<{ records: UserRecords; exerciseKeys: string[] }> {
   const { weekStart, weekEnd } = weeklyChallenge;
-  const exerciseKeys = getActiveWeeklyKeys(weeklyChallenge.exercises).filter(
+  const exerciseKeys = activeWeeklyKeysOf(weeklyChallenge).filter(
     (k) => freeExercises[k],
   );
   const [posts, usersData] = await Promise.all([

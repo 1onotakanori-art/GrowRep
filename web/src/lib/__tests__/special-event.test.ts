@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   canWithdrawProposal,
   getProposableWeeks,
+  mondayKeyOfWeekStart,
+  planWeeklyOverride,
+  resolveApprovedOutcome,
+  resolveDisplayStatus,
+  weeklyOverrideDocId,
   listDecisions,
   listRejections,
   needsResultNoticeFor,
@@ -173,10 +178,13 @@ describe('提案者への結果通知', () => {
     },
   };
 
+  // 対象週がまだ来ていない前提（過ぎていると期限切れ扱いになる）
+  const future = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
   it('回答が揃うまでは出さない', () => {
     expect(
       needsResultNoticeFor(
-        { proposerId: 'me', status: 'pending', resultSeenAt: null },
+        { proposerId: 'me', status: 'pending', resultSeenAt: null, targetWeekStart: future },
         'me',
       ),
     ).toBe(false);
@@ -185,13 +193,13 @@ describe('提案者への結果通知', () => {
   it('確定していて未確認なら出す', () => {
     expect(
       needsResultNoticeFor(
-        { proposerId: 'me', status: 'rejected', resultSeenAt: null },
+        { proposerId: 'me', status: 'rejected', resultSeenAt: null, targetWeekStart: future },
         'me',
       ),
     ).toBe(true);
     expect(
       needsResultNoticeFor(
-        { proposerId: 'me', status: 'approved', resultSeenAt: null },
+        { proposerId: 'me', status: 'approved', resultSeenAt: null, targetWeekStart: future },
         'me',
       ),
     ).toBe(true);
@@ -200,7 +208,7 @@ describe('提案者への結果通知', () => {
   it('確認済みなら二度と出さない', () => {
     expect(
       needsResultNoticeFor(
-        { proposerId: 'me', status: 'rejected', resultSeenAt: new Date() },
+        { proposerId: 'me', status: 'rejected', resultSeenAt: new Date(), targetWeekStart: future },
         'me',
       ),
     ).toBe(false);
@@ -209,7 +217,7 @@ describe('提案者への結果通知', () => {
   it('提案者本人以外には出さない', () => {
     expect(
       needsResultNoticeFor(
-        { proposerId: 'me', status: 'rejected', resultSeenAt: null },
+        { proposerId: 'me', status: 'rejected', resultSeenAt: null, targetWeekStart: future },
         'other',
       ),
     ).toBe(false);
@@ -218,7 +226,7 @@ describe('提案者への結果通知', () => {
   it('自分で取り下げた提案には結果ポップアップを出さない', () => {
     expect(
       needsResultNoticeFor(
-        { proposerId: 'me', status: 'withdrawn', resultSeenAt: null },
+        { proposerId: 'me', status: 'withdrawn', resultSeenAt: null, targetWeekStart: future },
         'me',
       ),
     ).toBe(false);
@@ -294,36 +302,39 @@ describe('needsResponseFrom（ポップアップを出すか）', () => {
 });
 
 describe('canWithdrawProposal（提案の取り下げ）', () => {
+  // 対象週がまだ来ていない前提（過ぎていると期限切れで取り下げ不可）
+  const future = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
   it('自分の回答待ちの提案は取り下げられる', () => {
-    expect(canWithdrawProposal({ proposerId: 'me', status: 'pending' }, 'me')).toBe(
+    expect(canWithdrawProposal({ proposerId: 'me', status: 'pending', targetWeekStart: future }, 'me')).toBe(
       true,
     );
   });
 
   it('他人の提案は取り下げられない', () => {
     expect(
-      canWithdrawProposal({ proposerId: 'other', status: 'pending' }, 'me'),
+      canWithdrawProposal({ proposerId: 'other', status: 'pending', targetWeekStart: future }, 'me'),
     ).toBe(false);
   });
 
   it('確定済み（承認/否認）の提案は取り下げられない', () => {
     // 承認済みは weekly_override へ反映済みかもしれないので触らせない
     expect(
-      canWithdrawProposal({ proposerId: 'me', status: 'approved' }, 'me'),
+      canWithdrawProposal({ proposerId: 'me', status: 'approved', targetWeekStart: future }, 'me'),
     ).toBe(false);
     expect(
-      canWithdrawProposal({ proposerId: 'me', status: 'rejected' }, 'me'),
+      canWithdrawProposal({ proposerId: 'me', status: 'rejected', targetWeekStart: future }, 'me'),
     ).toBe(false);
   });
 
   it('取り下げ済みの提案をもう一度は取り下げられない', () => {
     expect(
-      canWithdrawProposal({ proposerId: 'me', status: 'withdrawn' }, 'me'),
+      canWithdrawProposal({ proposerId: 'me', status: 'withdrawn', targetWeekStart: future }, 'me'),
     ).toBe(false);
   });
 
   it('未ログイン（userId 空）では取り下げられない', () => {
-    expect(canWithdrawProposal({ proposerId: 'me', status: 'pending' }, '')).toBe(
+    expect(canWithdrawProposal({ proposerId: 'me', status: 'pending', targetWeekStart: future }, '')).toBe(
       false,
     );
   });
@@ -470,5 +481,236 @@ describe('validateProposalInput（特別イベントに種目の組み合わせ�
         approverIds: ['a', 'b'],
       }),
     ).toBe('承認者を3人選んでください');
+  });
+});
+
+
+describe('休止週は提案できない', () => {
+  // raid-mode.ts の WEEKLY_PAUSE_WEEK_KEYS = ['2026-08-09']（日曜17:00起点の週）。
+  // 月曜キーでは 2026-08-10 の週にあたる
+  it('getProposableWeeks は休止週に paused を立てる', () => {
+    const weeks = getProposableWeeks(jst(2026, 7, 22, 13));
+    expect(weeks.map((w) => [w.mondayKey, w.paused])).toEqual([
+      ['2026-07-27', false],
+      ['2026-08-03', false],
+      ['2026-08-10', true],
+      ['2026-08-17', false],
+    ]);
+  });
+
+  it('休止週を選んだ提案は入力チェックで弾く', () => {
+    const paused = getProposableWeeks(jst(2026, 7, 22, 13))[2];
+    expect(
+      validateProposalInput({
+        exercises: ['a', 'b', 'c', 'd'],
+        weekStart: paused.weekStart,
+        approverIds: ['x', 'y', 'z'],
+      }),
+    ).toBe('その週は週間チャレンジが休止しているため選べません');
+  });
+});
+
+describe('週ごとの上書き設定ドキュメント', () => {
+  it('対象週の月曜キーからドキュメントIDを作る', () => {
+    expect(weeklyOverrideDocId('2026-09-07')).toBe(
+      'weekly_override_2026-09-07',
+    );
+  });
+
+  it('週開始（日曜17:00 JST）から月曜キーを求める', () => {
+    // 2026-09-06(日) 17:00 JST 起点の週 → 月曜は 9/7
+    expect(mondayKeyOfWeekStart(jst(2026, 9, 6, 17))).toBe('2026-09-07');
+  });
+
+  it('提案の mondayKey と週開始から求めた月曜キーは一致する', () => {
+    getProposableWeeks(jst(2026, 7, 22, 13)).forEach((w) => {
+      expect(mondayKeyOfWeekStart(w.weekStart)).toBe(w.mondayKey);
+    });
+  });
+});
+
+describe('resolveDisplayStatus（期限切れの導出）', () => {
+  const target = jst(2026, 8, 2, 17); // 8/3(月)の週の開始
+
+  it('対象週が来る前の pending はそのまま pending', () => {
+    expect(
+      resolveDisplayStatus(
+        { status: 'pending', targetWeekStart: target },
+        jst(2026, 8, 1, 12),
+      ),
+    ).toBe('pending');
+  });
+
+  it('回答が揃わないまま対象週が始まったら expired', () => {
+    expect(
+      resolveDisplayStatus(
+        { status: 'pending', targetWeekStart: target },
+        jst(2026, 8, 3, 9),
+      ),
+    ).toBe('expired');
+  });
+
+  it('確定済みの status は対象週が過ぎても変えない', () => {
+    expect(
+      resolveDisplayStatus(
+        { status: 'approved', targetWeekStart: target },
+        jst(2026, 8, 3, 9),
+      ),
+    ).toBe('approved');
+    expect(
+      resolveDisplayStatus(
+        { status: 'withdrawn', targetWeekStart: target },
+        jst(2026, 8, 3, 9),
+      ),
+    ).toBe('withdrawn');
+  });
+
+  it('期限切れの提案は取り下げられず、結果ポップアップで知らせる', () => {
+    const proposal = {
+      proposerId: 'me',
+      status: 'pending' as const,
+      targetWeekStart: target,
+      resultSeenAt: null,
+    };
+    const after = jst(2026, 8, 3, 9);
+    expect(canWithdrawProposal(proposal, 'me', after)).toBe(false);
+    expect(needsResultNoticeFor(proposal, 'me', after)).toBe(true);
+    // 対象週が来る前は逆（取り下げられるが、結果はまだ出さない）
+    const before = jst(2026, 8, 1, 12);
+    expect(canWithdrawProposal(proposal, 'me', before)).toBe(true);
+    expect(needsResultNoticeFor(proposal, 'me', before)).toBe(false);
+  });
+});
+
+describe('resolveApprovedOutcome（承認された提案が本当に反映されたか）', () => {
+  const proposal = { id: 'p1' };
+
+  it('対象週の設定が自分の提案なら applied', () => {
+    expect(
+      resolveApprovedOutcome(proposal, { exists: true, proposalId: 'p1' }),
+    ).toEqual({ kind: 'applied' });
+  });
+
+  it('別の提案に上書きされていたら superseded', () => {
+    expect(
+      resolveApprovedOutcome(proposal, {
+        exists: true,
+        proposalId: 'p2',
+        label: '特別イベント（ほかの人提案）',
+      }),
+    ).toEqual({
+      kind: 'superseded',
+      byLabel: '特別イベント（ほかの人提案）',
+      byAdmin: false,
+    });
+  });
+
+  it('管理画面の手動上書き（proposalId なし）は byAdmin', () => {
+    expect(
+      resolveApprovedOutcome(proposal, {
+        exists: true,
+        proposalId: null,
+        label: '運営からの挑戦状',
+        source: 'admin',
+      }),
+    ).toEqual({
+      kind: 'superseded',
+      byLabel: '運営からの挑戦状',
+      byAdmin: true,
+    });
+  });
+
+  it('判定材料がなければ unknown（余計なことを言わない）', () => {
+    expect(resolveApprovedOutcome(proposal, null)).toEqual({ kind: 'unknown' });
+    expect(resolveApprovedOutcome(proposal, { exists: false })).toEqual({
+      kind: 'unknown',
+    });
+  });
+});
+
+
+describe('planWeeklyOverride（週切り替え時にどの上書き設定を使うか）', () => {
+  const weekStart = jst(2026, 8, 2, 17); // 8/3(月)の週
+  const nextWeek = jst(2026, 8, 9, 17);
+  const prevWeek = jst(2026, 7, 26, 17);
+  const four = ['a', 'b', 'c', 'd'];
+
+  it('対象週ごとのドキュメントがあればそれを使う', () => {
+    expect(
+      planWeeklyOverride({
+        weekOverride: { exercises: four },
+        legacyOverride: null,
+        weekStart,
+      }),
+    ).toEqual({ use: 'week', cleanupLegacy: false });
+  });
+
+  it('適用済み（invalidated）や空の設定は使わない', () => {
+    expect(
+      planWeeklyOverride({
+        weekOverride: { exercises: four, invalidated: true },
+        legacyOverride: null,
+        weekStart,
+      }),
+    ).toEqual({ use: null, cleanupLegacy: false });
+    expect(
+      planWeeklyOverride({
+        weekOverride: { exercises: [] },
+        legacyOverride: null,
+        weekStart,
+      }),
+    ).toEqual({ use: null, cleanupLegacy: false });
+  });
+
+  it('旧形式は対象週が一致するときだけ使う', () => {
+    expect(
+      planWeeklyOverride({
+        weekOverride: null,
+        legacyOverride: { exercises: four, targetWeekStart: weekStart },
+        weekStart,
+      }),
+    ).toEqual({ use: 'legacy', cleanupLegacy: false });
+  });
+
+  it('対象週を持たない旧々形式は後方互換でそのまま使う', () => {
+    expect(
+      planWeeklyOverride({
+        weekOverride: null,
+        legacyOverride: { exercises: four },
+        weekStart,
+      }),
+    ).toEqual({ use: 'legacy', cleanupLegacy: false });
+  });
+
+  it('先の週を狙った旧形式の設定は今週使わないが、消しもしない', () => {
+    // ここで消していたせいで、2週先以降を狙った承認済みイベントが
+    // 手前の週切り替えで失われていた（今回の修正点）
+    expect(
+      planWeeklyOverride({
+        weekOverride: null,
+        legacyOverride: { exercises: four, targetWeekStart: nextWeek },
+        weekStart,
+      }),
+    ).toEqual({ use: null, cleanupLegacy: false });
+  });
+
+  it('過ぎた週を狙った旧形式の設定だけ掃除する', () => {
+    expect(
+      planWeeklyOverride({
+        weekOverride: null,
+        legacyOverride: { exercises: four, targetWeekStart: prevWeek },
+        weekStart,
+      }),
+    ).toEqual({ use: null, cleanupLegacy: true });
+  });
+
+  it('週ごとドキュメントは旧形式より優先される', () => {
+    expect(
+      planWeeklyOverride({
+        weekOverride: { exercises: four },
+        legacyOverride: { exercises: ['x'], targetWeekStart: weekStart },
+        weekStart,
+      }),
+    ).toEqual({ use: 'week', cleanupLegacy: false });
   });
 });

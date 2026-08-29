@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useToast } from '../../context/ToastContext';
 import {
-  getActiveWeeklyKeys,
+  activeWeeklyKeysOf,
   isRevealUnlockedJST,
   isPredictionOpenJST,
   buildChampionDocMeta,
@@ -65,8 +65,7 @@ export default function ThisWeek() {
   }, [weekStartMs, user]);
 
   const activeKeys = useMemo(
-    () =>
-      weeklyChallenge ? getActiveWeeklyKeys(weeklyChallenge.exercises) : [],
+    () => activeWeeklyKeysOf(weeklyChallenge),
     [weeklyChallenge],
   );
   const lockedCount = weeklyChallenge

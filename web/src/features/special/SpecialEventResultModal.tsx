@@ -1,17 +1,27 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Modal from '../../components/Modal';
 import { useToast } from '../../context/ToastContext';
 import {
   listDecisions,
+  resolveDisplayStatus,
+  type ApprovedOutcome,
   type SpecialEventProposal,
 } from '../../lib/special-event';
-import { markProposalResultSeen } from '../../lib/special-event-engine';
+import {
+  loadApprovedOutcome,
+  markProposalResultSeen,
+} from '../../lib/special-event-engine';
 import styles from './SpecialEvent.module.css';
 
 /**
  * 提案者に結果を返すポップアップ。
- * 承認者3人ぶんの承認/否認が出揃った提案だけを、確認するまで出し続ける。
+ * 承認者3人ぶんの承認/否認が出揃った提案と、回答が揃わないまま対象週が
+ * 始まってしまった提案（期限切れ）を、確認するまで出し続ける。
  * 否認された場合は、否認した人ごとの理由コメントをそのまま表示する。
+ *
+ * 承認された提案でも、同じ週に別の提案があとから承認されていたり管理者が
+ * 手動設定していれば上書きされている。対象週の上書き設定を読んで、
+ * 実際に自分の提案が採用されたのかまで伝える。
  */
 export default function SpecialEventResultModal({
   proposals,
@@ -29,11 +39,52 @@ export default function SpecialEventResultModal({
   const [busy, setBusy] = useState(false);
 
   const proposal = queue[index];
+  // 承認された提案が実際に対象週へ反映されたか（別のイベントに負けていないか）
+  const [outcome, setOutcome] = useState<ApprovedOutcome>({ kind: 'unknown' });
+
+  const display = proposal ? resolveDisplayStatus(proposal) : 'pending';
+
+  useEffect(() => {
+    if (!proposal || display !== 'approved') {
+      setOutcome({ kind: 'unknown' });
+      return;
+    }
+    let alive = true;
+    setOutcome({ kind: 'unknown' });
+    loadApprovedOutcome(proposal).then((o) => {
+      if (alive) setOutcome(o);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [proposal, display]);
+
   if (!proposal) return null;
 
-  const approved = proposal.status === 'approved';
+  const approved = display === 'approved';
+  const expired = display === 'expired';
+  const superseded = approved && outcome.kind === 'superseded';
+  // 「反映される」と言い切れるのは、承認され、かつ上書きされていない時だけ
+  const good = approved && !superseded;
   const decisions = listDecisions(proposal);
   const rejections = decisions.filter((d) => d.decision === 'rejected');
+
+  const resultTitle = expired
+    ? '期限切れになりました'
+    : superseded
+      ? '別のイベントに差し替えられました'
+      : approved
+        ? '承認されました'
+        : '否認されました';
+  const resultSub = expired
+    ? `${proposal.periodLabel} が始まるまでに承認者全員の回答が揃いませんでした`
+    : superseded && outcome.kind === 'superseded'
+      ? `承認はされましたが、${proposal.periodLabel} は「${outcome.byLabel}」に上書きされました（${
+          outcome.byAdmin ? '管理者の手動設定' : 'あとから承認された別の提案'
+        }）`
+      : approved
+        ? `${proposal.periodLabel} の週間チャレンジが、あなたの提案した種目に差し替わります`
+        : `${proposal.periodLabel} の提案は見送りになりました`;
 
   async function confirm() {
     setBusy(true);
@@ -67,21 +118,12 @@ export default function SpecialEventResultModal({
           </p>
         )}
 
-        <div
-          className={approved ? styles.resultOk : styles.resultNg}
-          role="status"
-        >
+        <div className={good ? styles.resultOk : styles.resultNg} role="status">
           <i
-            className={`fa-solid ${approved ? 'fa-circle-check' : 'fa-circle-xmark'}`}
+            className={`fa-solid ${good ? 'fa-circle-check' : 'fa-circle-xmark'}`}
           />
-          <span className={styles.resultTitle}>
-            {approved ? '承認されました' : '否認されました'}
-          </span>
-          <span className={styles.resultSub}>
-            {approved
-              ? `${proposal.periodLabel} の週間チャレンジが、あなたの提案した種目に差し替わります`
-              : `${proposal.periodLabel} の提案は見送りになりました`}
-          </span>
+          <span className={styles.resultTitle}>{resultTitle}</span>
+          <span className={styles.resultSub}>{resultSub}</span>
         </div>
 
         <div className={styles.periodCard}>
@@ -94,7 +136,7 @@ export default function SpecialEventResultModal({
           </div>
         </div>
 
-        {!approved && rejections.length > 0 && (
+        {rejections.length > 0 && (
           <>
             <div className={styles.sectionHead}>
               <span className={styles.sectionTitle}>

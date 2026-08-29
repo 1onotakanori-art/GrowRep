@@ -3,12 +3,16 @@
 //
 // コレクション: special_event_proposals
 // 3人全員の回答が揃った時点で結果が確定し、全員承認なら
-// settings_free/weekly_override を書き込んで対象週の週間チャレンジを
-// 提案どおりの種目に差し替える。否認理由は responses[uid].comment に残り、
-// 提案者への結果ポップアップで表示される。
+// settings_free/weekly_override_<対象週の月曜キー> を書き込んで対象週の
+// 週間チャレンジを提案どおりの種目に差し替える。否認理由は
+// responses[uid].comment に残り、提案者への結果ポップアップで表示される。
 //
-// ⚠️ weekly_override のフィールド形状は app.js / admin.html /
-//    lib/weekly-engine.ts が読む既存仕様。変更しないこと。
+// 上書き設定を週ごとのドキュメントに分けているのは、別々の週を狙った
+// 承認済みイベントを同時に生かしておくため（単一ドキュメントだと後から
+// 承認された週が前の週の設定を消してしまう）。
+//
+// ⚠️ 上書き設定のフィールド形状とドキュメントIDは app.js / admin.html /
+//    lib/weekly-engine.ts が読む既存仕様。変更したら全部そろえること。
 // =====================================================================
 import {
   addDoc,
@@ -33,17 +37,21 @@ import {
   getApproverActiveSince,
   isTargetWeekUpcoming,
   normalizeDecisionComment,
+  resolveApprovedOutcome,
   resolveProposalStatus,
   validateDecisionComment,
   validateProposalInput,
+  weeklyOverrideDocId,
   SPECIAL_EVENT_APPROVER_COUNT,
   type ApprovalDecision,
   type ApprovalResponse,
   type ApproverCandidate,
+  type ApprovedOutcome,
   type CandidatePost,
   type ProposableWeek,
   type ProposalStatus,
   type SpecialEventProposal,
+  type WeekOverrideSnapshot,
 } from './special-event';
 import type { FreeExerciseMap, Post, UserData } from './types';
 
@@ -326,7 +334,7 @@ export async function createSpecialEventProposal(
 
 /**
  * 承認/否認を記録する。3人の回答が揃い、全員承認だった時だけ
- * weekly_override へ反映する。同時回答に備えてトランザクションで
+ * 対象週の上書き設定へ反映する。同時回答に備えてトランザクションで
  * 読み直してから書く。
  *
  * 否認の場合は理由コメントが必須（提案者へのポップアップで表示する）。
@@ -353,6 +361,17 @@ export async function respondToProposal(
       }
       const current = data.status || 'pending';
       if (current !== 'pending') return current;
+      // ポップアップを開いたまま週境界（日曜17:00 JST）をまたいだ場合。
+      // ここで承認を通すと status だけ approved になって上書き設定は書けない
+      // （＝提案者に「承認されました」と嘘をつく）ので、回答自体を断る。
+      const targetWeekStart = data.targetWeekStart
+        ? data.targetWeekStart.toDate()
+        : new Date(0);
+      if (!isTargetWeekUpcoming(targetWeekStart)) {
+        throw new Error(
+          '対象週が始まったため、この提案は期限切れです（回答は記録されません）',
+        );
+      }
 
       const responses: Record<string, ApprovalResponse> = {
         ...(data.responses || {}),
@@ -387,7 +406,7 @@ export async function respondToProposal(
  * 自分の提案を取り下げる（pending → withdrawn）。
  *
  * 承認者の回答が1つでも入っている途中でも取り下げてよい。ただし3人ぶんが
- * 揃って status が確定したあとは触らせない（weekly_override へ反映済みの
+ * 揃って status が確定したあとは触らせない（上書き設定へ反映済みの
  * 可能性があるため）。取り下げと同時に別の承認者が回答して確定する競合が
  * あるので、トランザクションで status を読み直してから書く。
  */
@@ -405,10 +424,13 @@ export async function withdrawProposal(
         throw new Error('自分が出した提案だけ取り下げられます');
       }
       if (proposal.status === 'withdrawn') return; // 二重クリックは成功扱い
-      if (!canWithdrawProposal(proposal, userId)) {
+      if (proposal.status !== 'pending') {
         throw new Error(
           'すでに承認者全員の回答が揃っているため取り下げられません',
         );
+      }
+      if (!canWithdrawProposal(proposal, userId)) {
+        throw new Error('対象週が始まっているため取り下げられません');
       }
       tx.update(ref, {
         status: 'withdrawn' as ProposalStatus,
@@ -435,18 +457,25 @@ export async function markProposalResultSeen(proposalId: string): Promise<void> 
 }
 
 /**
- * 承認済みの提案を weekly_override に反映する。
+ * 承認済みの提案を対象週の上書き設定に反映する。
  * 対象週が始まる前だけ書き込む（過ぎていたら反映しない）。
+ *
+ * 書き込み先は週ごとのドキュメント settings_free/weekly_override_<月曜キー>。
+ * 他の週を狙った承認済みイベントとは別ドキュメントなので潰し合わない。
+ * 同じ週に複数の提案が承認された場合だけは後勝ちで、負けた側の提案者には
+ * 結果ポップアップで「別のイベントに上書きされた」と伝える
+ * （loadApprovedOutcome / resolveApprovedOutcome）。
  */
 export async function applyApprovedProposal(
   proposal: SpecialEventProposal,
   now: Date = new Date(),
 ): Promise<boolean> {
   if (!isTargetWeekUpcoming(proposal.targetWeekStart, now)) return false;
-  await setDoc(doc(db, SETTINGS, 'weekly_override'), {
+  await setDoc(doc(db, SETTINGS, weeklyOverrideDocId(proposal.mondayKey)), {
     exercises: proposal.exercises,
     label: proposal.label,
     targetWeekStart: Timestamp.fromDate(proposal.targetWeekStart),
+    mondayKey: proposal.mondayKey,
     invalidated: false,
     setAt: serverTimestamp(),
     setBy: proposal.proposerId,
@@ -454,4 +483,40 @@ export async function applyApprovedProposal(
     proposalId: proposal.id,
   });
   return true;
+}
+
+/** 対象週の上書き設定を読む（「どの提案が勝ったか」の判定材料）。 */
+export async function loadWeekOverrideSnapshot(
+  mondayKey: string,
+): Promise<WeekOverrideSnapshot> {
+  if (!mondayKey) return { exists: false };
+  try {
+    const snap = await getDoc(doc(db, SETTINGS, weeklyOverrideDocId(mondayKey)));
+    if (!snap.exists()) return { exists: false };
+    const data = snap.data() as {
+      proposalId?: string;
+      label?: string;
+      source?: string;
+    };
+    return {
+      exists: true,
+      proposalId: data.proposalId || null,
+      label: data.label || null,
+      source: data.source || null,
+    };
+  } catch (e) {
+    console.warn('[特別イベント] 対象週の上書き設定を読めませんでした:', e);
+    return { exists: false };
+  }
+}
+
+/**
+ * 承認された提案が実際に対象週へ反映されたか（別のイベントに上書きされて
+ * いないか）を調べる。結果ポップアップと一覧の表示に使う。
+ */
+export async function loadApprovedOutcome(
+  proposal: SpecialEventProposal,
+): Promise<ApprovedOutcome> {
+  const override = await loadWeekOverrideSnapshot(proposal.mondayKey);
+  return resolveApprovedOutcome(proposal, override);
 }

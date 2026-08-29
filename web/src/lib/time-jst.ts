@@ -69,14 +69,34 @@ export function isRevealUnlockedJST(date: Date = new Date()): boolean {
 /**
  * 今アクティブな種目キーを返す。3種目以下は全件、4種目以上は
  * 先頭3種目 + 水曜13:00解禁後に末尾を追加。app.js: getActiveWeeklyKeys
+ *
+ * revealAll = true の週は水曜解禁をせず最初から全種目を返す。
+ * 特別イベント週（承認された提案の種目をそのまま出す週）がこれで、
+ * 承認者には4種目すべてを見せて承認させているので伏せる意味がない。
  */
 export function getActiveWeeklyKeys(
   exercises: string[] | undefined,
   now: Date = new Date(),
+  revealAll: boolean = false,
 ): string[] {
   const list = Array.isArray(exercises) ? exercises : [];
-  if (list.length <= 3) return list;
+  if (list.length <= 3 || revealAll) return list;
   return isRevealUnlockedJST(now) ? list : list.slice(0, 3);
+}
+
+/**
+ * 週間チャレンジのアクティブ種目キー。特別イベント週（isManualOverride）は
+ * 水曜解禁を適用しない。app.js: getActiveWeeklyKeysForCurrentWeek
+ */
+export function activeWeeklyKeysOf(
+  challenge: {
+    exercises?: string[];
+    isManualOverride?: boolean;
+  } | null,
+  now: Date = new Date(),
+): string[] {
+  if (!challenge) return [];
+  return getActiveWeeklyKeys(challenge.exercises, now, !!challenge.isManualOverride);
 }
 
 /** 予想受付中か（日曜17:00〜火曜24:00 JST）。app.js: isPredictionOpenJST */

@@ -4,7 +4,7 @@ import { useData } from '../context/DataContext';
 import { useMode } from '../context/ModeContext';
 import { useScores } from '../hooks/useScores';
 import { rankUsers } from '../lib/scoring';
-import { getActiveWeeklyKeys } from '../lib/time-jst';
+import { activeWeeklyKeysOf } from '../lib/time-jst';
 import { formatDailyCount, guessExerciseUnit } from '../lib/daily-mission';
 import {
   RAID_MODE_LABEL,
@@ -40,9 +40,7 @@ export default function HomeView({
     };
   }, [records, user]);
 
-  const activeKeys = weeklyChallenge
-    ? getActiveWeeklyKeys(weeklyChallenge.exercises)
-    : [];
+  const activeKeys = activeWeeklyKeysOf(weeklyChallenge);
   const lockedCount = weeklyChallenge
     ? weeklyChallenge.exercises.length - activeKeys.length
     : 0;

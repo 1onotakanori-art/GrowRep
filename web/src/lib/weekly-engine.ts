@@ -15,6 +15,7 @@ import {
   serverTimestamp,
   setDoc,
   Timestamp,
+  type DocumentReference,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { getExerciseRatingSummaries } from './ratings';
@@ -40,6 +41,11 @@ import {
 } from './scoring';
 import { RANKING_TIE_EPSILON } from './constants';
 import { isWeeklyPausedWeekStart, WEEKLY_PAUSE_LABEL } from './raid-mode';
+import {
+  mondayKeyOfWeekStart,
+  planWeeklyOverride,
+  weeklyOverrideDocId,
+} from './special-event';
 import type {
   FreeExerciseMap,
   Post,
@@ -49,6 +55,17 @@ import type {
 } from './types';
 
 const SETTINGS = 'settings_free';
+
+/** 上書き設定ドキュメント（週ごと／旧単一の両方で同じ形）。 */
+interface OverrideDoc {
+  invalidated?: boolean;
+  exercises?: string[];
+  targetWeekStart?: Timestamp;
+  label?: string;
+  /** 承認された提案のID（管理画面の手動上書きでは無い） */
+  proposalId?: string;
+  source?: string;
+}
 
 // ---------------------------------------------------------------------
 // 設定
@@ -82,9 +99,13 @@ async function maybeUpgradeCurrentWeekExercises(
     exercises?: string[];
     selectionHistory?: Record<string, number>;
     creatorSelectionHistory?: Record<string, number>;
+    isManualOverride?: boolean;
   },
   freeExercises: FreeExerciseMap,
 ): Promise<string[]> {
+  // 特別イベント週・手動上書き週は「指定された種目がすべて」。
+  // exerciseCount に足りなくても自動選出の種目を混ぜない
+  if (data.isManualOverride) return data.exercises || [];
   const existing = Array.isArray(data.exercises) ? data.exercises : [];
   try {
     if (existing.length === 0) return existing;
@@ -293,64 +314,95 @@ export async function getOrUpdateWeeklyChallenge(
       return pausedChallenge(existingHistory, existingCreatorHistory);
     }
 
-    // 手動 override 確認
-    const overrideSnap = await getDoc(doc(db, SETTINGS, 'weekly_override'));
-    if (overrideSnap.exists()) {
-      const ov = overrideSnap.data() as {
-        invalidated?: boolean;
-        exercises?: string[];
-        targetWeekStart?: Timestamp;
-        label?: string;
-      };
-      const applyOverride = async (label: string) => {
-        const selected = ov.exercises || [];
-        const newHistory = { ...existingHistory };
-        selected.forEach((k) => {
-          newHistory[k] = (newHistory[k] || 0) + 1;
-        });
-        const newCreatorHistory = incrementCreatorHistory(
-          existingCreatorHistory,
-          selected,
-          freeExercises,
-        );
-        await setDoc(chalRef, {
-          weekStart: Timestamp.fromDate(weekStart),
-          weekEnd: Timestamp.fromDate(weekEnd),
-          exercises: selected,
-          selectionHistory: newHistory,
-          creatorSelectionHistory: newCreatorHistory,
-          isManualOverride: true,
-          overrideLabel: label,
-          updatedAt: serverTimestamp(),
-        });
-        await setDoc(doc(db, SETTINGS, 'weekly_override'), {
-          invalidated: true,
-        });
-        return {
-          weekStart,
-          weekEnd,
-          exercises: selected,
-          selectionHistory: newHistory,
-          creatorSelectionHistory: newCreatorHistory,
-          isManualOverride: true,
-          overrideLabel: label,
-        } as WeeklyChallenge;
-      };
+    // 上書き設定の確認（承認された特別イベント / 管理画面の手動上書き）。
+    // 対象週ごとに 1 ドキュメント（settings_free/weekly_override_<月曜キー>）
+    // なので、来週ぶんを適用しても再来週ぶんの予約は消えない。
+    const applyOverride = async (
+      ov: OverrideDoc,
+      sourceRef: DocumentReference,
+    ): Promise<WeeklyChallenge> => {
+      const selected = ov.exercises || [];
+      const label = ov.label || '特別イベント';
+      const newHistory = { ...existingHistory };
+      selected.forEach((k) => {
+        newHistory[k] = (newHistory[k] || 0) + 1;
+      });
+      const newCreatorHistory = incrementCreatorHistory(
+        existingCreatorHistory,
+        selected,
+        freeExercises,
+      );
+      await setDoc(chalRef, {
+        weekStart: Timestamp.fromDate(weekStart),
+        weekEnd: Timestamp.fromDate(weekEnd),
+        exercises: selected,
+        selectionHistory: newHistory,
+        creatorSelectionHistory: newCreatorHistory,
+        isManualOverride: true,
+        overrideLabel: label,
+        // どの提案が適用されたか（管理画面の手動上書きなら空）。
+        // 負けた提案の提案者に「上書きされた」と伝えるのに使う
+        overrideProposalId: ov.proposalId || null,
+        overrideSource: ov.source || 'admin',
+        updatedAt: serverTimestamp(),
+      });
+      // 適用済みの印。exercises / proposalId は「どの提案が勝ったか」の
+      // 判定に後から読むので merge で残す
+      await setDoc(sourceRef, { invalidated: true }, { merge: true });
+      return {
+        weekStart,
+        weekEnd,
+        exercises: selected,
+        selectionHistory: newHistory,
+        creatorSelectionHistory: newCreatorHistory,
+        isManualOverride: true,
+        overrideLabel: label,
+      } as WeeklyChallenge;
+    };
 
-      if (!ov.invalidated && ov.exercises && ov.exercises.length > 0) {
-        if (ov.targetWeekStart) {
-          const target = ov.targetWeekStart.toDate();
-          if (Math.abs(target.getTime() - weekStart.getTime()) < 60 * 1000) {
-            return applyOverride(ov.label || '特別イベント');
+    const weekOverrideRef = doc(
+      db,
+      SETTINGS,
+      weeklyOverrideDocId(mondayKeyOfWeekStart(weekStart)),
+    );
+    // 旧形式（週で分けていなかった単一ドキュメント）。週ごとドキュメント導入前に
+    // 書かれた設定が残っている場合があるので読み続ける。
+    const legacyRef = doc(db, SETTINGS, 'weekly_override');
+    const [weekOverrideSnap, legacySnap] = await Promise.all([
+      getDoc(weekOverrideRef),
+      getDoc(legacyRef),
+    ]);
+    const weekOverride = weekOverrideSnap.exists()
+      ? (weekOverrideSnap.data() as OverrideDoc)
+      : null;
+    const legacy = legacySnap.exists()
+      ? (legacySnap.data() as OverrideDoc)
+      : null;
+
+    // 判断は純粋関数へ（Timestamp → Date に直して渡す）
+    const toCandidate = (ov: OverrideDoc | null) =>
+      ov
+        ? {
+            invalidated: ov.invalidated,
+            exercises: ov.exercises,
+            targetWeekStart: ov.targetWeekStart
+              ? ov.targetWeekStart.toDate()
+              : null,
           }
-          // 期限切れ → 無効化して自動選出へ
-          await setDoc(doc(db, SETTINGS, 'weekly_override'), {
-            invalidated: true,
-          });
-        } else {
-          return applyOverride(ov.label || '特別イベント');
-        }
-      }
+        : null;
+    const plan = planWeeklyOverride({
+      weekOverride: toCandidate(weekOverride),
+      legacyOverride: toCandidate(legacy),
+      weekStart,
+    });
+    if (plan.use === 'week' && weekOverride) {
+      return applyOverride(weekOverride, weekOverrideRef);
+    }
+    if (plan.use === 'legacy' && legacy) {
+      return applyOverride(legacy, legacyRef);
+    }
+    if (plan.cleanupLegacy) {
+      await setDoc(legacyRef, { invalidated: true }, { merge: true });
     }
 
     // 自動選出

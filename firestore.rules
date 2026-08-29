@@ -101,6 +101,9 @@ service cloud.firestore {
     }
 
     // settings_free コレクション（フリーモード用）
+    // 週間チャレンジの上書き設定は対象週ごとに1ドキュメント
+    // （weekly_override_<月曜キー>, 例 weekly_override_2026-09-07）。
+    // 承認された特別イベントも管理画面の手動設定もここに書き込む。
     match /settings_free/{docId} {
       allow read: if request.auth != null;
       allow create, update: if request.auth != null;
@@ -133,7 +136,7 @@ service cloud.firestore {
     // special_event_proposals コレクション（特別イベントウィークの提案・承認）
     // 提案は本人だけが作成でき、承認者に選ばれた人だけが回答（responses/status）
     // を書き換えられる。3人の回答が揃い、全員承認なら
-    // settings_free/weekly_override が更新される。
+    // settings_free/weekly_override_<対象週の月曜キー> が更新される。
     // 提案者は自分の提案の取り下げ（status: withdrawn）と、
     // 結果ポップアップの既読（resultSeenAt）だけを書き込める。
     match /special_event_proposals/{proposalId} {

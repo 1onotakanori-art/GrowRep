@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useToast } from '../../context/ToastContext';
 import {
+  isTargetWeekUpcoming,
   summarizeResponses,
   validateDecisionComment,
   SPECIAL_EVENT_COMMENT_MAX,
@@ -89,6 +90,14 @@ export default function SpecialEventApprovalModal({
       onResolved?.();
       advance();
     } catch (e) {
+      // ポップアップを開いたまま週境界（日曜17:00 JST）をまたいだ場合、
+      // 回答は受け付けられない。閉じられない画面に閉じ込めないよう先へ進める
+      if (!isTargetWeekUpcoming(proposal.targetWeekStart)) {
+        toast('対象週が始まったため、この提案は期限切れになりました', 'info');
+        onResolved?.();
+        advance();
+        return;
+      }
       setErr(e instanceof Error ? e.message : '送信に失敗しました');
     } finally {
       setBusy(null);

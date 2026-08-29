@@ -2944,7 +2944,7 @@ if (weeklySimulatorToggle) {
             weeklySimulatorBaseScores = await getAllUsersScoresWeekly(false);
         }
         if (!weeklySimulatorExerciseKeys || weeklySimulatorExerciseKeys.length === 0) {
-            weeklySimulatorExerciseKeys = weeklyChallenge ? getActiveWeeklyKeys(weeklyChallenge.exercises).filter(k => freeExercises[k]) : [];
+            weeklySimulatorExerciseKeys = getActiveWeeklyKeysForCurrentWeek().filter(k => freeExercises[k]);
         }
 
         displayFreeScores(weeklySimulatorBaseScores, weeklySimulatorExerciseKeys);
@@ -6177,14 +6177,28 @@ function isRevealUnlockedJST(date = new Date()) {
  * 週間チャレンジの「今アクティブな種目キー」を返す。
  * - 3種目以下の週: 全種目。
  * - 4種目以上の週: 先頭3種目は常時アクティブ。4種目目以降(末尾)は水曜13:00 JST まで非公開。
+ * - revealAll の週: 水曜解禁をせず最初から全種目。特別イベント週がこれで、
+ *   承認者には4種目すべてを見せて承認させているので伏せる意味がない。
  * @param {string[]} exercises - weeklyChallenge.exercises
+ * @param {Date} [now=new Date()]
+ * @param {boolean} [revealAll=false]
+ * @returns {string[]}
+ */
+function getActiveWeeklyKeys(exercises, now = new Date(), revealAll = false) {
+    const list = Array.isArray(exercises) ? exercises : [];
+    if (list.length <= 3 || revealAll) return list;
+    return isRevealUnlockedJST(now) ? list : list.slice(0, 3);
+}
+
+/**
+ * 今週の週間チャレンジのアクティブ種目キー。
+ * 特別イベント週（isManualOverride）は水曜解禁を適用しない。
  * @param {Date} [now=new Date()]
  * @returns {string[]}
  */
-function getActiveWeeklyKeys(exercises, now = new Date()) {
-    const list = Array.isArray(exercises) ? exercises : [];
-    if (list.length <= 3) return list;
-    return isRevealUnlockedJST(now) ? list : list.slice(0, 3);
+function getActiveWeeklyKeysForCurrentWeek(now = new Date()) {
+    if (!weeklyChallenge) return [];
+    return getActiveWeeklyKeys(weeklyChallenge.exercises, now, !!weeklyChallenge.isManualOverride);
 }
 
 // ====================================================================
@@ -6563,6 +6577,9 @@ function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExp
  */
 async function maybeUpgradeCurrentWeekExercises(data) {
     const existing = Array.isArray(data.exercises) ? data.exercises : [];
+    // 特別イベント週・手動上書き週は「指定された種目がすべて」。
+    // exerciseCount に足りなくても自動選出の種目を混ぜない
+    if (data.isManualOverride) return existing;
     try {
         if (existing.length === 0) return existing; // 種目未設定の週は対象外
 
@@ -6726,90 +6743,80 @@ async function getOrUpdateWeeklyChallenge() {
             return setPausedChallenge(existingHistory, existingCreatorHistory);
         }
 
-        // 手動上書き設定を確認（管理者が事前に来週の種目を指定している場合）
-        const overrideDoc = await db.collection('settings_free').doc('weekly_override').get();
-        if (overrideDoc.exists) {
-            const overrideData = overrideDoc.data();
+        // 上書き設定の確認（承認された特別イベント / 管理画面の手動上書き）。
+        // 対象週ごとに1ドキュメント（settings_free/weekly_override_<月曜キー>）なので、
+        // 来週ぶんを適用しても再来週ぶんの予約は消えない。
+        const applyOverride = async (overrideData, sourceRef) => {
+            const selectedExercises = overrideData.exercises || [];
+            const label = overrideData.label || '特別イベント';
+            const newHistory = { ...existingHistory };
+            selectedExercises.forEach(key => { newHistory[key] = (newHistory[key] || 0) + 1; });
+            const newCreatorHistory = incrementCreatorHistory(existingCreatorHistory, selectedExercises, freeExercises);
+            await db.collection('settings_free').doc('weekly_challenge').set({
+                weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
+                weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
+                exercises: selectedExercises,
+                selectionHistory: newHistory,
+                creatorSelectionHistory: newCreatorHistory,
+                isManualOverride: true,
+                overrideLabel: label,
+                // どの提案が適用されたか（管理画面の手動上書きなら null）。
+                // 負けた提案の提案者に「上書きされた」と伝えるのに使う
+                overrideProposalId: overrideData.proposalId || null,
+                overrideSource: overrideData.source || 'admin',
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            // 適用済みの印。exercises / proposalId は「どの提案が勝ったか」の
+            // 判定に後から読むので merge で残す
+            await sourceRef.set({ invalidated: true }, { merge: true });
+            weeklyChallenge = {
+                weekStart, weekEnd,
+                exercises: selectedExercises,
+                selectionHistory: newHistory,
+                creatorSelectionHistory: newCreatorHistory,
+                isManualOverride: true,
+                overrideLabel: label
+            };
+            weeklyChallengeLoaded = true;
+            rankingCache.weekly = null;
+            rankingCacheTime.weekly = null;
+            scoreCache.weekly = null;
+            scoreCacheTime.weekly = null;
+            console.log('[週間チャレンジ] 上書き設定を使用:', selectedExercises);
+            return weeklyChallenge;
+        };
+        const weekOverrideRef = db.collection('settings_free')
+            .doc(weeklyOverrideDocId(mondayKeyOfWeekStart(weekStart)));
+        // 旧形式（週で分けていなかった単一ドキュメント）。週ごとドキュメント導入前に
+        // 書かれた設定が残っている場合があるので読み続ける。
+        const legacyOverrideRef = db.collection('settings_free').doc('weekly_override');
+        const [weekOverrideDoc, legacyOverrideDoc] = await Promise.all([
+            weekOverrideRef.get(),
+            legacyOverrideRef.get()
+        ]);
+        const weekOverrideData = weekOverrideDoc.exists ? weekOverrideDoc.data() : null;
+        const legacyOverrideData = legacyOverrideDoc.exists ? legacyOverrideDoc.data() : null;
 
-            // 無効化済み・空の override はスキップして自動選出へ
-            if (overrideData.invalidated || !overrideData.exercises || overrideData.exercises.length === 0) {
-                console.log('[週間チャレンジ] weekly_override は無効です。自動選出を実行します。');
-                // fall through to auto-selection below
-
-            // targetWeekStart が設定されている場合、現在の週と一致するか確認
-            } else if (overrideData.targetWeekStart) {
-                const targetDate = overrideData.targetWeekStart.toDate();
-                if (Math.abs(targetDate.getTime() - weekStart.getTime()) >= 60 * 1000) {
-                    // 対象週が現在の週と一致しない（期限切れ）→ 無効化して通常選出へ
-                    console.warn('[週間チャレンジ] weekly_override の対象週が現在の週と一致しないため無視します。対象週:', targetDate, '現在の週:', weekStart);
-                    await db.collection('settings_free').doc('weekly_override').set({ invalidated: true });
-                    // fall through to auto-selection below
-                } else {
-                    // 対象週が一致 → オーバーライドを適用
-                    const selectedExercises = overrideData.exercises || [];
-                    const newHistory = { ...existingHistory };
-                    selectedExercises.forEach(key => { newHistory[key] = (newHistory[key] || 0) + 1; });
-                    const newCreatorHistory = incrementCreatorHistory(existingCreatorHistory, selectedExercises, freeExercises);
-                    await db.collection('settings_free').doc('weekly_challenge').set({
-                        weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
-                        weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
-                        exercises: selectedExercises,
-                        selectionHistory: newHistory,
-                        creatorSelectionHistory: newCreatorHistory,
-                        isManualOverride: true,
-                        overrideLabel: overrideData.label || '特別イベント',
-                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                    await db.collection('settings_free').doc('weekly_override').set({ invalidated: true });
-                    weeklyChallenge = {
-                        weekStart, weekEnd,
-                        exercises: selectedExercises,
-                        selectionHistory: newHistory,
-                        creatorSelectionHistory: newCreatorHistory,
-                        isManualOverride: true,
-                        overrideLabel: overrideData.label || '特別イベント'
-                    };
-                    weeklyChallengeLoaded = true;
-                    rankingCache.weekly = null;
-                    rankingCacheTime.weekly = null;
-                    scoreCache.weekly = null;
-                    scoreCacheTime.weekly = null;
-                    console.log('[週間チャレンジ] 手動上書き設定を使用:', selectedExercises);
-                    return weeklyChallenge;
-                }
-            } else {
-                // targetWeekStart なし（旧形式）→ 後方互換のためそのまま適用
-                const selectedExercises = overrideData.exercises || [];
-                const newHistory = { ...existingHistory };
-                selectedExercises.forEach(key => { newHistory[key] = (newHistory[key] || 0) + 1; });
-                const newCreatorHistory = incrementCreatorHistory(existingCreatorHistory, selectedExercises, freeExercises);
-                await db.collection('settings_free').doc('weekly_challenge').set({
-                    weekStart: firebase.firestore.Timestamp.fromDate(weekStart),
-                    weekEnd: firebase.firestore.Timestamp.fromDate(weekEnd),
-                    exercises: selectedExercises,
-                    selectionHistory: newHistory,
-                    creatorSelectionHistory: newCreatorHistory,
-                    isManualOverride: true,
-                    overrideLabel: overrideData.label || '特別イベント',
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                await db.collection('settings_free').doc('weekly_override').set({ invalidated: true });
-                weeklyChallenge = {
-                    weekStart, weekEnd,
-                    exercises: selectedExercises,
-                    selectionHistory: newHistory,
-                    creatorSelectionHistory: newCreatorHistory,
-                    isManualOverride: true,
-                    overrideLabel: overrideData.label || '特別イベント'
-                };
-                weeklyChallengeLoaded = true;
-                rankingCache.weekly = null;
-                rankingCacheTime.weekly = null;
-                scoreCache.weekly = null;
-                scoreCacheTime.weekly = null;
-                console.log('[週間チャレンジ] 手動上書き設定を使用（旧形式）:', selectedExercises);
-                return weeklyChallenge;
-            }
+        // 判断は純粋関数へ（Timestamp → Date に直して渡す）
+        const toOverrideCandidate = (data) => data ? {
+            invalidated: data.invalidated,
+            exercises: data.exercises,
+            targetWeekStart: data.targetWeekStart ? data.targetWeekStart.toDate() : null
+        } : null;
+        const overridePlan = planWeeklyOverride({
+            weekOverride: toOverrideCandidate(weekOverrideData),
+            legacyOverride: toOverrideCandidate(legacyOverrideData),
+            weekStart
+        });
+        if (overridePlan.use === 'week') {
+            return applyOverride(weekOverrideData, weekOverrideRef);
+        }
+        if (overridePlan.use === 'legacy') {
+            return applyOverride(legacyOverrideData, legacyOverrideRef);
+        }
+        if (overridePlan.cleanupLegacy) {
+            console.warn('[週間チャレンジ] 期限切れの weekly_override を無効化します。');
+            await legacyOverrideRef.set({ invalidated: true }, { merge: true });
         }
 
         // 週間チャレンジ設定（重み指数）を取得
@@ -6962,7 +6969,7 @@ function renderWeeklyChallengeInfo() {
     const dayNames = ['日','月','火','水','木','金','土'];
     const formatDate = (d) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${dayNames[d.getUTCDay()]})`;
 
-    const activeKeys = getActiveWeeklyKeys(weeklyChallenge.exercises);
+    const activeKeys = getActiveWeeklyKeysForCurrentWeek();
     const hiddenCount = weeklyChallenge.exercises.length - activeKeys.length;
 
     // 4枠すべて表示。未解禁（水曜公開枠）は種目名を ？？？ でマスク表示。
@@ -7135,7 +7142,7 @@ async function loadWeeklyRanking(forceRefresh = false) {
 
     const { weekStart, weekEnd } = weeklyChallenge;
     // 水曜公開枠は解禁までランキングに出さない
-    const exercises = getActiveWeeklyKeys(weeklyChallenge.exercises);
+    const exercises = getActiveWeeklyKeysForCurrentWeek();
 
     // メモリキャッシュが有効ならそれを使用
     if (!forceRefresh && rankingCache.weekly && rankingCacheTime.weekly && (now - rankingCacheTime.weekly < CACHE_DURATION)) {
@@ -7365,7 +7372,7 @@ async function loadWeeklyUserCheckboxes(forceRefresh = false) {
     try {
         setWeeklySimulatorControlsVisible(true);
         const usersScores = await getAllUsersScoresWeekly(forceRefresh);
-        const exerciseKeys = weeklyChallenge ? getActiveWeeklyKeys(weeklyChallenge.exercises).filter(k => freeExercises[k]) : [];
+        const exerciseKeys = getActiveWeeklyKeysForCurrentWeek().filter(k => freeExercises[k]);
         weeklySimulatorBaseScores = usersScores;
         weeklySimulatorExerciseKeys = exerciseKeys;
 
@@ -7409,7 +7416,7 @@ async function loadWeeklyScoreChart(selectedUserIds, exerciseKeys, usersScores) 
         usersScores = await getAllUsersScoresWeekly(false);
     }
     if (!exerciseKeys) {
-        exerciseKeys = weeklyChallenge ? getActiveWeeklyKeys(weeklyChallenge.exercises).filter(k => freeExercises[k]) : [];
+        exerciseKeys = getActiveWeeklyKeysForCurrentWeek().filter(k => freeExercises[k]);
     }
     weeklySimulatorBaseScores = usersScores;
     weeklySimulatorExerciseKeys = exerciseKeys;
@@ -7599,7 +7606,7 @@ function updateWeeklyPostDropdown() {
     }
 
     // 4枠すべて表示。未解禁の水曜公開枠は ？？？ のロックカード（投稿不可）で表示する
-    const activeKeys = getActiveWeeklyKeys(weeklyChallenge.exercises);
+    const activeKeys = getActiveWeeklyKeysForCurrentWeek();
     // 今日のデイリーミッションが未クリアなら、解禁済みの枠もまとめてロックする
     const dailyLocked = isWeeklyPostLockedByDailyMission();
     weeklyPostLockRendered = dailyLocked;
@@ -7770,7 +7777,7 @@ async function updateWeeklyRulesTab() {
     }
 
     // 評価データ・投稿実績・自分の評価を取得（未解禁の水曜公開枠は ？？？ 表示）
-    const activeKeys = getActiveWeeklyKeys(weeklyChallenge.exercises);
+    const activeKeys = getActiveWeeklyKeysForCurrentWeek();
     const [ratingSummaries, userPostedKeys, userRatingMap] = await Promise.all([
         getExerciseRatingSummaries(activeKeys),
         getUserPostedExerciseKeys('free'),
@@ -7820,7 +7827,7 @@ function updateWeeklyGraphDropdown() {
 
     if (!weeklyChallenge || weeklyChallenge.exercises.length === 0) return;
 
-    getActiveWeeklyKeys(weeklyChallenge.exercises).forEach(key => {
+    getActiveWeeklyKeysForCurrentWeek().forEach(key => {
         const ex = freeExercises[key];
         if (!ex) return;
         const option = document.createElement('option');
@@ -12074,7 +12081,7 @@ document.getElementById('submit-rating-btn')?.addEventListener('click', async ()
 // 結果ポップアップで返す。
 //
 // ⚠️ web/src/lib/special-event.ts / special-event-engine.ts の「ミラー」。
-//    両アプリが同じ special_event_proposals と settings_free/weekly_override
+//    両アプリが同じ special_event_proposals と週ごとの上書き設定
 //    を読み書きするため、フィールド形状・週境界・承認条件を変えたら
 //    必ずもう片方も同じに更新すること。
 // ====================================================================
@@ -12124,22 +12131,114 @@ function getSpecialEventProposableWeeks(now = new Date(), count = SPECIAL_EVENT_
     for (let i = 1; i <= count; i++) {
         const weekStart = new Date(start.getTime() + i * SPECIAL_EVENT_WEEK_MS);
         const { monJST, friJST } = buildChampionDocMeta(weekStart);
-        const y = monJST.getUTCFullYear();
-        const m = String(monJST.getUTCMonth() + 1).padStart(2, '0');
-        const d = String(monJST.getUTCDate()).padStart(2, '0');
         weeks.push({
             weekStart,
-            mondayKey: `${y}-${m}-${d}`,
+            mondayKey: mondayKeyOfWeekStart(weekStart),
             periodLabel: formatWeeklyPeriodLabel(monJST, friJST),
-            weeksAhead: i
+            weeksAhead: i,
+            // 夏休みなどの休止週。休止判定は上書き設定より先に効くので、
+            // 提案しても種目にならない。選択肢には出すが選べなくする
+            paused: isWeeklyPausedWeekStart(weekStart)
         });
     }
     return weeks;
 }
 
-/** 対象週の開始前で、まだ weekly_override に反映できるか。 */
+/** 週の開始境界（日曜17:00 JST）から対象週の月曜キー（JST, YYYY-MM-DD）。 */
+function mondayKeyOfWeekStart(weekStart) {
+    const { monJST } = buildChampionDocMeta(weekStart);
+    const y = monJST.getUTCFullYear();
+    const m = String(monJST.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(monJST.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+/**
+ * 対象週の上書き設定ドキュメントID。週ごとに分けることで、別々の週を狙った
+ * 承認済みイベントが同時に生きていられる（単一ドキュメントだと後勝ちで消える）。
+ * ⚠️ web/src/lib/special-event.ts / admin.html と同じ命名にすること。
+ */
+function weeklyOverrideDocId(mondayKey) {
+    return `weekly_override_${mondayKey}`;
+}
+
+/**
+ * 週切り替え時に、どの上書き設定をこの週へ適用するかを決める。
+ *
+ * - 'week'   … 対象週ごとのドキュメント（現行）。あればこれが最優先
+ * - 'legacy' … 週で分けていなかった単一ドキュメント（旧形式）。対象週が
+ *              一致するか、対象週を持たない旧々形式のときだけ使う
+ * - null     … どちらも使わない（自動選出へ）
+ *
+ * cleanupLegacy は「旧形式の設定を無効化してよいか」。無効化してよいのは
+ * 対象週が過ぎたものだけで、まだ来ていない週を狙った設定は絶対に消さない。
+ * 以前はここで未来ぶんも消していたため、2週先以降を狙った承認済みイベントが
+ * 手前の週切り替えで失われていた。
+ *
+ * @param {{weekOverride: ?Object, legacyOverride: ?Object, weekStart: Date}} input
+ *        両 override の targetWeekStart は Date に直して渡すこと
+ * @returns {{use: ?string, cleanupLegacy: boolean}}
+ */
+function planWeeklyOverride(input) {
+    const usable = (o) => !!o && !o.invalidated && Array.isArray(o.exercises) && o.exercises.length > 0;
+
+    if (usable(input.weekOverride)) return { use: 'week', cleanupLegacy: false };
+    if (!usable(input.legacyOverride)) return { use: null, cleanupLegacy: false };
+
+    const target = input.legacyOverride.targetWeekStart;
+    // 旧々形式（対象週なし）は後方互換でそのまま適用する
+    if (!target) return { use: 'legacy', cleanupLegacy: false };
+    if (Math.abs(target.getTime() - input.weekStart.getTime()) < 60 * 1000) {
+        return { use: 'legacy', cleanupLegacy: false };
+    }
+    // 過ぎた週ぶんだけ掃除。先の週ぶんはそのまま残す
+    return { use: null, cleanupLegacy: target.getTime() < input.weekStart.getTime() };
+}
+
+/** 対象週の開始前で、まだ上書き設定に反映できるか。 */
 function isSpecialEventWeekUpcoming(targetWeekStart, now = new Date()) {
     return targetWeekStart instanceof Date && targetWeekStart.getTime() > now.getTime();
+}
+
+/**
+ * 保存済み status と対象週から、画面に出すステータスを求める。
+ *
+ * 回答が揃わないまま対象週が始まってしまった提案は、もう上書き設定に
+ * 反映できないので 'expired'（期限切れ）として扱う。Firestore の status は
+ * pending のままなので、表示・通知はすべてこの関数を通すこと。
+ * 保存せず毎回導出するのは、期限切れを書き込める人が誰もいないケースが
+ * あるため（導出なら誰が見ても同じ結果になる）。
+ */
+function resolveSpecialEventDisplayStatus(proposal, now = new Date()) {
+    if (proposal.status === 'pending' && !isSpecialEventWeekUpcoming(proposal.targetWeekStart, now)) {
+        return 'expired';
+    }
+    return proposal.status;
+}
+
+/**
+ * 承認された提案が対象週に反映されたか。
+ *
+ * 同じ週に複数の提案が出ても止めていないので、後から承認確定した方が
+ * 上書きする。負けた側の提案者に「承認されたが別のイベントに上書きされた」と
+ * 分かるようにするための判定。
+ *
+ * - applied     … この提案が対象週の種目になっている
+ * - superseded  … 承認はされたが、別の提案／管理者の設定に上書きされた
+ * - unknown     … 判定材料がない（週ごとドキュメント導入前の提案など）。
+ *                 素直に「承認されました」とだけ伝える
+ * @param {Object} proposal
+ * @param {?{exists: boolean, proposalId: ?string, label: ?string, source: ?string}} override
+ * @returns {{kind: string, byLabel?: string, byAdmin?: boolean}}
+ */
+function resolveSpecialEventApprovedOutcome(proposal, override) {
+    if (!override || !override.exists) return { kind: 'unknown' };
+    if (override.proposalId && override.proposalId === proposal.id) return { kind: 'applied' };
+    return {
+        kind: 'superseded',
+        byLabel: override.label || '別の設定',
+        byAdmin: !override.proposalId
+    };
 }
 
 /**
@@ -12192,15 +12291,16 @@ function needsSpecialEventResponse(proposal, userId, now = new Date()) {
 
 /**
  * 提案者に結果ポップアップを出すべきか。
- * 3人の回答が揃って status が確定し、まだ本人が確認していない提案が対象。
+ * 3人の回答が揃って status が確定した提案と、回答が揃わないまま対象週が
+ * 始まってしまった提案（expired）のうち、まだ本人が確認していないものが対象。
  *
  * 自分で取り下げた提案は結果を知らせる意味がないので出さない
  * （出すと「否認されました」と同じ見た目で驚かせてしまう）。
  */
-function needsSpecialEventResultNotice(proposal, userId) {
+function needsSpecialEventResultNotice(proposal, userId, now = new Date()) {
     if (!proposal || proposal.proposerId !== userId) return false;
-    if (proposal.status === 'pending') return false;
     if (proposal.status === 'withdrawn') return false;
+    if (resolveSpecialEventDisplayStatus(proposal, now) === 'pending') return false;
     return !proposal.resultSeenAt;
 }
 
@@ -12208,12 +12308,15 @@ function needsSpecialEventResultNotice(proposal, userId) {
  * 提案者が自分でこの提案を取り下げられるか。
  *
  * 取り下げられるのは「自分の提案」かつ「まだ回答が揃っていない（pending）」もの
- * だけ。確定してからでは weekly_override に反映済みかもしれないので触らせない。
+ * だけ。確定してからでは上書き設定に反映済みかもしれないので触らせない。
  * 承認者が何人か回答済みでも、揃うまでは取り下げてよい。
+ *
+ * 対象週が始まってしまった提案（expired）も対象外。もう反映されないので
+ * 取り下げる意味がなく、提案者には結果ポップアップで期限切れを伝える。
  */
-function canWithdrawSpecialEventProposal(proposal, userId) {
+function canWithdrawSpecialEventProposal(proposal, userId, now = new Date()) {
     if (!proposal || !userId || proposal.proposerId !== userId) return false;
-    return proposal.status === 'pending';
+    return resolveSpecialEventDisplayStatus(proposal, now) === 'pending';
 }
 
 /** 承認者ごとの回答一覧（提案時に選んだ順）。結果ポップアップの明細に使う。 */
@@ -12420,6 +12523,9 @@ async function createSpecialEventProposal(exercises, week, approvers) {
     if (!isSpecialEventWeekUpcoming(week.weekStart)) {
         throw new Error('開始日が過ぎています。読み込み直してください');
     }
+    if (isWeeklyPausedWeekStart(week.weekStart)) {
+        throw new Error('その週は週間チャレンジが休止しているため選べません');
+    }
 
     const proposerName = (currentUserData && currentUserData.userName) || currentUser.email || '名無しさん';
     const approverNames = {};
@@ -12449,15 +12555,21 @@ async function createSpecialEventProposal(exercises, week, approvers) {
 }
 
 /**
- * 承認済みの提案を weekly_override に反映する。
+ * 承認済みの提案を対象週の上書き設定に反映する。
  * 対象週が始まる前だけ書き込む（過ぎていたら反映しない）。
+ *
+ * 書き込み先は週ごとのドキュメント settings_free/weekly_override_<月曜キー>。
+ * 他の週を狙った承認済みイベントとは別ドキュメントなので潰し合わない。
+ * 同じ週に複数の提案が承認された場合だけは後勝ちで、負けた側の提案者には
+ * 結果ポップアップで「別のイベントに上書きされた」と伝える。
  */
 async function applyApprovedSpecialEventProposal(proposal, now = new Date()) {
     if (!isSpecialEventWeekUpcoming(proposal.targetWeekStart, now)) return false;
-    await db.collection('settings_free').doc('weekly_override').set({
+    await db.collection('settings_free').doc(weeklyOverrideDocId(proposal.mondayKey)).set({
         exercises: proposal.exercises,
         label: proposal.label,
         targetWeekStart: firebase.firestore.Timestamp.fromDate(proposal.targetWeekStart),
+        mondayKey: proposal.mondayKey,
         invalidated: false,
         setAt: firebase.firestore.FieldValue.serverTimestamp(),
         setBy: proposal.proposerId,
@@ -12467,9 +12579,37 @@ async function applyApprovedSpecialEventProposal(proposal, now = new Date()) {
     return true;
 }
 
+/** 対象週の上書き設定を読む（「どの提案が勝ったか」の判定材料）。 */
+async function loadSpecialEventWeekOverride(mondayKey) {
+    if (!mondayKey) return { exists: false };
+    try {
+        const doc = await db.collection('settings_free').doc(weeklyOverrideDocId(mondayKey)).get();
+        if (!doc.exists) return { exists: false };
+        const data = doc.data();
+        return {
+            exists: true,
+            proposalId: data.proposalId || null,
+            label: data.label || null,
+            source: data.source || null
+        };
+    } catch (e) {
+        console.warn('[特別イベント] 対象週の上書き設定を読めませんでした:', e);
+        return { exists: false };
+    }
+}
+
+/**
+ * 承認された提案が実際に対象週へ反映されたか（別のイベントに上書きされて
+ * いないか）を調べる。結果ポップアップの表示に使う。
+ */
+async function loadSpecialEventApprovedOutcome(proposal) {
+    const override = await loadSpecialEventWeekOverride(proposal.mondayKey);
+    return resolveSpecialEventApprovedOutcome(proposal, override);
+}
+
 /**
  * 承認/否認を記録する。3人の回答が揃い、全員承認だった時だけ
- * weekly_override へ反映する。同時回答に備えてトランザクションで
+ * 対象週の上書き設定へ反映する。同時回答に備えてトランザクションで
  * 読み直してから書く。
  *
  * 否認の場合は理由コメントが必須（提案者へのポップアップで表示する）。
@@ -12490,6 +12630,13 @@ async function respondToSpecialEventProposal(proposalId, decision, comment = '')
             if (!approverIds.includes(currentUser.uid)) throw new Error('この提案の承認者ではありません');
             const current = data.status || 'pending';
             if (current !== 'pending') return current;
+            // ポップアップを開いたまま週境界（日曜17:00 JST）をまたいだ場合。
+            // ここで承認を通すと status だけ approved になって上書き設定は書けない
+            // （＝提案者に「承認されました」と嘘をつく）ので、回答自体を断る
+            const targetWeekStart = data.targetWeekStart ? data.targetWeekStart.toDate() : new Date(0);
+            if (!isSpecialEventWeekUpcoming(targetWeekStart)) {
+                throw new Error('対象週が始まったため、この提案は期限切れです（回答は記録されません）');
+            }
 
             const responses = Object.assign({}, data.responses || {});
             responses[currentUser.uid] = {
@@ -12522,7 +12669,7 @@ async function respondToSpecialEventProposal(proposalId, decision, comment = '')
  * 自分の提案を取り下げる（pending → withdrawn）。
  *
  * 承認者の回答が1つでも入っている途中でも取り下げてよい。ただし3人ぶんが
- * 揃って status が確定したあとは触らせない（weekly_override へ反映済みの
+ * 揃って status が確定したあとは触らせない（上書き設定へ反映済みの
  * 可能性があるため）。取り下げと同時に別の承認者が回答して確定する競合が
  * あるので、トランザクションで status を読み直してから書く。
  */
@@ -12538,8 +12685,11 @@ async function withdrawSpecialEventProposal(proposalId) {
                 throw new Error('自分が出した提案だけ取り下げられます');
             }
             if (proposal.status === 'withdrawn') return; // 二重クリックは成功扱い
-            if (!canWithdrawSpecialEventProposal(proposal, currentUser.uid)) {
+            if (proposal.status !== 'pending') {
                 throw new Error('すでに承認者全員の回答が揃っているため取り下げられません');
+            }
+            if (!canWithdrawSpecialEventProposal(proposal, currentUser.uid)) {
+                throw new Error('対象週が始まっているため取り下げられません');
             }
             tx.update(ref, {
                 status: 'withdrawn',
@@ -12592,9 +12742,12 @@ function closeSpecialEventModal() {
 }
 
 function specialEventStatusBadge(proposal) {
-    if (proposal.status === 'approved') return '<span class="se-badge se-badge-ok">承認済み</span>';
-    if (proposal.status === 'rejected') return '<span class="se-badge se-badge-ng">否認</span>';
-    if (proposal.status === 'withdrawn') return '<span class="se-badge se-badge-off">取り下げ済み</span>';
+    const status = resolveSpecialEventDisplayStatus(proposal);
+    if (status === 'approved') return '<span class="se-badge se-badge-ok">承認済み</span>';
+    if (status === 'rejected') return '<span class="se-badge se-badge-ng">否認</span>';
+    if (status === 'withdrawn') return '<span class="se-badge se-badge-off">取り下げ済み</span>';
+    // 回答が揃わないまま対象週が始まった提案。もう反映されない
+    if (status === 'expired') return '<span class="se-badge se-badge-off">期限切れ</span>';
     // 3人ぶん揃って初めて結果が決まるので、進捗は「回答した人数」で出す
     const s = summarizeSpecialEventResponses(proposal.approverIds, proposal.responses);
     return `<span class="se-badge se-badge-wait">回答待ち ${s.approved + s.rejected}/${s.total}</span>`;
@@ -12672,10 +12825,12 @@ function renderSpecialEventProposalForm(errorMessage = '') {
         const on = specialEventDraft.weekIndex === i;
         const usage = specialEventWeekUsage[w.mondayKey];
         let tag = '';
-        if (usage && usage.approved) tag = '<span class="se-badge se-badge-ok">確定済みあり</span>';
+        // 休止週は週間チャレンジ自体が動かないので提案しても種目にならない
+        if (w.paused) tag = '<span class="se-badge se-badge-off">休止週</span>';
+        else if (usage && usage.approved) tag = '<span class="se-badge se-badge-ok">確定済みあり</span>';
         else if (usage && usage.pending) tag = '<span class="se-badge se-badge-wait">申請中あり</span>';
         return `
-            <button type="button" class="se-week${on ? ' se-week-on' : ''}" data-se-week="${i}">
+            <button type="button" class="se-week${on ? ' se-week-on' : ''}" data-se-week="${i}"${w.paused ? ' disabled' : ''}>
                 <span class="se-week-main">
                     <span class="se-week-monday">${escapeHtml(w.mondayKey)} (月)</span>
                     <span class="se-week-period">${escapeHtml(w.periodLabel)}</span>
@@ -12683,6 +12838,14 @@ function renderSpecialEventProposalForm(errorMessage = '') {
                 ${tag}
             </button>`;
     }).join('');
+
+    // 同じ週に複数の提案を出せる（後から承認確定した方が勝つ）ので、
+    // すでに確定済みのイベントがある週を選んだときは先に伝えておく
+    const selectedWeek = specialEventWeeks[specialEventDraft.weekIndex];
+    const weekWarnHtml = selectedWeek && specialEventWeekUsage[selectedWeek.mondayKey]
+        && specialEventWeekUsage[selectedWeek.mondayKey].approved
+        ? '<p class="se-muted">この週にはすでに確定済みの特別イベントがあります。あとから承認された方がその週の種目になります（先に確定していた提案は上書きされます）</p>'
+        : '';
 
     let approverHtml;
     if (specialEventCandidates === null) {
@@ -12715,6 +12878,7 @@ function renderSpecialEventProposalForm(errorMessage = '') {
             <span class="se-section-title"><i class="fa-solid fa-calendar-day"></i> 開始日（月曜）</span>
         </div>
         <div class="se-week-list">${weekHtml}</div>
+        ${weekWarnHtml}
 
         <div class="se-section-head">
             <span class="se-section-title"><i class="fa-solid fa-user-check"></i> 承認者</span>
@@ -13048,11 +13212,7 @@ function renderSpecialEventApproval(errorMessage = '') {
         document.querySelectorAll('.se-actions button').forEach(b => { b.disabled = true; });
         const target = document.getElementById(decision === 'approved' ? 'se-approve-btn' : 'se-reject-btn');
         if (target) target.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 送信中...';
-        try {
-            const status = await respondToSpecialEventProposal(proposal.id, decision, comment);
-            if (status === 'approved') {
-                alert(`${proposal.periodLabel} の特別イベントが決定しました！`);
-            }
+        const advance = () => {
             specialEventQueueIndex++;
             specialEventRejecting = false;
             specialEventComment = '';
@@ -13065,7 +13225,21 @@ function renderSpecialEventApproval(errorMessage = '') {
                 specialEventAfterApproval = null;
                 if (after) after();
             }
+        };
+        try {
+            const status = await respondToSpecialEventProposal(proposal.id, decision, comment);
+            if (status === 'approved') {
+                alert(`${proposal.periodLabel} の特別イベントが決定しました！`);
+            }
+            advance();
         } catch (e) {
+            // ポップアップを開いたまま週境界（日曜17:00 JST）をまたいだ場合、
+            // 回答は受け付けられない。閉じられない画面に閉じ込めないよう先へ進める
+            if (!isSpecialEventWeekUpcoming(proposal.targetWeekStart)) {
+                alert('対象週が始まったため、この提案は期限切れになりました');
+                advance();
+                return;
+            }
             renderSpecialEventApproval(e.message || '送信に失敗しました');
         }
     };
@@ -13090,18 +13264,55 @@ function openSpecialEventResultModal(proposals) {
     if (!proposals || proposals.length === 0) return;
     specialEventResultQueue = proposals;
     specialEventResultIndex = 0;
-    renderSpecialEventResult();
+    showSpecialEventResultAtIndex();
 }
 
-function renderSpecialEventResult(errorMessage = '') {
+/**
+ * 結果ポップアップの1件を表示する。
+ * 承認された提案は、対象週の上書き設定を読んで「本当に自分の提案が採用
+ * されたのか（別のイベントに上書きされていないか）」まで調べてから出す。
+ */
+async function showSpecialEventResultAtIndex() {
     const proposal = specialEventResultQueue[specialEventResultIndex];
     if (!proposal) {
         closeSpecialEventModal();
         return;
     }
-    const approved = proposal.status === 'approved';
+    let outcome = null;
+    if (resolveSpecialEventDisplayStatus(proposal) === 'approved') {
+        // 読めなくても結果自体は伝えたいので、失敗は unknown 扱いで進む
+        outcome = await loadSpecialEventApprovedOutcome(proposal);
+    }
+    renderSpecialEventResult('', outcome);
+}
+
+function renderSpecialEventResult(errorMessage = '', outcome = null) {
+    const proposal = specialEventResultQueue[specialEventResultIndex];
+    if (!proposal) {
+        closeSpecialEventModal();
+        return;
+    }
+    const status = resolveSpecialEventDisplayStatus(proposal);
+    const approved = status === 'approved';
+    const expired = status === 'expired';
+    const superseded = approved && outcome && outcome.kind === 'superseded';
+    // 「反映される」と言い切れるのは、承認され、かつ上書きされていない時だけ
+    const good = approved && !superseded;
     const decisions = listSpecialEventDecisions(proposal);
     const rejections = decisions.filter(d => d.decision === 'rejected');
+
+    const resultTitle = expired
+        ? '期限切れになりました'
+        : superseded
+            ? '別のイベントに差し替えられました'
+            : approved ? '承認されました' : '否認されました';
+    const resultSub = expired
+        ? `${proposal.periodLabel} が始まるまでに承認者全員の回答が揃いませんでした`
+        : superseded
+            ? `承認はされましたが、${proposal.periodLabel} は「${outcome.byLabel}」に上書きされました（${outcome.byAdmin ? '管理者の手動設定' : 'あとから承認された別の提案'}）`
+            : approved
+                ? `${proposal.periodLabel} の週間チャレンジが、あなたの提案した種目に差し替わります`
+                : `${proposal.periodLabel} の提案は見送りになりました`;
 
     const commentsHtml = rejections.map(d => `
         <div class="se-comment-card">
@@ -13125,12 +13336,10 @@ function renderSpecialEventResult(errorMessage = '') {
     const bodyHtml = `
         ${specialEventResultQueue.length > 1 ? `<p class="se-progress">${specialEventResultIndex + 1} / ${specialEventResultQueue.length} 件</p>` : ''}
 
-        <div class="${approved ? 'se-result-ok' : 'se-result-ng'}">
-            <i class="fa-solid ${approved ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>
-            <span class="se-result-title">${approved ? '承認されました' : '否認されました'}</span>
-            <span class="se-result-sub">${escapeHtml(approved
-                ? `${proposal.periodLabel} の週間チャレンジが、あなたの提案した種目に差し替わります`
-                : `${proposal.periodLabel} の提案は見送りになりました`)}</span>
+        <div class="${good ? 'se-result-ok' : 'se-result-ng'}">
+            <i class="fa-solid ${good ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>
+            <span class="se-result-title">${escapeHtml(resultTitle)}</span>
+            <span class="se-result-sub">${escapeHtml(resultSub)}</span>
         </div>
 
         <div class="se-period-card">
@@ -13141,7 +13350,7 @@ function renderSpecialEventResult(errorMessage = '') {
             </span>
         </div>
 
-        ${!approved && rejections.length ? `
+        ${rejections.length ? `
             <div class="se-section-head">
                 <span class="se-section-title"><i class="fa-solid fa-comment-dots"></i> 否認の理由</span>
                 <span class="se-counter">${rejections.length}件</span>
@@ -13173,7 +13382,7 @@ function renderSpecialEventResult(errorMessage = '') {
         }
         specialEventResultIndex++;
         if (specialEventResultIndex < specialEventResultQueue.length) {
-            renderSpecialEventResult();
+            await showSpecialEventResultAtIndex();
         } else {
             closeSpecialEventModal();
         }

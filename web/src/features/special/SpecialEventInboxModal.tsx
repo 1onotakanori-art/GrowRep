@@ -8,6 +8,7 @@ import {
   canWithdrawProposal,
   listRejections,
   needsResponseFrom,
+  resolveDisplayStatus,
   summarizeResponses,
   type SpecialEventProposal,
 } from '../../lib/special-event';
@@ -15,14 +16,19 @@ import { withdrawProposal } from '../../lib/special-event-engine';
 import styles from './SpecialEvent.module.css';
 
 function StatusBadge({ proposal }: { proposal: SpecialEventProposal }) {
-  if (proposal.status === 'approved') {
+  const status = resolveDisplayStatus(proposal);
+  if (status === 'approved') {
     return <span className={styles.badgeApproved}>承認済み</span>;
   }
-  if (proposal.status === 'rejected') {
+  if (status === 'rejected') {
     return <span className={styles.badgeRejected}>否認</span>;
   }
-  if (proposal.status === 'withdrawn') {
+  if (status === 'withdrawn') {
     return <span className={styles.badgeWithdrawn}>取り下げ済み</span>;
+  }
+  if (status === 'expired') {
+    // 回答が揃わないまま対象週が始まった提案。もう反映されない
+    return <span className={styles.badgeWithdrawn}>期限切れ</span>;
   }
   // 3人ぶん揃って初めて結果が決まるので、進捗は「回答した人数」で出す
   const s = summarizeResponses(proposal.approverIds, proposal.responses);
