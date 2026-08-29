@@ -1,13 +1,17 @@
+import { useState } from 'react';
 import Modal from '../../components/Modal';
 import { EmptyState } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useSpecialEvent } from '../../context/SpecialEventContext';
+import { useToast } from '../../context/ToastContext';
 import {
+  canWithdrawProposal,
   listRejections,
   needsResponseFrom,
   summarizeResponses,
   type SpecialEventProposal,
 } from '../../lib/special-event';
+import { withdrawProposal } from '../../lib/special-event-engine';
 import styles from './SpecialEvent.module.css';
 
 function StatusBadge({ proposal }: { proposal: SpecialEventProposal }) {
@@ -17,12 +21,108 @@ function StatusBadge({ proposal }: { proposal: SpecialEventProposal }) {
   if (proposal.status === 'rejected') {
     return <span className={styles.badgeRejected}>否認</span>;
   }
+  if (proposal.status === 'withdrawn') {
+    return <span className={styles.badgeWithdrawn}>取り下げ済み</span>;
+  }
   // 3人ぶん揃って初めて結果が決まるので、進捗は「回答した人数」で出す
   const s = summarizeResponses(proposal.approverIds, proposal.responses);
   return (
     <span className={styles.badgePending}>
       回答待ち {s.approved + s.rejected}/{s.total}
     </span>
+  );
+}
+
+/**
+ * 「回答済みの依頼」に出す自分の回答。回答しないまま提案が確定・取り下げに
+ * なることがあるので、答えていない場合は「未回答」と出す（app.js と同じ）。
+ */
+function describeMyDecision(
+  proposal: SpecialEventProposal,
+  userId: string | undefined,
+): string {
+  const res = userId ? proposal.responses[userId] : undefined;
+  if (!res?.decision) return '未回答';
+  if (res.decision === 'rejected') {
+    return `あなた: 否認（${res.comment || '理由なし'}）`;
+  }
+  return 'あなた: 承認';
+}
+
+/**
+ * 回答待ちの提案を取り下げるボタン。
+ * 押し間違いで消えないよう、確認を挟んでから実際に書き込む。
+ */
+function WithdrawButton({ proposal }: { proposal: SpecialEventProposal }) {
+  const { user } = useAuth();
+  const { reload } = useSpecialEvent();
+  const { toast } = useToast();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    if (!user) return;
+    setBusy(true);
+    try {
+      await withdrawProposal(proposal.id, user.uid);
+      toast(`${proposal.periodLabel} の提案を取り下げました`, 'success');
+      setConfirming(false);
+      // 取り下げ済みになれば行ごと消えるが、再読み込みに失敗して
+      // 残った場合にボタンが固まらないよう busy は必ず戻す
+      await reload();
+      setBusy(false);
+    } catch (e) {
+      // 取り下げと同時に回答が揃った場合はここに来る。理由をそのまま見せる
+      toast(
+        e instanceof Error ? e.message : '提案の取り下げに失敗しました',
+        'error',
+      );
+      setBusy(false);
+    }
+  }
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        className={styles.withdrawBtn}
+        onClick={() => setConfirming(true)}
+      >
+        <i className="fa-solid fa-rotate-left" /> 取り下げる
+      </button>
+    );
+  }
+
+  return (
+    <div className={styles.withdrawConfirm}>
+      <span className={styles.withdrawAsk}>
+        この提案を取り下げますか？（承認者への依頼も取り消されます）
+      </span>
+      <div className={styles.withdrawActions}>
+        <button
+          type="button"
+          className={styles.withdrawYes}
+          disabled={busy}
+          onClick={run}
+        >
+          {busy ? (
+            <i className="fa-solid fa-circle-notch spin" />
+          ) : (
+            <>
+              <i className="fa-solid fa-check" /> 取り下げる
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          className={styles.withdrawNo}
+          disabled={busy}
+          onClick={() => setConfirming(false)}
+        >
+          やめる
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -99,9 +199,7 @@ export default function SpecialEventInboxModal({
                     <span className={styles.rowTitle}>{p.periodLabel}</span>
                     <span className={styles.rowSub}>
                       {p.proposerName} さんの提案 /{' '}
-                      {user && p.responses[user.uid]?.decision === 'rejected'
-                        ? `あなた: 否認（${p.responses[user.uid].comment || '理由なし'}）`
-                        : 'あなた: 承認'}
+                      {describeMyDecision(p, user?.uid)}
                     </span>
                   </span>
                   <StatusBadge proposal={p} />
@@ -139,6 +237,9 @@ export default function SpecialEventInboxModal({
                     </span>
                     <StatusBadge proposal={p} />
                   </div>
+                  {user && canWithdrawProposal(p, user.uid) && (
+                    <WithdrawButton proposal={p} />
+                  )}
                   {rejections.map((d) => (
                     <div key={d.userId} className={styles.commentCard}>
                       <span className={styles.commentWho}>

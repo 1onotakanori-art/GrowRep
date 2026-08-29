@@ -134,7 +134,8 @@ service cloud.firestore {
     // 提案は本人だけが作成でき、承認者に選ばれた人だけが回答（responses/status）
     // を書き換えられる。3人の回答が揃い、全員承認なら
     // settings_free/weekly_override が更新される。
-    // 提案者は結果ポップアップの既読（resultSeenAt）だけを書き込める。
+    // 提案者は自分の提案の取り下げ（status: withdrawn）と、
+    // 結果ポップアップの既読（resultSeenAt）だけを書き込める。
     match /special_event_proposals/{proposalId} {
       allow read: if request.auth != null;
 
@@ -144,11 +145,24 @@ service cloud.firestore {
                     && request.resource.data.get('responses', {}).size() == 0;
 
       // 承認者: 承認/否認の回答（否認理由コメントを含む）
+      // 回答できるのは pending の間だけ。取り下げ済み・確定済みの提案を
+      // あとから書き換えて生き返らせることはできない。
       allow update: if request.auth != null
                     && request.auth.uid in resource.data.approverIds
+                    && resource.data.get('status', 'pending') == 'pending'
                     && request.resource.data.diff(resource.data)
                          .affectedKeys()
                          .hasOnly(['responses', 'status', 'updatedAt']);
+
+      // 提案者: 回答が揃う前なら自分の提案を取り下げられる。
+      // 取り下げは pending → withdrawn の一方通行で、他のフィールドは触れない。
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.proposerId
+                    && resource.data.get('status', 'pending') == 'pending'
+                    && request.resource.data.status == 'withdrawn'
+                    && request.resource.data.diff(resource.data)
+                         .affectedKeys()
+                         .hasOnly(['status', 'withdrawnAt', 'updatedAt']);
 
       // 提案者: 結果ポップアップを確認したことの記録だけ
       allow update: if request.auth != null

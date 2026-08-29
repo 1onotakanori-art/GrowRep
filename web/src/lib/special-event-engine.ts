@@ -28,6 +28,7 @@ import { db } from './firebase';
 import { getPostsSince, getPostsSinceFromCache } from './posts';
 import {
   buildApproverCandidates,
+  canWithdrawProposal,
   countRecentPosts,
   getApproverActiveSince,
   isTargetWeekUpcoming,
@@ -171,6 +172,7 @@ interface ProposalDoc {
   status?: ProposalStatus;
   createdAt?: Timestamp;
   resultSeenAt?: Timestamp;
+  withdrawnAt?: Timestamp;
 }
 
 function toProposal(id: string, data: ProposalDoc): SpecialEventProposal {
@@ -194,6 +196,7 @@ function toProposal(id: string, data: ProposalDoc): SpecialEventProposal {
     status: data.status || resolveProposalStatus(approverIds, responses),
     createdAt: data.createdAt ? data.createdAt.toDate() : null,
     resultSeenAt: data.resultSeenAt ? data.resultSeenAt.toDate() : null,
+    withdrawnAt: data.withdrawnAt ? data.withdrawnAt.toDate() : null,
   };
 }
 
@@ -378,6 +381,47 @@ export async function respondToProposal(
     }
   }
   return nextStatus;
+}
+
+/**
+ * 自分の提案を取り下げる（pending → withdrawn）。
+ *
+ * 承認者の回答が1つでも入っている途中でも取り下げてよい。ただし3人ぶんが
+ * 揃って status が確定したあとは触らせない（weekly_override へ反映済みの
+ * 可能性があるため）。取り下げと同時に別の承認者が回答して確定する競合が
+ * あるので、トランザクションで status を読み直してから書く。
+ */
+export async function withdrawProposal(
+  proposalId: string,
+  userId: string,
+): Promise<void> {
+  const ref = doc(db, COL, proposalId);
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error('提案が見つかりません');
+      const proposal = toProposal(snap.id, snap.data() as ProposalDoc);
+      if (proposal.proposerId !== userId) {
+        throw new Error('自分が出した提案だけ取り下げられます');
+      }
+      if (proposal.status === 'withdrawn') return; // 二重クリックは成功扱い
+      if (!canWithdrawProposal(proposal, userId)) {
+        throw new Error(
+          'すでに承認者全員の回答が揃っているため取り下げられません',
+        );
+      }
+      tx.update(ref, {
+        status: 'withdrawn' as ProposalStatus,
+        withdrawnAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    });
+  } catch (e) {
+    console.error('[特別イベント] 提案の取り下げに失敗:', e);
+    throw toSpecialEventError(e, '提案の取り下げに失敗しました');
+  }
+  // 取り下げた週は「申請中」ではなくなるので、選択肢の表示を作り直させる
+  weekUsageCache = null;
 }
 
 /**

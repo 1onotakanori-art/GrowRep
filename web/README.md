@@ -77,6 +77,11 @@ web/src/
   否認した人ごとの理由コメントをそのまま表示します。「確認しました」を押すと
   `resultSeenAt` が書かれ、二度と表示されません
 - 回答状況・否認理由はマイページの「イベント承認」からいつでも確認できます
+- **回答が揃う前なら、提案者は自分の提案を取り下げられます**。「イベント承認」の
+  「自分の提案」で回答待ちの提案に出る「取り下げる」ボタンから、確認を挟んで
+  `status: 'withdrawn'` を書き込みます。取り下げた提案は承認者のポップアップにも
+  提案者の結果ポップアップにも出てこなくなり、対象週も空きに戻ります。
+  確定後（承認/否認）は `weekly_override` へ反映済みの可能性があるため取り下げ不可
 
 Firestore コレクション `special_event_proposals`（1提案 = 1ドキュメント）:
 
@@ -98,9 +103,11 @@ Firestore コレクション `special_event_proposals`（1提案 = 1ドキュメ
       comment: '否認理由（承認時は空文字）'
     }
   },
-  status: 'pending' | 'approved' | 'rejected',  // 3人の回答が揃うまで pending
+  // 3人の回答が揃うまで pending。withdrawn は提案者が自分で取り下げたもの
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn',
   createdAt, updatedAt,
-  resultSeenAt                     // 提案者が結果ポップアップを確認した時刻
+  resultSeenAt,                    // 提案者が結果ポップアップを確認した時刻
+  withdrawnAt                      // 提案者が取り下げた時刻
 }
 ```
 
@@ -109,9 +116,17 @@ Firestore コレクション `special_event_proposals`（1提案 = 1ドキュメ
 そのまま `weekly_override` に流すため、タイムアタックを2つ以上選んでも、逆に0にしても
 構いません。
 
-セキュリティルール（`firestore.rules`）では、作成は提案者本人のみ、更新は
-**承認者本人が `responses` / `status` / `updatedAt` を変更する場合**か、
-**提案者本人が `resultSeenAt` だけを変更する場合**のみ許可しています。
+セキュリティルール（`firestore.rules`）では、作成は提案者本人のみ、更新は次の3つだけ
+許可しています。
+
+- **承認者本人**が `responses` / `status` / `updatedAt` を変更する場合
+  （`status` が `pending` の間だけ。取り下げ済み・確定済みの提案は書き換えられない）
+- **提案者本人**が `pending` → `withdrawn` の取り下げをする場合
+  （`status` / `withdrawnAt` / `updatedAt` 以外は触れない）
+- **提案者本人**が `resultSeenAt` だけを変更する場合
+
+取り下げは「別の承認者の回答で確定する」のと競合しうるので、両アプリとも
+トランザクションで `status` を読み直してから書き込みます。
 
 ⚠️ `firestore.rules` は GitHub Actions のフロントエンド配信では反映されません。
 変更したら `./scripts/deploy-firestore-rules.sh` を実行してください。未反映のままだと

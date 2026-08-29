@@ -5019,6 +5019,82 @@ body.dark-mode .weekly-paused-inline { color: #aaa; }
     background: #fdeaea;
     color: #d94a45;
 }
+.se-badge-off {
+    background: #f0f1f6;
+    color: #8a8fa3;
+    border: 1px solid #e6e8f0;
+}
+
+/* 提案の取り下げ（回答待ちの自分の提案だけ） */
+.se-withdraw {
+    margin-bottom: 6px;
+}
+.se-withdraw-btn {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: inherit;
+    color: #8a8fa3;
+    background: transparent;
+    border: 1px solid #e6e8f0;
+    border-radius: 999px;
+    cursor: pointer;
+}
+.se-withdraw-btn:hover {
+    color: #d94a45;
+    border-color: #d94a45;
+}
+.se-withdraw-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(217, 74, 69, 0.08);
+    border: 1px solid rgba(217, 74, 69, 0.24);
+}
+/* display 指定は hidden 属性より強いので、閉じている間は明示的に消す */
+.se-withdraw-confirm[hidden] {
+    display: none;
+}
+.se-withdraw-ask {
+    font-size: 12px;
+    color: #333;
+}
+.se-withdraw-actions {
+    display: flex;
+    gap: 8px;
+}
+.se-withdraw-yes,
+.se-withdraw-no {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: inherit;
+    border-radius: 10px;
+    cursor: pointer;
+}
+.se-withdraw-yes {
+    color: #fff;
+    background: #d94a45;
+    border: 1px solid #d94a45;
+}
+.se-withdraw-no {
+    color: #8a8fa3;
+    background: #f7f8fc;
+    border: 1px solid #e6e8f0;
+}
+.se-withdraw-yes:disabled,
+.se-withdraw-no:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+.se-withdraw-error {
+    margin: 0;
+    font-size: 12px;
+    color: #d94a45;
+}
 
 /* 否認理由の入力 */
 .se-comment-input {
@@ -5130,3 +5206,14 @@ body.dark-mode .se-comment-input {
 }
 body.dark-mode .se-comment-text,
 body.dark-mode .se-result-sub { color: #c5c8d4; }
+body.dark-mode .se-badge-off {
+    background: #23273a;
+    border-color: #333a55;
+    color: #9aa0b8;
+}
+body.dark-mode .se-withdraw-btn { border-color: #333a55; }
+body.dark-mode .se-withdraw-ask { color: #eef1fb; }
+body.dark-mode .se-withdraw-no {
+    background: #23273a;
+    border-color: #333a55;
+}
