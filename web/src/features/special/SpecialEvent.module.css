@@ -360,6 +360,78 @@
   background: rgba(239, 83, 80, 0.14);
   color: var(--danger);
 }
+.badgeWithdrawn {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  background: var(--surface-2);
+  color: var(--text-3);
+  border: 1px solid var(--border);
+}
+
+/* --- 提案の取り下げ（回答待ちの自分の提案だけ） --- */
+.withdrawBtn {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--text-3);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.withdrawBtn:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.withdrawConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(239, 83, 80, 0.08);
+  border: 1px solid rgba(239, 83, 80, 0.24);
+}
+.withdrawAsk {
+  font-size: 12px;
+  color: var(--text);
+}
+.withdrawActions {
+  display: flex;
+  gap: 8px;
+}
+.withdrawYes,
+.withdrawNo {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.withdrawYes {
+  color: #fff;
+  background: var(--danger);
+  border: 1px solid var(--danger);
+}
+.withdrawNo {
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.withdrawYes:disabled,
+.withdrawNo:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 
 /* --- 否認理由の入力 --- */
 .commentBox {

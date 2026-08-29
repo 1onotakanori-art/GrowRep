@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  canWithdrawProposal,
   getProposableWeeks,
   listDecisions,
   listRejections,
@@ -214,6 +215,15 @@ describe('提案者への結果通知', () => {
     ).toBe(false);
   });
 
+  it('自分で取り下げた提案には結果ポップアップを出さない', () => {
+    expect(
+      needsResultNoticeFor(
+        { proposerId: 'me', status: 'withdrawn', resultSeenAt: null },
+        'me',
+      ),
+    ).toBe(false);
+  });
+
   it('listDecisions は承認者順に回答を並べる', () => {
     expect(listDecisions(base)).toEqual([
       { userId: 'a', userName: 'あー', decision: 'approved', comment: '' },
@@ -280,6 +290,59 @@ describe('needsResponseFrom（ポップアップを出すか）', () => {
 
   it('対象週が始まっていたら、もう反映できないので聞かない', () => {
     expect(needsResponseFrom(base, 'a', jst(2026, 8, 3, 12))).toBe(false);
+  });
+});
+
+describe('canWithdrawProposal（提案の取り下げ）', () => {
+  it('自分の回答待ちの提案は取り下げられる', () => {
+    expect(canWithdrawProposal({ proposerId: 'me', status: 'pending' }, 'me')).toBe(
+      true,
+    );
+  });
+
+  it('他人の提案は取り下げられない', () => {
+    expect(
+      canWithdrawProposal({ proposerId: 'other', status: 'pending' }, 'me'),
+    ).toBe(false);
+  });
+
+  it('確定済み（承認/否認）の提案は取り下げられない', () => {
+    // 承認済みは weekly_override へ反映済みかもしれないので触らせない
+    expect(
+      canWithdrawProposal({ proposerId: 'me', status: 'approved' }, 'me'),
+    ).toBe(false);
+    expect(
+      canWithdrawProposal({ proposerId: 'me', status: 'rejected' }, 'me'),
+    ).toBe(false);
+  });
+
+  it('取り下げ済みの提案をもう一度は取り下げられない', () => {
+    expect(
+      canWithdrawProposal({ proposerId: 'me', status: 'withdrawn' }, 'me'),
+    ).toBe(false);
+  });
+
+  it('未ログイン（userId 空）では取り下げられない', () => {
+    expect(canWithdrawProposal({ proposerId: 'me', status: 'pending' }, '')).toBe(
+      false,
+    );
+  });
+});
+
+describe('取り下げた提案は承認者に聞かない', () => {
+  it('status=withdrawn なら needsResponseFrom は false', () => {
+    expect(
+      needsResponseFrom(
+        {
+          status: 'withdrawn',
+          approverIds: ['a', 'b', 'c'],
+          responses: {},
+          targetWeekStart: jst(2026, 8, 2, 17),
+        },
+        'a',
+        jst(2026, 7, 28, 12),
+      ),
+    ).toBe(false);
   });
 });
 

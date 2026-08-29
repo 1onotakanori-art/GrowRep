@@ -12193,11 +12193,27 @@ function needsSpecialEventResponse(proposal, userId, now = new Date()) {
 /**
  * 提案者に結果ポップアップを出すべきか。
  * 3人の回答が揃って status が確定し、まだ本人が確認していない提案が対象。
+ *
+ * 自分で取り下げた提案は結果を知らせる意味がないので出さない
+ * （出すと「否認されました」と同じ見た目で驚かせてしまう）。
  */
 function needsSpecialEventResultNotice(proposal, userId) {
     if (!proposal || proposal.proposerId !== userId) return false;
     if (proposal.status === 'pending') return false;
+    if (proposal.status === 'withdrawn') return false;
     return !proposal.resultSeenAt;
+}
+
+/**
+ * 提案者が自分でこの提案を取り下げられるか。
+ *
+ * 取り下げられるのは「自分の提案」かつ「まだ回答が揃っていない（pending）」もの
+ * だけ。確定してからでは weekly_override に反映済みかもしれないので触らせない。
+ * 承認者が何人か回答済みでも、揃うまでは取り下げてよい。
+ */
+function canWithdrawSpecialEventProposal(proposal, userId) {
+    if (!proposal || !userId || proposal.proposerId !== userId) return false;
+    return proposal.status === 'pending';
 }
 
 /** 承認者ごとの回答一覧（提案時に選んだ順）。結果ポップアップの明細に使う。 */
@@ -12249,7 +12265,8 @@ function toSpecialEventProposal(id, data) {
         approverNames: data.approverNames || {},
         responses,
         status: data.status || resolveSpecialEventStatus(approverIds, responses),
-        resultSeenAt: data.resultSeenAt ? data.resultSeenAt.toDate() : null
+        resultSeenAt: data.resultSeenAt ? data.resultSeenAt.toDate() : null,
+        withdrawnAt: data.withdrawnAt ? data.withdrawnAt.toDate() : null
     };
 }
 
@@ -12502,6 +12519,43 @@ async function respondToSpecialEventProposal(proposalId, decision, comment = '')
 }
 
 /**
+ * 自分の提案を取り下げる（pending → withdrawn）。
+ *
+ * 承認者の回答が1つでも入っている途中でも取り下げてよい。ただし3人ぶんが
+ * 揃って status が確定したあとは触らせない（weekly_override へ反映済みの
+ * 可能性があるため）。取り下げと同時に別の承認者が回答して確定する競合が
+ * あるので、トランザクションで status を読み直してから書く。
+ */
+async function withdrawSpecialEventProposal(proposalId) {
+    if (!currentUser) throw new Error('ログインが必要です');
+    const ref = db.collection(SPECIAL_EVENT_COL).doc(proposalId);
+    try {
+        await db.runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            if (!snap.exists) throw new Error('提案が見つかりません');
+            const proposal = toSpecialEventProposal(snap.id, snap.data());
+            if (proposal.proposerId !== currentUser.uid) {
+                throw new Error('自分が出した提案だけ取り下げられます');
+            }
+            if (proposal.status === 'withdrawn') return; // 二重クリックは成功扱い
+            if (!canWithdrawSpecialEventProposal(proposal, currentUser.uid)) {
+                throw new Error('すでに承認者全員の回答が揃っているため取り下げられません');
+            }
+            tx.update(ref, {
+                status: 'withdrawn',
+                withdrawnAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        });
+    } catch (e) {
+        console.error('[特別イベント] 提案の取り下げに失敗:', e);
+        throw toSpecialEventError(e, '提案の取り下げに失敗しました');
+    }
+    // 取り下げた週は「申請中」ではなくなるので、選択肢の表示を作り直させる
+    specialEventWeekUsageCache = null;
+}
+
+/**
  * 提案者が結果ポップアップを確認したことを記録する。
  * これを書いた提案は二度とポップアップに出てこない。
  */
@@ -12540,6 +12594,7 @@ function closeSpecialEventModal() {
 function specialEventStatusBadge(proposal) {
     if (proposal.status === 'approved') return '<span class="se-badge se-badge-ok">承認済み</span>';
     if (proposal.status === 'rejected') return '<span class="se-badge se-badge-ng">否認</span>';
+    if (proposal.status === 'withdrawn') return '<span class="se-badge se-badge-off">取り下げ済み</span>';
     // 3人ぶん揃って初めて結果が決まるので、進捗は「回答した人数」で出す
     const s = summarizeSpecialEventResponses(proposal.approverIds, proposal.responses);
     return `<span class="se-badge se-badge-wait">回答待ち ${s.approved + s.rejected}/${s.total}</span>`;
@@ -12786,6 +12841,10 @@ async function openSpecialEventInboxModal() {
         ? '<p class="se-muted">まだ提案していません</p>'
         : mine.map(p => {
             const row = rowHtml(p, `承認者: ${p.approverIds.map(uid => p.approverNames[uid] || '名無しさん').join('・')}`);
+            // 回答が揃う前なら、提案者はここから取り下げられる
+            if (canWithdrawSpecialEventProposal(p, currentUser.uid)) {
+                return row + specialEventWithdrawHtml(p);
+            }
             // 否認された提案は、結果ポップアップを閉じたあとでもここから理由を読み返せる
             if (p.status !== 'rejected') return row;
             const comments = listSpecialEventRejections(p).map(d => `
@@ -12802,6 +12861,84 @@ async function openSpecialEventInboxModal() {
     if (openBtn) {
         openBtn.addEventListener('click', () => openSpecialEventApprovalModal(pending, false));
     }
+    bindSpecialEventWithdrawButtons();
+}
+
+/**
+ * 「取り下げる」ボタンと、その場に開く確認ブロック。
+ * 押し間違いで提案が消えないよう、確認を挟んでから書き込む。
+ */
+function specialEventWithdrawHtml(proposal) {
+    const id = escapeHtml(proposal.id);
+    return `
+        <div class="se-withdraw">
+            <button type="button" class="se-withdraw-btn" data-se-wd-open="${id}">
+                <i class="fa-solid fa-rotate-left"></i> 取り下げる
+            </button>
+            <div class="se-withdraw-confirm" data-se-wd-confirm="${id}" hidden>
+                <span class="se-withdraw-ask">この提案を取り下げますか？（承認者への依頼も取り消されます）</span>
+                <div class="se-withdraw-actions">
+                    <button type="button" class="se-withdraw-yes" data-se-wd-yes="${id}">
+                        <i class="fa-solid fa-check"></i> 取り下げる
+                    </button>
+                    <button type="button" class="se-withdraw-no" data-se-wd-no="${id}">やめる</button>
+                </div>
+                <p class="se-withdraw-error" data-se-wd-error="${id}" hidden></p>
+            </div>
+        </div>`;
+}
+
+function bindSpecialEventWithdrawButtons() {
+    const body = document.getElementById('special-event-body');
+    if (!body) return;
+
+    const confirmOf = id => body.querySelector(`[data-se-wd-confirm="${id}"]`);
+    const openOf = id => body.querySelector(`[data-se-wd-open="${id}"]`);
+
+    body.querySelectorAll('[data-se-wd-open]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.seWdOpen;
+            btn.hidden = true;
+            const box = confirmOf(id);
+            if (box) box.hidden = false;
+        });
+    });
+
+    body.querySelectorAll('[data-se-wd-no]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.seWdNo;
+            const box = confirmOf(id);
+            if (box) box.hidden = true;
+            const open = openOf(id);
+            if (open) open.hidden = false;
+        });
+    });
+
+    body.querySelectorAll('[data-se-wd-yes]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = btn.dataset.seWdYes;
+            const errorEl = body.querySelector(`[data-se-wd-error="${id}"]`);
+            if (errorEl) errorEl.hidden = true;
+            const noBtn = body.querySelector(`[data-se-wd-no="${id}"]`);
+            btn.disabled = true;
+            if (noBtn) noBtn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 取り下げ中...';
+            try {
+                await withdrawSpecialEventProposal(id);
+                // 一覧を取り直して「取り下げ済み」の状態で開き直す
+                await openSpecialEventInboxModal();
+            } catch (e) {
+                // 取り下げと同時に回答が揃った場合はここに来る。理由をそのまま見せる
+                btn.disabled = false;
+                if (noBtn) noBtn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> 取り下げる';
+                if (errorEl) {
+                    errorEl.textContent = e.message || '提案の取り下げに失敗しました';
+                    errorEl.hidden = false;
+                }
+            }
+        });
+    });
 }
 
 /**

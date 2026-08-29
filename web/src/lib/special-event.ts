@@ -10,6 +10,8 @@
 //      1人でも否認していれば却下。
 //   4. 確定したら提案者にポップアップで結果を通知する（否認理由も表示）。
 //      一度確認したら resultSeenAt を書き込み、二度は出さない。
+//   5. 回答が揃う前なら、提案者は自分の提案を取り下げられる（status: withdrawn）。
+//      取り下げた提案は承認者のポップアップにも結果ポップアップにも出てこない。
 //
 // Firestore アクセスは special-event-engine.ts 側。
 // =====================================================================
@@ -36,7 +38,8 @@ export const SPECIAL_EVENT_ACTIVE_DAYS = 5;
 export const SPECIAL_EVENT_COMMENT_MAX = 200;
 
 export type ApprovalDecision = 'approved' | 'rejected';
-export type ProposalStatus = 'pending' | 'approved' | 'rejected';
+/** withdrawn = 回答が揃う前に提案者が取り下げた（承認者にはもう聞かない）。 */
+export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
 
 export interface ApprovalResponse {
   decision: ApprovalDecision;
@@ -68,6 +71,8 @@ export interface SpecialEventProposal {
   createdAt?: Date | null;
   /** 提案者が結果ポップアップを確認した時刻。未確認なら null。 */
   resultSeenAt?: Date | null;
+  /** 提案者が取り下げた時刻。取り下げていなければ null。 */
+  withdrawnAt?: Date | null;
 }
 
 export interface ApproverCandidate {
@@ -231,6 +236,21 @@ export function needsResponseFrom(
   return isTargetWeekUpcoming(proposal.targetWeekStart, now);
 }
 
+/**
+ * 提案者が自分でこの提案を取り下げられるか。
+ *
+ * 取り下げられるのは「自分の提案」かつ「まだ回答が揃っていない（pending）」もの
+ * だけ。確定してからでは weekly_override に反映済みかもしれないので触らせない。
+ * 承認者が何人か回答済みでも、揃うまでは取り下げてよい。
+ */
+export function canWithdrawProposal(
+  proposal: Pick<SpecialEventProposal, 'status' | 'proposerId'>,
+  userId: string,
+): boolean {
+  if (!userId || proposal.proposerId !== userId) return false;
+  return proposal.status === 'pending';
+}
+
 /** 「承認2/3」のような進捗サマリ。 */
 export function summarizeResponses(
   approverIds: string[],
@@ -290,6 +310,9 @@ export interface ProposalDecisionEntry {
 /**
  * 提案者に結果ポップアップを出すべきか。
  * 3人の回答が揃って status が確定し、まだ本人が確認していない提案が対象。
+ *
+ * 自分で取り下げた提案は結果を知らせる意味がないので出さない
+ * （出すと「否認されました」と同じ見た目で驚かせてしまう）。
  */
 export function needsResultNoticeFor(
   proposal: Pick<
@@ -300,6 +323,7 @@ export function needsResultNoticeFor(
 ): boolean {
   if (proposal.proposerId !== userId) return false;
   if (proposal.status === 'pending') return false;
+  if (proposal.status === 'withdrawn') return false;
   return !proposal.resultSeenAt;
 }
 
