@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ModeProvider, useMode } from '../context/ModeContext';
 import { DataProvider, useData } from '../context/DataContext';
+import { DropsetProvider } from '../context/DropsetContext';
 import {
   SpecialEventProvider,
   useSpecialEvent,
@@ -17,6 +18,9 @@ import MyPageView from '../views/MyPageView';
 import ChallengeView from '../views/ChallengeView';
 import ExercisesView from '../views/ExercisesView';
 import RaidScoreView from '../views/RaidScoreView';
+import DropsetHomeView from '../views/DropsetHomeView';
+import DropsetExercisesView from '../views/DropsetExercisesView';
+import DropsetRanking from '../features/dropset/DropsetRanking';
 import SpecialEventApprovalModal from '../features/special/SpecialEventApprovalModal';
 import SpecialEventResultModal from '../features/special/SpecialEventResultModal';
 import styles from './AppShell.module.css';
@@ -46,16 +50,24 @@ function ShellInner() {
       <Header onOpenProfile={() => setProfileOpen(true)} />
 
       <main className={styles.main}>
-        {nav === 'home' && <HomeView onNavigate={setNav} />}
+        {nav === 'home' &&
+          (mode === 'dropset' ? (
+            <DropsetHomeView onNavigate={setNav} />
+          ) : (
+            <HomeView onNavigate={setNav} />
+          ))}
         {nav === 'daily' && <DailyMissionView />}
         {nav === 'timer' && <TimerView />}
         {nav === 'post' && <PostView onNavigate={setNav} />}
-        {nav === 'ranking' && <RankingView />}
+        {nav === 'ranking' &&
+          (mode === 'dropset' ? <DropsetRanking /> : <RankingView />)}
         {nav === 'center' &&
           (mode === 'weekly' ? (
             <ChallengeView />
           ) : mode === 'raid' ? (
             <RaidScoreView />
+          ) : mode === 'dropset' ? (
+            <DropsetExercisesView />
           ) : (
             <ExercisesView />
           ))}
@@ -107,9 +119,11 @@ export default function AppShell() {
   return (
     <ModeProvider>
       <DataProvider>
-        <SpecialEventProvider>
-          <ShellInner />
-        </SpecialEventProvider>
+        <DropsetProvider>
+          <SpecialEventProvider>
+            <ShellInner />
+          </SpecialEventProvider>
+        </DropsetProvider>
       </DataProvider>
     </ModeProvider>
   );

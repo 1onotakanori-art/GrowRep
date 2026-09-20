@@ -59,13 +59,14 @@
   font-weight: 700;
   color: var(--text-2);
   transition: all 0.18s ease;
-  /* モードが3つになったので、狭い端末でも文字を折り返さない。
+  /* モードが4つになったので、狭い端末でも文字を折り返さない。
      縮めると文字がはみ出すだけなので、幅は文字ぶんを保って親側で逃がす */
   white-space: nowrap;
   flex-shrink: 0;
 }
 /* 幅が足りない端末では余白と字送りを詰めて1行を保つ */
-@media (max-width: 400px) {
+/* モードが4つあるぶん、3つだった頃より早めに詰め始める */
+@media (max-width: 460px) {
   .modeBtn,
   .modeActive {
     padding: 6px 10px;

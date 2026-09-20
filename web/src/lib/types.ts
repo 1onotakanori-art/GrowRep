@@ -1,7 +1,7 @@
 // 共有ドメイン型（既存 Firestore データモデルに準拠）
 import type { Timestamp } from 'firebase/firestore';
 
-export type Mode = 'free' | 'weekly' | 'raid';
+export type Mode = 'free' | 'weekly' | 'raid' | 'dropset';
 
 export interface UserData {
   userName?: string;
@@ -44,6 +44,42 @@ export interface FreeExercise {
 }
 
 export type FreeExerciseMap = Record<string, FreeExercise>;
+
+export interface DropsetExercise {
+  name: string;
+  rule: string;
+  icon: string; // 'fa-dumbbell' など
+  tags: string[];
+  /** 初挑戦時に提案される重量(kg) */
+  startWeight: number;
+  /** クリア時に加算される刻み幅(kg) */
+  step: number;
+  createdBy?: string; // 作成者 uid
+}
+
+export type DropsetExerciseMap = Record<string, DropsetExercise>;
+
+/**
+ * ドロップセットの挑戦記録（posts_dropset）。
+ * 既存の集計はすべて `value: number` を前提に動くため、value は意図的に持たない。
+ */
+export interface DropsetPost {
+  id: string;
+  userId: string;
+  userEmail?: string;
+  exerciseType: string;
+  /** 挑戦した重量(kg) */
+  weight: number;
+  /** 実際にできた回数（セット順） */
+  reps: number[];
+  /** 判定時の目標回数。将来 10-8-6 を変えても過去記録が壊れないよう保存する */
+  target: number[];
+  /** reps[i] >= target[i] を全て満たすか */
+  cleared: boolean;
+  likes?: string[];
+  comments?: Comment[];
+  timestamp?: Timestamp | null;
+}
 
 export interface WeeklyChallenge {
   weekStart: Date;

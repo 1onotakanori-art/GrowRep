@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSpecialEvent } from '../context/SpecialEventContext';
+import { useMode } from '../context/ModeContext';
 import { getProposableWeeks } from '../lib/special-event';
 import { prefetchProposalFormData } from '../lib/special-event-engine';
 import { ViewHeader, Segmented } from '../components/ui';
 import ProgressChart from '../features/progress/ProgressChart';
+import DropsetWeightChart from '../features/dropset/DropsetWeightChart';
 import SpecialEventProposalModal from '../features/special/SpecialEventProposalModal';
 import SpecialEventApprovalModal from '../features/special/SpecialEventApprovalModal';
 import SpecialEventInboxModal from '../features/special/SpecialEventInboxModal';
@@ -20,6 +22,7 @@ export default function MyPageView({
   const { user, userData, isGuest } = useAuth();
   const { theme, setTheme } = useTheme();
   const { pending, reload } = useSpecialEvent();
+  const { mode } = useMode();
   const displayName = userData?.userName || (isGuest ? 'ゲスト' : 'ユーザー');
 
   const [proposalOpen, setProposalOpen] = useState(false);
@@ -80,8 +83,9 @@ export default function MyPageView({
         />
       </div>
 
-      {/* タイマーは専用タブへ移動（ボトムナビ）。ここは成長グラフのみ。 */}
-      <ProgressChart />
+      {/* タイマーは専用タブへ移動（ボトムナビ）。ここは成長グラフのみ。
+          ドロップセットは記録の形が違う（重量 + 3セット）ので専用グラフに差し替える。 */}
+      {mode === 'dropset' ? <DropsetWeightChart /> : <ProgressChart />}
 
       {proposalOpen && (
         <SpecialEventProposalModal

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { useDropset } from '../../context/DropsetContext';
 import { useMode } from '../../context/ModeContext';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -12,6 +13,7 @@ import {
   type LoadedPost,
 } from '../../lib/posts';
 import { POSTS_PAGE_SIZE } from '../../lib/constants';
+import { formatWeight } from '../../lib/dropset';
 import { Skeleton, EmptyState, ExerciseIcon } from '../../components/ui';
 import styles from './Feed.module.css';
 
@@ -32,6 +34,7 @@ function formatDate(ts: LoadedPost['timestamp']): string {
 export default function Feed() {
   const { user } = useAuth();
   const { freeExercises } = useData();
+  const { exercises: dropsetExercises } = useDropset();
   const { refreshToken } = useMode();
   const { toast } = useToast();
   const [posts, setPosts] = useState<LoadedPost[]>([]);
@@ -75,7 +78,7 @@ export default function Feed() {
       ),
     );
     try {
-      await toggleLike(post.id, user.uid, liked);
+      await toggleLike(post.id, user.uid, liked, post.kind);
     } catch {
       load(limit);
     }
@@ -90,7 +93,7 @@ export default function Feed() {
       return;
     }
     try {
-      await addComment(post.id, user, text);
+      await addComment(post.id, user, text, post.kind);
       setCommentText((c) => ({ ...c, [post.id]: '' }));
       await load(limit);
       setOpenComments((o) => ({ ...o, [post.id]: true }));
@@ -102,7 +105,7 @@ export default function Feed() {
   async function onDeleteComment(post: LoadedPost, index: number) {
     if (!confirm('このコメントを削除しますか？')) return;
     try {
-      await deleteComment(post.id, index);
+      await deleteComment(post.id, index, post.kind);
       await load(limit);
     } catch {
       toast('削除に失敗しました', 'error');
@@ -112,7 +115,7 @@ export default function Feed() {
   async function onDeletePost(post: LoadedPost) {
     if (!confirm('この投稿を削除しますか？')) return;
     try {
-      await deletePost(post.id);
+      await deletePost(post.id, post.kind);
       setPosts((prev) => prev.filter((p) => p.id !== post.id));
       toast('投稿を削除しました', 'success');
     } catch {
@@ -127,8 +130,11 @@ export default function Feed() {
   return (
     <div className={styles.feed}>
       {posts.map((post) => {
-        const ex = freeExercises[post.exerciseType];
-        const isBarbarian = !!ex?.barbarian;
+        const isDropset = post.kind === 'dropset';
+        const ex = isDropset
+          ? dropsetExercises[post.exerciseType]
+          : freeExercises[post.exerciseType];
+        const isBarbarian = !isDropset && !!freeExercises[post.exerciseType]?.barbarian;
         const liked = !!(user && post.likes?.includes(user.uid));
         const likeCount = post.likes?.length || 0;
         const commentCount = post.comments?.length || 0;
@@ -158,10 +164,29 @@ export default function Feed() {
               <span className={styles.exName}>
                 {ex?.name || post.exerciseType}
               </span>
-              <span className={styles.value}>
-                {post.value}
-                <span className={styles.unit}>{isBarbarian ? '秒' : ''}</span>
-              </span>
+              {isDropset ? (
+                <span className={styles.dsWrap}>
+                  <span className={styles.value}>
+                    {formatWeight(post.weight ?? 0)}
+                    <span className={styles.unit}>kg</span>
+                  </span>
+                  <span className={styles.dsReps}>
+                    {(post.reps || []).join('-')}
+                    {post.cleared ? (
+                      <span className={styles.dsCleared}>
+                        <i className="fa-solid fa-circle-check" /> クリア
+                      </span>
+                    ) : (
+                      <span className={styles.dsStalled}>停滞</span>
+                    )}
+                  </span>
+                </span>
+              ) : (
+                <span className={styles.value}>
+                  {post.value}
+                  <span className={styles.unit}>{isBarbarian ? '秒' : ''}</span>
+                </span>
+              )}
             </div>
 
             <div className={styles.actions}>

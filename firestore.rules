@@ -111,6 +111,30 @@ service cloud.firestore {
       allow delete: if request.auth != null;
     }
 
+    // posts_dropset コレクション（ドロップセットモード用）
+    // 同じ重量で 10-8-6 をこなせたらその重量をクリア、という挑戦記録。
+    // posts_free とは別コレクションにして、フリー/週間/デイリーの集計に
+    // 混ざらないようにしている（dropset-mode-design.md 2. 参照）。
+    match /posts_dropset/{postId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      // 誰でも更新可能（いいね・コメント追加）。ただし認証済みユーザーのみ
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.userId;
+    }
+
+    // settings_dropset コレクション（ドロップセットモード用）
+    // settings_dropset/exercises にドロップセット専用の種目マスタを置く。
+    // app.js は settings_free/exercises しか読まないため、週間チャレンジの
+    // 抽選やデイリーミッションの選出に構造的に混ざらない。
+    match /settings_dropset/{docId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+
     // weekly_reports コレクション（週次ウィークリー: Cowork週報 + 分析ダッシュボード）
     // ローカルPCのサービスアカウント（admin SDK）からのみ publish される「公式発表」。
     // admin SDK はルールを無視して書き込めるため、クライアントは読み取り専用にして改ざんを防ぐ。

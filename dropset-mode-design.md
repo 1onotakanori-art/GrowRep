@@ -113,12 +113,18 @@ export const DEFAULT_STEP = 2.5;
 export const DEFAULT_START_WEIGHT = 20;
 
 isCleared(reps, target?)          // reps[i] >= target[i] を全て満たすか
+shortfallOf(reps, target?)        // 目標に届かなかったセットの「あと何回」
 progressOf(posts, userId, exKey, ex)
   // → { clearedMax, suggestedWeight, lastAttempt, attempts, stalledCount }
 rankByClearedWeight(posts, exKey) // クリア重量の降順（同値は達成が早い順）
 weightHistory(posts, userId, exKey)
   // → 重量推移グラフ用の階段データ（クリアした瞬間の履歴）
+buildStepChart(points, geom)      // 階段グラフの座標と SVG パス
+validateAttempt(weight, reps)     // 入力検証
 ```
+
+グラフの座標計算も描画から切り離してここに置く。SVG の見た目は目視でしか
+確認できないが、階段の形・時間軸のスケール・Y軸の range はテストで固定できる。
 
 **停滞カウント** (`stalledCount`) は、現在の提案重量で連続して失敗した回数。
 「あと1回」の表示や、何回も止まっている種目の見せ方に使う。
@@ -168,8 +174,12 @@ weightHistory(posts, userId, exKey)
 ## 6. フィード統合と、その制約
 
 `getPosts()` を `posts_free` と `posts_dropset` の両方から取得して
-`timestamp` でマージする形に拡張し、`LoadedPost` に取得元コレクション名
-（`col`）を持たせて、いいね・コメント・削除の書き込み先を出し分ける。
+`timestamp` でマージする形に拡張し、`LoadedPost` に `kind`（`'free'` /
+`'dropset'`）を持たせて、いいね・コメント・削除の書き込み先を出し分ける。
+
+⚠️ **`posts_dropset` 側の取得失敗はフィード全体を落とさない。** ルールが
+未デプロイの環境では権限エラーになるため、そこでフリー/週間/レイドの
+フィードまで止まると影響が大きい。失敗時は警告を出してフリーの投稿だけ表示する。
 
 カードはドロップセット専用の見た目:
 
@@ -212,13 +222,21 @@ weightHistory(posts, userId, exKey)
 
 1. `lib/dropset.ts`（純ロジック）＋ 型追加 ＋ `lib/__tests__/dropset.test.ts`
 2. `lib/dropset-engine.ts`（Firestore アクセス）＋ `firestore.rules`
-3. `Mode` 型に `'dropset'` 追加 → Header のモードトグル（4つになるため折り返し対策）、
+3. `context/DropsetContext.tsx`（種目マスタ＋挑戦記録を5画面に供給）
+4. `Mode` 型に `'dropset'` 追加 → Header のモードトグル（4つになるため折り返し対策）、
    BottomNav の中央タブ分岐、AppShell のビュー分岐
-4. ドロップセット種目管理ビュー（追加・編集・削除）
-5. 挑戦フォーム＋判定表示
-6. ランキングビュー
-7. 重量推移グラフ
-8. フィード統合（2コレクションのマージ）
+5. ドロップセット種目管理ビュー（追加・編集・削除）
+6. 挑戦フォーム＋判定表示
+7. ランキングビュー
+8. 重量推移グラフ
+9. フィード統合（2コレクションのマージ）
+
+### データの読み方
+
+`DropsetContext` は、**種目マスタ（ドキュメント1件）はどのモードでも読む**が、
+**挑戦記録はドロップセットモードのときだけ読む**。フィードには全モードで
+ドロップセットの投稿が流れるので種目名の解決が要る一方、進捗の計算に使う
+挑戦記録は他モードでは不要なため。
 
 ---
 

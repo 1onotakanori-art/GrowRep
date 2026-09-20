@@ -41,7 +41,9 @@ export default function BottomNav({
       ? { key: 'center', label: 'チャレンジ', icon: 'fa-trophy' }
       : mode === 'raid'
         ? { key: 'center', label: '得点', icon: 'fa-ranking-star' }
-        : { key: 'center', label: '種目', icon: 'fa-dumbbell' };
+        : mode === 'dropset'
+          ? { key: 'center', label: '種目', icon: 'fa-weight-hanging' }
+          : { key: 'center', label: '種目', icon: 'fa-dumbbell' };
 
   const items: Item[] = [
     ...BASE,

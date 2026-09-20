@@ -28,7 +28,7 @@ export default function Header({
           <i className="fa-solid fa-dumbbell" />
         </span>
         <div className={styles.modeToggle} role="tablist" aria-label="モード">
-          {(['free', 'weekly', 'raid'] as Mode[]).map((m) => (
+          {(['free', 'weekly', 'raid', 'dropset'] as Mode[]).map((m) => (
             <button
               key={m}
               role="tab"
@@ -36,7 +36,13 @@ export default function Header({
               className={mode === m ? styles.modeActive : styles.modeBtn}
               onClick={() => setMode(m)}
             >
-              {m === 'free' ? 'フリー' : m === 'weekly' ? '週間' : 'レイド'}
+              {m === 'free'
+                ? 'フリー'
+                : m === 'weekly'
+                  ? '週間'
+                  : m === 'raid'
+                    ? 'レイド'
+                    : 'ドロップ'}
             </button>
           ))}
         </div>
