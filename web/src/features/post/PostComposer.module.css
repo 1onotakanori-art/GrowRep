@@ -3,6 +3,10 @@
   flex-direction: column;
   gap: 10px;
 }
+/* 余白は .grid の gap に任せる */
+.search {
+  margin-bottom: 0;
+}
 
 .card {
   background: var(--surface);

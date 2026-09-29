@@ -85,7 +85,12 @@ export default function MyPageView({
 
       {/* タイマーは専用タブへ移動（ボトムナビ）。ここは成長グラフのみ。
           ドロップセットは記録の形が違う（重量 + 3セット）ので専用グラフに差し替える。 */}
-      {mode === 'dropset' ? <DropsetWeightChart /> : <ProgressChart />}
+      <div className={styles.progressSection}>
+        <span className={styles.themeLabel}>
+          <i className="fa-solid fa-chart-line" /> 成長記録
+        </span>
+        {mode === 'dropset' ? <DropsetWeightChart /> : <ProgressChart />}
+      </div>
 
       {proposalOpen && (
         <SpecialEventProposalModal
