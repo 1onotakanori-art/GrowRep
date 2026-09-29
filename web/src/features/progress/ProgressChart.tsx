@@ -4,6 +4,13 @@ import { useData } from '../../context/DataContext';
 import { useMode } from '../../context/ModeContext';
 import { getAllPosts } from '../../lib/posts';
 import { Skeleton, EmptyState } from '../../components/ui';
+import ExerciseSearchBar from '../../components/ExerciseSearchBar';
+import {
+  EMPTY_EXERCISE_FILTER,
+  collectExerciseTags,
+  filterExercises,
+  type ExerciseFilter,
+} from '../../lib/exercise-filter';
 import type { Post } from '../../lib/types';
 import type { Timestamp } from 'firebase/firestore';
 import styles from './ProgressChart.module.css';
@@ -20,8 +27,24 @@ export default function ProgressChart() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [exKey, setExKey] = useState<string>('');
+  const [filter, setFilter] = useState<ExerciseFilter>(EMPTY_EXERCISE_FILTER);
 
-  const exKeys = useMemo(() => Object.keys(freeExercises), [freeExercises]);
+  // 種目数が多いので名前順に並べ、検索・タグで選択肢を絞れるようにする
+  const exKeys = useMemo(
+    () =>
+      Object.entries(freeExercises)
+        .sort(([, a], [, b]) => a.name.localeCompare(b.name, 'ja'))
+        .map(([k]) => k),
+    [freeExercises],
+  );
+  const tags = useMemo(
+    () => collectExerciseTags(Object.values(freeExercises)),
+    [freeExercises],
+  );
+  const visibleKeys = useMemo(
+    () => filterExercises(exKeys, (k) => freeExercises[k], filter),
+    [exKeys, freeExercises, filter],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -39,9 +62,11 @@ export default function ProgressChart() {
     };
   }, [refreshToken]);
 
+  // 選択中の種目が絞り込みで外れたら、候補の先頭に切り替える
   useEffect(() => {
-    if (!exKey && exKeys.length > 0) setExKey(exKeys[0]);
-  }, [exKeys, exKey]);
+    if (visibleKeys.length === 0) return;
+    if (!exKey || !visibleKeys.includes(exKey)) setExKey(visibleKeys[0]);
+  }, [visibleKeys, exKey]);
 
   const points: Point[] = useMemo(() => {
     if (!user || !exKey) return [];
@@ -62,22 +87,36 @@ export default function ProgressChart() {
 
   return (
     <div className={styles.wrap}>
-      <select
-        className={styles.select}
-        value={exKey}
-        onChange={(e) => setExKey(e.target.value)}
-      >
-        {exKeys.map((k) => (
-          <option key={k} value={k}>
-            {freeExercises[k].name}
-          </option>
-        ))}
-      </select>
+      <ExerciseSearchBar
+        value={filter}
+        onChange={setFilter}
+        tags={tags}
+        resultCount={visibleKeys.length}
+        className={styles.search}
+      />
 
-      {points.length === 0 ? (
-        <EmptyState icon="fa-chart-line" message="この種目の記録がありません" />
+      {visibleKeys.length === 0 ? (
+        <EmptyState icon="fa-magnifying-glass" message="該当する種目がありません" />
       ) : (
-        <Chart points={points} barbarian={isBarbarian} />
+        <>
+          <select
+            className={styles.select}
+            value={exKey}
+            onChange={(e) => setExKey(e.target.value)}
+          >
+            {visibleKeys.map((k) => (
+              <option key={k} value={k}>
+                {freeExercises[k].name}
+              </option>
+            ))}
+          </select>
+
+          {points.length === 0 ? (
+            <EmptyState icon="fa-chart-line" message="この種目の記録がありません" />
+          ) : (
+            <Chart points={points} barbarian={isBarbarian} />
+          )}
+        </>
       )}
     </div>
   );

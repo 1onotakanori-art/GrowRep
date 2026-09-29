@@ -8,7 +8,14 @@ import {
   getModeExercises,
   isWeeklyPostLockedByDailyMission,
 } from '../../lib/mode-exercises';
+import {
+  EMPTY_EXERCISE_FILTER,
+  collectExerciseTags,
+  filterExercises,
+  type ExerciseFilter,
+} from '../../lib/exercise-filter';
 import { EmptyState, ExerciseIcon, Barbadge } from '../../components/ui';
+import ExerciseSearchBar from '../../components/ExerciseSearchBar';
 import type { NavKey } from '../../shell/BottomNav';
 import styles from './PostComposer.module.css';
 
@@ -24,10 +31,22 @@ export default function PostComposer({
   const [selected, setSelected] = useState<string | null>(null);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
+  const [filter, setFilter] = useState<ExerciseFilter>(EMPTY_EXERCISE_FILTER);
 
   const exercises = useMemo(
     () => getModeExercises(mode, freeExercises, weeklyChallenge, new Date(), dailyMission),
     [mode, freeExercises, weeklyChallenge, dailyMission],
+  );
+
+  // フリーモードは種目数が多いので検索・タグで絞り込めるようにする（週間は数種目なので不要）
+  const searchable = mode === 'free';
+  const tags = useMemo(
+    () => (searchable ? collectExerciseTags(exercises.map((e) => e.ex)) : []),
+    [searchable, exercises],
+  );
+  const visible = useMemo(
+    () => (searchable ? filterExercises(exercises, (e) => e.ex, filter) : exercises),
+    [searchable, exercises, filter],
   );
 
   // 週間チャレンジは、その日のデイリーミッションをクリアするまで投稿できない
@@ -80,6 +99,18 @@ export default function PostComposer({
 
   return (
     <div className={styles.grid}>
+      {searchable && (
+        <ExerciseSearchBar
+          value={filter}
+          onChange={setFilter}
+          tags={tags}
+          resultCount={visible.length}
+          className={styles.search}
+        />
+      )}
+      {searchable && visible.length === 0 && (
+        <EmptyState icon="fa-magnifying-glass" message="該当する種目がありません" />
+      )}
       {dailyLocked && (
         <div className={styles.dailyLockNotice}>
           <p>
@@ -96,7 +127,7 @@ export default function PostComposer({
           )}
         </div>
       )}
-      {exercises.map(({ key, ex, locked, lockReason }) => {
+      {visible.map(({ key, ex, locked, lockReason }) => {
         if (locked && lockReason === 'daily') {
           return (
             <div

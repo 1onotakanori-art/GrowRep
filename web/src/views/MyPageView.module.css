@@ -104,3 +104,8 @@
   font-size: 11px;
   font-weight: 800;
 }
+
+/* 「成長記録」見出しはテーマ行と同じ見た目（.themeLabel）を使う */
+.progressSection {
+  margin-bottom: var(--sp-4);
+}

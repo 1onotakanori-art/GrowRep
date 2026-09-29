@@ -18,6 +18,7 @@ import {
   getExerciseRatingSummaries,
   getUserExerciseRatings,
 } from '../lib/ratings';
+import { matchesExerciseQuery } from '../lib/exercise-filter';
 import type { ExerciseRatingSummary, FreeExercise } from '../lib/types';
 import styles from './ExercisesView.module.css';
 
@@ -70,12 +71,7 @@ export default function ExercisesView() {
   const list = useMemo(() => {
     let entries = Object.entries(freeExercises);
     if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      entries = entries.filter(
-        ([, ex]) =>
-          ex.name.toLowerCase().includes(q) ||
-          (ex.rule || '').toLowerCase().includes(q),
-      );
+      entries = entries.filter(([, ex]) => matchesExerciseQuery(ex, search));
     }
     if (tagFilter) {
       entries = entries.filter(([, ex]) => (ex.tags || []).includes(tagFilter));

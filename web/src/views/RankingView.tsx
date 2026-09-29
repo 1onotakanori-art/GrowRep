@@ -1,9 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { useMode } from '../context/ModeContext';
 import { ViewHeader, Segmented, Skeleton, EmptyState } from '../components/ui';
+import ExerciseSearchBar from '../components/ExerciseSearchBar';
 import { useScores } from '../hooks/useScores';
 import { rankUsers } from '../lib/scoring';
+import {
+  EMPTY_EXERCISE_FILTER,
+  collectExerciseTags,
+  filterExercises,
+  type ExerciseFilter,
+} from '../lib/exercise-filter';
 import ScoreRadar from '../features/ranking/ScoreRadar';
 import styles from './RankingView.module.css';
 
@@ -16,11 +24,44 @@ function medal(rank: number): string {
 export default function RankingView() {
   const { user } = useAuth();
   const { freeExercises } = useData();
+  const { mode } = useMode();
   const { records, exerciseKeys, loading, error } = useScores();
-  const [tab, setTab] = useState<Tab>('total');
+  // フリーモードはランキングを開いた時に種目別を先に見せる
+  const [tab, setTab] = useState<Tab>(mode === 'free' ? 'byExercise' : 'total');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [filter, setFilter] = useState<ExerciseFilter>(EMPTY_EXERCISE_FILTER);
+  const [recordedOnly, setRecordedOnly] = useState(false);
+
+  // ランキング表示中にモードを切り替えた場合も、そのモードの初期タブに戻す
+  useEffect(() => {
+    setTab(mode === 'free' ? 'byExercise' : 'total');
+  }, [mode]);
 
   const ranked = useMemo(() => rankUsers(records), [records]);
+
+  // 種目別の検索・絞り込みはフリーモードのみ（週間は数種目なので不要）
+  const searchable = mode === 'free';
+  const tags = useMemo(
+    () =>
+      searchable
+        ? collectExerciseTags(exerciseKeys.map((k) => freeExercises[k]))
+        : [],
+    [searchable, exerciseKeys, freeExercises],
+  );
+  const recordedKeys = useMemo(() => {
+    const s = new Set<string>();
+    Object.values(records).forEach((rec) =>
+      Object.entries(rec.exercises).forEach(([k, v]) => {
+        if ((v || 0) > 0) s.add(k);
+      }),
+    );
+    return s;
+  }, [records]);
+  const visibleKeys = useMemo(() => {
+    if (!searchable) return exerciseKeys;
+    const keys = filterExercises(exerciseKeys, (k) => freeExercises[k], filter);
+    return recordedOnly ? keys.filter((k) => recordedKeys.has(k)) : keys;
+  }, [searchable, exerciseKeys, freeExercises, filter, recordedOnly, recordedKeys]);
 
   if (loading) return <Skeleton count={5} />;
   if (error)
@@ -115,9 +156,33 @@ export default function RankingView() {
         </>
       )}
 
+      {tab === 'byExercise' && searchable && (
+        <ExerciseSearchBar
+          value={filter}
+          onChange={setFilter}
+          tags={tags}
+          resultCount={visibleKeys.length}
+          narrowed={recordedOnly}
+          extra={
+            <label className={styles.recordedToggle}>
+              <input
+                type="checkbox"
+                checked={recordedOnly}
+                onChange={(e) => setRecordedOnly(e.target.checked)}
+              />
+              記録のある種目のみ
+            </label>
+          }
+        />
+      )}
+
+      {tab === 'byExercise' && searchable && visibleKeys.length === 0 && (
+        <EmptyState icon="fa-magnifying-glass" message="該当する種目がありません" />
+      )}
+
       {tab === 'byExercise' && (
         <div className={styles.exList}>
-          {exerciseKeys.map((key) => {
+          {visibleKeys.map((key) => {
             const ex = freeExercises[key];
             if (!ex) return null;
             const isBarbarian = !!ex.barbarian;

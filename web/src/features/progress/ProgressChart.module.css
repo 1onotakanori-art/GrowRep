@@ -8,6 +8,10 @@
   flex-direction: column;
   gap: var(--sp-3);
 }
+/* 余白は .wrap の gap に任せる */
+.search {
+  margin-bottom: 0;
+}
 .select {
   width: 100%;
   padding: 10px 12px;

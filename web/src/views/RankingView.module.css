@@ -209,3 +209,16 @@
     transform: none;
   }
 }
+
+.recordedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.recordedToggle input {
+  accent-color: var(--accent);
+}
