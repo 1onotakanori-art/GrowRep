@@ -6,13 +6,14 @@ import type { FreeExercise, FreeExerciseMap } from './types';
 const SETTINGS = 'settings_free';
 const EX_DOC = 'exercises';
 
-/** 種目マップに既定値を補完（icon / tags / excludeFromWeekly）。app.js: loadFreeExercises */
+/** 種目マップに既定値を補完（icon / tags / excludeFromWeekly / excludeFromDaily）。app.js: loadFreeExercises */
 function normalize(map: FreeExerciseMap): FreeExerciseMap {
   Object.keys(map).forEach((key) => {
     const ex = map[key];
     if (!ex.icon) ex.icon = 'fa-dumbbell';
     if (!Array.isArray(ex.tags)) ex.tags = [];
     if (ex.excludeFromWeekly === undefined) ex.excludeFromWeekly = false;
+    if (ex.excludeFromDaily === undefined) ex.excludeFromDaily = false;
   });
   return map;
 }
@@ -40,6 +41,7 @@ export interface ExerciseInput {
   tags?: string[];
   barbarian?: boolean;
   excludeFromWeekly?: boolean;
+  excludeFromDaily?: boolean;
 }
 
 /**
@@ -59,6 +61,7 @@ export async function addFreeExercise(
     tags: input.tags || [],
     barbarian: input.barbarian || false,
     excludeFromWeekly: input.excludeFromWeekly || false,
+    excludeFromDaily: input.excludeFromDaily || false,
     createdBy: creator.uid,
     // 表示用の付随情報（型には含めないが Firestore には保存）
     ...( { createdByName: creator.name, createdAt: new Date().toISOString() } as object ),
@@ -84,6 +87,7 @@ export async function editFreeExercise(
     tags: input.tags || [],
     barbarian: input.barbarian || false,
     excludeFromWeekly: input.excludeFromWeekly || false,
+    excludeFromDaily: input.excludeFromDaily || false,
     createdBy: existing.createdBy,
     ...( {
       createdByName: existing.createdByName || 'Unknown',
@@ -115,6 +119,7 @@ export async function restoreExercise(
     tags: input.tags || [],
     barbarian: input.barbarian || false,
     excludeFromWeekly: input.excludeFromWeekly || false,
+    excludeFromDaily: input.excludeFromDaily || false,
   };
   await saveFreeExercises(map);
   return map;

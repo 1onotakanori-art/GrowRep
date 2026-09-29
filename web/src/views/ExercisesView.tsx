@@ -220,9 +220,11 @@ export default function ExercisesView() {
                   )}
                 </div>
                 {ex.rule && <p className={styles.rule}>{ex.rule}</p>}
-                {(ex.tags || []).length > 0 && (
+                {((ex.tags || []).length > 0 ||
+                  ex.excludeFromWeekly ||
+                  ex.excludeFromDaily) && (
                   <div className={styles.cardTags}>
-                    {ex.tags.map((t) => (
+                    {(ex.tags || []).map((t) => (
                       <span key={t} className="chip">
                         {t}
                       </span>
@@ -230,6 +232,11 @@ export default function ExercisesView() {
                     {ex.excludeFromWeekly && (
                       <span className={styles.exclChip}>
                         <i className="fa-solid fa-calendar-xmark" /> 週間対象外
+                      </span>
+                    )}
+                    {ex.excludeFromDaily && (
+                      <span className={styles.exclChip}>
+                        <i className="fa-solid fa-bullseye" /> デイリー対象外
                       </span>
                     )}
                   </div>
