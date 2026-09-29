@@ -90,6 +90,16 @@
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
 }
+.exCard {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+.exHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .lockedCard {
   border-style: dashed;
   background: var(--surface-2);
@@ -143,6 +153,41 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 解禁済み種目のルールは省略せず全文を折り返して表示 */
+.exRuleFull {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.exActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.rateBtn,
+.reviewBtn {
+  flex: 1;
+  padding: 9px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.rateBtn {
+  background: var(--gold-soft);
+  color: color-mix(in srgb, var(--gold) 78%, var(--text));
+}
+.reviewBtn {
+  background: var(--surface-2);
+  color: var(--text-2);
 }
 
 .streakNote {

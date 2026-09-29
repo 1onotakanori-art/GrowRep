@@ -20,7 +20,14 @@ import {
   WEEKLY_PAUSE_NOTE,
   WEEKLY_PAUSE_RESUME_NOTE,
 } from '../../lib/raid-mode';
-import { EmptyState, Barbadge } from '../../components/ui';
+import {
+  getExerciseRatingSummaries,
+  getUserExerciseRatings,
+} from '../../lib/ratings';
+import type { ExerciseRatingSummary } from '../../lib/types';
+import { EmptyState, Barbadge, StarRating } from '../../components/ui';
+import RatingModal from '../exercises/RatingModal';
+import ReviewsModal from '../exercises/ReviewsModal';
 import styles from './ThisWeek.module.css';
 
 // Sunday 17:00 JST 起点から水曜13:00 JST（=+68h）を解禁時刻とする
@@ -42,11 +49,16 @@ function useCountdown(target: number | null): string {
 }
 
 export default function ThisWeek() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const { freeExercises, weeklyChallenge, weeklyConfig, usersMap } = useData();
   const { toast } = useToast();
   const [myPrediction, setMyPrediction] = useState<string | null>(null);
   const [savingPred, setSavingPred] = useState(false);
+  const [summaries, setSummaries] = useState<Record<string, ExerciseRatingSummary>>({});
+  const [myRatings, setMyRatings] = useState<Record<string, boolean>>({});
+  const [ratingsVersion, setRatingsVersion] = useState(0);
+  const [ratingModal, setRatingModal] = useState<string | null>(null);
+  const [reviewsModal, setReviewsModal] = useState<string | null>(null);
 
   const weekStartMs = weeklyChallenge?.weekStart.getTime() ?? null;
   const revealTarget =
@@ -71,6 +83,21 @@ export default function ThisWeek() {
   const lockedCount = weeklyChallenge
     ? weeklyChallenge.exercises.length - activeKeys.length
     : 0;
+
+  // 解禁済み種目の評価サマリーと自分の評価有無（フリーモードの種目一覧と同じ取得方法）
+  useEffect(() => {
+    if (activeKeys.length === 0) return;
+    (async () => {
+      const [sum, mine] = await Promise.all([
+        getExerciseRatingSummaries(activeKeys),
+        getUserExerciseRatings(activeKeys),
+      ]);
+      setSummaries(sum);
+      const mineMap: Record<string, boolean> = {};
+      Object.keys(mine).forEach((k) => (mineMap[k] = true));
+      setMyRatings(mineMap);
+    })();
+  }, [activeKeys, ratingsVersion]);
 
   // 夏休み休止週。種目が選ばれていないのは「準備中」ではないので別表示にする
   if (weeklyChallenge?.paused) {
@@ -142,15 +169,36 @@ export default function ThisWeek() {
           if (!ex) return null;
           return (
             <div key={k} className={styles.exCard}>
-              <span className={styles.exNum}>{i + 1}</span>
-              <span className={styles.exIcon}>
-                <i className={`fa-solid ${ex.icon || 'fa-dumbbell'}`} />
-              </span>
-              <div className={styles.exBody}>
-                <span className={styles.exName}>{ex.name}</span>
-                {ex.rule && <span className={styles.exRule}>{ex.rule}</span>}
+              <div className={styles.exHead}>
+                <span className={styles.exNum}>{i + 1}</span>
+                <span className={styles.exIcon}>
+                  <i className={`fa-solid ${ex.icon || 'fa-dumbbell'}`} />
+                </span>
+                <div className={styles.exBody}>
+                  <span className={styles.exName}>{ex.name}</span>
+                  <StarRating
+                    avg={summaries[k]?.avgRating}
+                    count={summaries[k]?.ratingCount || 0}
+                  />
+                </div>
+                {ex.barbarian && <Barbadge />}
               </div>
-              {ex.barbarian && <Barbadge />}
+              {ex.rule && <p className={styles.exRuleFull}>{ex.rule}</p>}
+              <div className={styles.exActions}>
+                <button
+                  className={styles.rateBtn}
+                  onClick={() => setRatingModal(k)}
+                >
+                  <i className="fa-solid fa-star" />{' '}
+                  {myRatings[k] ? '評価を変更' : '評価する'}
+                </button>
+                <button
+                  className={styles.reviewBtn}
+                  onClick={() => setReviewsModal(k)}
+                >
+                  <i className="fa-solid fa-comments" /> レビュー
+                </button>
+              </div>
             </div>
           );
         })}
@@ -203,6 +251,23 @@ export default function ThisWeek() {
             ))}
           </div>
         </div>
+      )}
+
+      {ratingModal && (
+        <RatingModal
+          exerciseKey={ratingModal}
+          exerciseName={freeExercises[ratingModal]?.name || ''}
+          userName={userData?.userName || user?.email || '匿名'}
+          onClose={() => setRatingModal(null)}
+          onChanged={() => setRatingsVersion((v) => v + 1)}
+        />
+      )}
+      {reviewsModal && (
+        <ReviewsModal
+          exerciseKey={reviewsModal}
+          exerciseName={freeExercises[reviewsModal]?.name || ''}
+          onClose={() => setReviewsModal(null)}
+        />
       )}
     </div>
   );
