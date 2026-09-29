@@ -3871,6 +3871,9 @@ async function loadFreeExercises() {
                 if (freeExercises[key].excludeFromWeekly === undefined) {
                     freeExercises[key].excludeFromWeekly = false;
                 }
+                if (freeExercises[key].excludeFromDaily === undefined) {
+                    freeExercises[key].excludeFromDaily = false;
+                }
             });
         } else {
             freeExercises = {};
@@ -3937,7 +3940,7 @@ function renderIconGrid(containerId, hiddenInputId, selectedIcon = 'fa-dumbbell'
  * @param {string} rule - ルール説明
  * @param {string} icon - アイコンクラス名
  */
-async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = [], barbarian = false, excludeFromWeekly = false) {
+async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = [], barbarian = false, excludeFromWeekly = false, excludeFromDaily = false) {
     // キー名を生成（ユニークなID）
     const key = 'free_' + Date.now();
     freeExercises[key] = { 
@@ -3947,6 +3950,7 @@ async function addFreeExercise(name, rule, icon = 'fa-dumbbell', tags = [], barb
         tags: tags,
         barbarian: barbarian,
         excludeFromWeekly: excludeFromWeekly,
+        excludeFromDaily: excludeFromDaily,
         createdBy: currentUser ? currentUser.uid : null,
         createdByName: currentUserData ? currentUserData.userName : (currentUser ? currentUser.email : 'Unknown'),
         createdAt: new Date().toISOString()
@@ -4104,7 +4108,7 @@ async function openRestoreExercisesModal() {
  * @param {string} rule - 新しいルール説明
  * @param {string} icon - 新しいアイコン
  */
-async function editFreeExercise(key, name, rule, icon, tags = [], barbarian = false, excludeFromWeekly = false) {
+async function editFreeExercise(key, name, rule, icon, tags = [], barbarian = false, excludeFromWeekly = false, excludeFromDaily = false) {
     const existing = freeExercises[key] || {};
     freeExercises[key] = { 
         name, 
@@ -4113,6 +4117,7 @@ async function editFreeExercise(key, name, rule, icon, tags = [], barbarian = fa
         tags: tags,
         barbarian: barbarian,
         excludeFromWeekly: excludeFromWeekly,
+        excludeFromDaily: excludeFromDaily,
         // 既存の作成者情報を保持
         createdBy: existing.createdBy || null,
         createdByName: existing.createdByName || 'Unknown',
@@ -4135,6 +4140,7 @@ function openEditExerciseModal(key) {
     renderTagSelector('edit-exercise-tags', ex.tags || []);
     document.getElementById('edit-exercise-barbarian').checked = ex.barbarian || false;
     document.getElementById('edit-exercise-exclude-weekly').checked = ex.excludeFromWeekly || false;
+    document.getElementById('edit-exercise-exclude-daily').checked = ex.excludeFromDaily || false;
     document.getElementById('edit-exercise-error').textContent = '';
     document.getElementById('edit-exercise-modal').style.display = 'block';
 }
@@ -5238,13 +5244,15 @@ document.getElementById('add-free-exercise-btn').addEventListener('click', async
         const tags = getSelectedTags('free-exercise-tags');
         const barbarian = document.getElementById('free-exercise-barbarian').checked;
         const excludeFromWeekly = document.getElementById('free-exercise-exclude-weekly').checked;
-        await addFreeExercise(name, rule, icon, tags, barbarian, excludeFromWeekly);
+        const excludeFromDaily = document.getElementById('free-exercise-exclude-daily').checked;
+        await addFreeExercise(name, rule, icon, tags, barbarian, excludeFromWeekly, excludeFromDaily);
         nameInput.value = '';
         ruleInput.value = '';
         renderIconGrid('free-exercise-icon-grid', 'free-exercise-icon', 'fa-dumbbell');
         renderTagSelector('free-exercise-tags', []);
         document.getElementById('free-exercise-barbarian').checked = false;
         document.getElementById('free-exercise-exclude-weekly').checked = false;
+        document.getElementById('free-exercise-exclude-daily').checked = false;
         errorEl.textContent = '';
         document.getElementById('free-exercise-modal').style.display = 'none';
         alert('種目を追加しました！');
@@ -5277,7 +5285,8 @@ document.getElementById('save-edit-exercise-btn').addEventListener('click', asyn
         const tags = getSelectedTags('edit-exercise-tags');
         const barbarian = document.getElementById('edit-exercise-barbarian').checked;
         const excludeFromWeekly = document.getElementById('edit-exercise-exclude-weekly').checked;
-        await editFreeExercise(key, name, rule, icon, tags, barbarian, excludeFromWeekly);
+        const excludeFromDaily = document.getElementById('edit-exercise-exclude-daily').checked;
+        await editFreeExercise(key, name, rule, icon, tags, barbarian, excludeFromWeekly, excludeFromDaily);
         errorEl.textContent = '';
         document.getElementById('edit-exercise-modal').style.display = 'none';
         alert('種目を更新しました！');
@@ -8987,13 +8996,13 @@ function sumDailyTotals(posts, exerciseKey) {
 }
 
 /**
- * バーバリアン以外のフリー種目キー（安定ソート済み）
+ * バーバリアン・デイリーミッション除外以外のフリー種目キー（安定ソート済み）
  * @param {Object} exercises
  * @returns {string[]}
  */
 function getDailyMissionCandidates(exercises) {
     return Object.keys(exercises || {})
-        .filter(key => exercises[key] && !exercises[key].barbarian)
+        .filter(key => exercises[key] && !exercises[key].barbarian && !exercises[key].excludeFromDaily)
         .sort();
 }
 

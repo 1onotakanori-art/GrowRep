@@ -95,6 +95,26 @@ describe('pickDailyMissionExercise', () => {
       expect(key).not.toBe('z_barb');
     }
   });
+  it('デイリーミッション除外（excludeFromDaily）の種目は選ばれない', () => {
+    const withExcluded: FreeExerciseMap = {
+      ...EX,
+      d_excl: { name: '除外', rule: '', icon: 'fa-dumbbell', tags: [], excludeFromDaily: true },
+    };
+    expect(getDailyMissionCandidates(withExcluded)).not.toContain('d_excl');
+    for (let d = 1; d <= 60; d++) {
+      const key = pickDailyMissionExercise(
+        `2026-01-${String(d).padStart(2, '0')}`,
+        withExcluded,
+      );
+      expect(key).not.toBe('d_excl');
+    }
+    // 直近履歴で他が全部埋まっていても、除外種目にはフォールバックしない
+    const others = getDailyMissionCandidates(withExcluded);
+    expect(pickDailyMissionExercise('2026-07-26', withExcluded, others)).not.toBe('d_excl');
+    expect(
+      pickDailyMissionExercise('2026-07-26', { d_excl: withExcluded.d_excl }),
+    ).toBeNull();
+  });
   it('同じ日付・同じ種目セットなら全ユーザーで同じ結果', () => {
     const a = pickDailyMissionExercise('2026-07-26', EX);
     const b = pickDailyMissionExercise('2026-07-26', EX);

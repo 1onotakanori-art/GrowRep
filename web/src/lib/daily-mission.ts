@@ -267,12 +267,20 @@ export function sumDailyTotals(
 // 種目の選出（全ユーザー共通）
 // ---------------------------------------------------------------------
 
-/** バーバリアン以外のフリー種目キー（安定ソート済み）。app.js: getDailyMissionCandidates */
+/**
+ * バーバリアン・デイリーミッション除外以外のフリー種目キー（安定ソート済み）。
+ * app.js: getDailyMissionCandidates
+ */
 export function getDailyMissionCandidates(
   freeExercises: FreeExerciseMap,
 ): string[] {
   return Object.keys(freeExercises || {})
-    .filter((key) => freeExercises[key] && !freeExercises[key].barbarian)
+    .filter(
+      (key) =>
+        freeExercises[key] &&
+        !freeExercises[key].barbarian &&
+        !freeExercises[key].excludeFromDaily,
+    )
     .sort();
 }
 

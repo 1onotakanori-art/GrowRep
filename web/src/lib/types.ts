@@ -40,6 +40,7 @@ export interface FreeExercise {
   tags: string[];
   barbarian?: boolean; // タイムアタック（短いほど高得点）
   excludeFromWeekly?: boolean;
+  excludeFromDaily?: boolean; // デイリーミッションの選出から除外
   createdBy?: string; // 作成者 uid
 }
 

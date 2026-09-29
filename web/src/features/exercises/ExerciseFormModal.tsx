@@ -11,6 +11,7 @@ export interface ExerciseFormValue {
   tags: string[];
   barbarian: boolean;
   excludeFromWeekly: boolean;
+  excludeFromDaily: boolean;
 }
 
 export default function ExerciseFormModal({
@@ -35,6 +36,9 @@ export default function ExerciseFormModal({
   const [barbarian, setBarbarian] = useState(!!initial?.barbarian);
   const [excludeFromWeekly, setExclude] = useState(
     !!initial?.excludeFromWeekly,
+  );
+  const [excludeFromDaily, setExcludeDaily] = useState(
+    !!initial?.excludeFromDaily,
   );
   const [freeTag, setFreeTag] = useState('');
   const [err, setErr] = useState('');
@@ -62,6 +66,7 @@ export default function ExerciseFormModal({
       tags,
       barbarian,
       excludeFromWeekly,
+      excludeFromDaily,
     });
   }
 
@@ -164,6 +169,17 @@ export default function ExerciseFormModal({
           />
           <span>
             <i className="fa-solid fa-calendar-xmark" /> 週間チャレンジ選出しない
+          </span>
+        </label>
+
+        <label className={styles.toggle}>
+          <input
+            type="checkbox"
+            checked={excludeFromDaily}
+            onChange={(e) => setExcludeDaily(e.target.checked)}
+          />
+          <span>
+            <i className="fa-solid fa-bullseye" /> デイリーミッション選出しない
           </span>
         </label>
 
