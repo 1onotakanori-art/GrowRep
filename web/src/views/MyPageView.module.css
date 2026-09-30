@@ -59,9 +59,10 @@
   margin-right: 4px;
 }
 
+/* 特別イベント提案 / イベント承認 / 意見箱 の3つを横並び */
 .eventRow {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-bottom: var(--sp-4);
 }
@@ -72,7 +73,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 14px 10px;
+  padding: 14px 6px;
   border-radius: var(--radius);
   background: var(--surface);
   border: 1px solid var(--border);

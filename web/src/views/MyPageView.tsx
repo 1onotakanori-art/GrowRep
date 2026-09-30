@@ -11,6 +11,7 @@ import DropsetWeightChart from '../features/dropset/DropsetWeightChart';
 import SpecialEventProposalModal from '../features/special/SpecialEventProposalModal';
 import SpecialEventApprovalModal from '../features/special/SpecialEventApprovalModal';
 import SpecialEventInboxModal from '../features/special/SpecialEventInboxModal';
+import SuggestionBoxModal from '../features/suggestion/SuggestionBoxModal';
 import type { SpecialEventProposal } from '../lib/special-event';
 import styles from './MyPageView.module.css';
 
@@ -27,6 +28,7 @@ export default function MyPageView({
 
   const [proposalOpen, setProposalOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
+  const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [approving, setApproving] = useState<SpecialEventProposal[] | null>(
     null,
   );
@@ -65,6 +67,13 @@ export default function MyPageView({
           {pending.length > 0 && (
             <span className={styles.eventBadge}>{pending.length}</span>
           )}
+        </button>
+        <button
+          className={styles.eventBtn}
+          onClick={() => setSuggestionOpen(true)}
+        >
+          <i className="fa-solid fa-envelope-open-text" />
+          意見箱
         </button>
       </div>
 
@@ -106,6 +115,9 @@ export default function MyPageView({
             setApproving(list);
           }}
         />
+      )}
+      {suggestionOpen && (
+        <SuggestionBoxModal onClose={() => setSuggestionOpen(false)} />
       )}
       {approving && (
         <SpecialEventApprovalModal
