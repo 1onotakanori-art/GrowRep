@@ -176,6 +176,33 @@ Firestore コレクション `special_event_proposals`（1提案 = 1ドキュメ
 `special_event_proposals` への書き込みが `Missing or insufficient permissions.` で
 失敗します。
 
+## 意見箱
+
+マイページの「特別イベント提案」「イベント承認」の横にある「意見箱」から、
+アプリへの要望・不具合・感想を運営に送れます（Vercel 版のみ。GitHub Pages 版には無い）。
+
+- 入力は**タイトル（50文字以内）と本文（1000文字以内）**だけ。投稿者名は
+  ユーザー名から、投稿日時はサーバー時刻から自動で記録します
+  （ユーザー名未設定なら「名無しさん」。メールアドレスは全員に見えるため使わない）
+- 投稿は**ログインユーザー全員が読めます**。運営もユーザーと同じ意見箱の
+  「みんなの投稿」（新しい順・最大100件）で受け取ります
+- **ゲスト（共有アカウント）は閲覧のみ**で投稿できません
+- 投稿後の編集・削除はできません
+
+Firestore コレクション `suggestions`（1投稿 = 1ドキュメント）:
+
+```javascript
+{
+  title, body,        // 前後の空白は除去済み
+  userId, userName,   // 投稿者
+  createdAt           // serverTimestamp()
+}
+```
+
+ルール（`firestore.rules`）は「本人名義」「文字数の上限」「createdAt がサーバー時刻」
+「`users/{uid}.isGuest` が true でない」を満たす作成だけを許可し、更新・削除は禁止しています。
+こちらも**ルールを本番へ反映しないと投稿も一覧も拒否されます**。
+
 ### ⚠️ 週間ロジックの二重管理に関する注意
 
 `lib/time-jst.ts` / `lib/scoring.ts` / `lib/weekly-select.ts` / `lib/weekly-engine.ts`

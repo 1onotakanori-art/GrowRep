@@ -201,6 +201,32 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // suggestions コレクション（意見箱）
+    // ログインユーザー全員が読める。投稿は本人名義のみで、ゲスト（共有
+    // アカウント。users/{uid}.isGuest == true）は投稿できない。
+    // タイトル50文字・本文1000文字まで。日時はサーバー時刻に固定。
+    // 投稿後の編集・削除は不可。
+    match /suggestions/{suggestionId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+                    && request.resource.data.keys().hasOnly(
+                         ['title', 'body', 'userId', 'userName', 'createdAt'])
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.userName is string
+                    && request.resource.data.title is string
+                    && request.resource.data.title.size() > 0
+                    && request.resource.data.title.size() <= 50
+                    && request.resource.data.body is string
+                    && request.resource.data.body.size() > 0
+                    && request.resource.data.body.size() <= 1000
+                    && request.resource.data.createdAt == request.time
+                    && get(/databases/$(database)/documents/users/$(request.auth.uid))
+                         .data.get('isGuest', false) != true;
+
+      allow update, delete: if false;
+    }
+
     // exercise_ratings コレクション（種目評価）
     // 親ドキュメント: 集計データ（avgRating, ratingCount, ratingSum）
     // サブコレクション user_ratings: 個人の評価（本人のみ書き込み可）
