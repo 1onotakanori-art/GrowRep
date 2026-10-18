@@ -4,7 +4,7 @@
 // 種目マスタは settings_free とは別の settings_dropset/exercises に置く。
 // app.js（GitHub Pages 版）は settings_free/exercises しか読まないため、
 // 週間チャレンジの抽選やデイリーミッションの選出に構造的に混ざらない。
-// 詳細は dropset-mode-design.md 2. を参照。
+// 詳細は docs/design/dropset-mode-design.md 2. を参照。
 // =====================================================================
 import {
   addDoc,

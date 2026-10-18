@@ -6,7 +6,7 @@
 //
 // ユーザーごとの「今の重量」はドキュメントを持たず、投稿から導出する
 // （進捗ドキュメントを別に持つと投稿との同期ズレが必ず起きるため）。
-// 詳細は dropset-mode-design.md を参照。
+// 詳細は docs/design/dropset-mode-design.md を参照。
 // =====================================================================
 import type { DropsetExercise } from './types';
 
