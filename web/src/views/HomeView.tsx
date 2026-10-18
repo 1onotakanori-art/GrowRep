@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { useMode } from '../context/ModeContext';
 import { useScores } from '../hooks/useScores';
+import { useWeeklyReportUnseen } from '../hooks/useWeeklyReportUnseen';
 import { rankUsers } from '../lib/scoring';
 import { activeWeeklyKeysOf } from '../lib/time-jst';
 import { formatDailyCount, guessExerciseUnit } from '../lib/daily-mission';
@@ -26,6 +27,7 @@ export default function HomeView({
   const { mode } = useMode();
   const { freeExercises, weeklyChallenge, dailyMission } = useData();
   const { records, loading } = useScores();
+  const weeklyUnseen = useWeeklyReportUnseen();
 
   const name = userData?.userName || (isGuest ? 'ゲスト' : 'ユーザー');
 
@@ -56,6 +58,21 @@ export default function HomeView({
           {mode === 'weekly' ? '週間チャレンジ' : 'フリーモード'}
         </span>
       </div>
+
+      {weeklyUnseen && (
+        <button
+          className={styles.weeklyBanner}
+          onClick={() => onNavigate('report')}
+        >
+          <i className="fa-solid fa-newspaper" />
+          <span className={styles.weeklyBannerText}>
+            <strong>今週のウィークリーが届きました</strong>
+            <span>先週の結果・週報・ユーザー別カルテ</span>
+          </span>
+          <span className={styles.weeklyBannerNew}>NEW</span>
+          <i className="fa-solid fa-chevron-right" />
+        </button>
+      )}
 
       {loading ? (
         <Skeleton count={2} />

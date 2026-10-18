@@ -1,0 +1,506 @@
+/* ウィークリー（週報 + 分析ダッシュボード）。旧 report.html のスタイルをトークンへ置き換えたもの */
+
+.section {
+  margin-bottom: var(--sp-6);
+}
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  margin-bottom: var(--sp-3);
+}
+.sectionIcon {
+  font-size: 18px;
+}
+
+.empty {
+  padding: var(--sp-4);
+  text-align: center;
+  color: var(--text-3);
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+.emptyLine {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-3);
+  min-width: 0;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--sp-2);
+}
+
+.stat {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.statSmall {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.lbl {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+.sub {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.gold {
+  color: color-mix(in srgb, var(--gold) 80%, var(--text));
+}
+.muted {
+  color: var(--text-3);
+}
+.holders {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.pillGold {
+  background: var(--gold-soft);
+  color: color-mix(in srgb, var(--gold) 80%, var(--text));
+}
+
+/* 王者カード */
+.champCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: var(--sp-2);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--gold-soft), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+}
+.champCrown {
+  font-size: 26px;
+  color: var(--gold);
+  line-height: 1;
+  padding-top: 2px;
+}
+.champBody {
+  min-width: 0;
+}
+.champName {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+/* テーブル（横に長いものはこの中だけスクロール） */
+.tableWrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow-x: auto;
+  margin-top: var(--sp-2);
+}
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.tbl th,
+.tbl td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.tbl th {
+  font-size: 11px;
+  color: var(--text-3);
+  font-weight: 700;
+  background: var(--surface-2);
+}
+.tbl tbody tr:last-child td {
+  border-bottom: none;
+}
+.num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+.rank1 {
+  color: color-mix(in srgb, var(--gold) 80%, var(--text));
+  font-weight: 800;
+}
+.leader {
+  color: color-mix(in srgb, var(--gold) 80%, var(--text));
+  font-weight: 700;
+}
+.mom_up {
+  color: var(--success);
+  font-weight: 700;
+}
+.mom_down {
+  color: var(--danger);
+  font-weight: 700;
+}
+.mom_flat {
+  color: var(--text-3);
+}
+
+.chip {
+  display: inline-block;
+  margin: 1px 4px 1px 0;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 11px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ユーザー別カルテ */
+.ulist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.ucard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.uhead {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 14px;
+  text-align: left;
+}
+.uname {
+  font-weight: 800;
+  font-size: 15px;
+}
+.unameBadge {
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--gold-soft);
+  color: color-mix(in srgb, var(--gold) 80%, var(--text));
+  font-size: 11px;
+  font-weight: 700;
+}
+.utype {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.uchev {
+  margin-left: auto;
+  color: var(--text-3);
+  transition: transform 0.2s ease;
+}
+.uchevOpen {
+  transform: rotate(180deg);
+}
+.ubody {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--border);
+}
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 12px;
+}
+.badge {
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.mini {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+.mini > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.mini b {
+  font-size: 16px;
+  font-weight: 800;
+}
+.mini span {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.sectLbl {
+  margin: 14px 0 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.lst {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.lst li {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.lst li > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pct {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 11.5px;
+}
+.hi {
+  color: var(--success);
+}
+.mid {
+  color: var(--text-2);
+}
+.lo {
+  color: var(--danger);
+}
+.trendUp {
+  flex-shrink: 0;
+  color: var(--success);
+  font-weight: 700;
+  font-size: 11.5px;
+}
+
+.radar {
+  display: block;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+}
+.radarGrid {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.radarArea {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.radarLabel {
+  fill: var(--text-2);
+  font-size: 10px;
+}
+
+.wdBars {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  height: 110px;
+}
+.wdCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 0;
+}
+.wdVal {
+  font-size: 10px;
+  color: var(--text-3);
+  height: 14px;
+}
+.wdTrack {
+  flex: 1;
+  width: 100%;
+  max-width: 26px;
+  display: flex;
+  align-items: flex-end;
+  min-height: 0;
+}
+.wdBar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+}
+.wdLabel {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.mc {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+.mc i {
+  color: var(--accent);
+  padding-top: 3px;
+}
+
+/* 週報本文（marked 出力の HTML） */
+.report {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-4);
+  font-size: 14px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.report :global(h1),
+.report :global(h2),
+.report :global(h3),
+.report :global(h4) {
+  margin: 1.2em 0 0.5em;
+}
+.report :global(h1) {
+  font-size: 18px;
+}
+.report :global(h2) {
+  font-size: 16px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.report :global(h3) {
+  font-size: 15px;
+}
+.report > :global(:first-child) {
+  margin-top: 0;
+}
+.report :global(p),
+.report :global(ul),
+.report :global(ol),
+.report :global(blockquote),
+.report :global(table) {
+  margin: 0.6em 0;
+}
+.report :global(ul),
+.report :global(ol) {
+  padding-left: 1.4em;
+}
+.report :global(blockquote) {
+  padding: 6px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.report :global(table) {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.report :global(th),
+.report :global(td) {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.report :global(th) {
+  background: var(--surface-2);
+}
+.report :global(code) {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  font-size: 0.9em;
+}
+.report :global(hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.2em 0;
+}
+.report :global(img) {
+  max-width: 100%;
+}
+
+/* ライバル対決 */
+.rivals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.vs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  font-size: 13px;
+}
+.who {
+  font-weight: 700;
+}
+.gap {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--flame);
+}
+.bar {
+  margin-top: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent-grad);
+}

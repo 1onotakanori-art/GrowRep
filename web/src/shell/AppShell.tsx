@@ -15,6 +15,7 @@ import TimerView from '../views/TimerView';
 import PostView from '../views/PostView';
 import RankingView from '../views/RankingView';
 import MyPageView from '../views/MyPageView';
+import WeeklyReportView from '../views/WeeklyReportView';
 import ChallengeView from '../views/ChallengeView';
 import ExercisesView from '../views/ExercisesView';
 import RaidScoreView from '../views/RaidScoreView';
@@ -33,7 +34,15 @@ function ShellInner() {
     results,
     reload: reloadSpecialEvents,
   } = useSpecialEvent();
-  const [nav, setNav] = useState<NavKey>('home');
+  const [nav, setNavState] = useState<NavKey>('home');
+  // サブページ（ウィークリー）から「戻る」で元のタブへ帰るため
+  const prevNav = useRef<NavKey>('home');
+  const setNav = (k: NavKey) => {
+    if (k === nav) return;
+    if (k === 'report') prevNav.current = nav;
+    setNavState(k);
+    window.scrollTo(0, 0);
+  };
   const [profileOpen, setProfileOpen] = useState(false);
   const autoNavDone = useRef(false);
 
@@ -42,7 +51,7 @@ function ShellInner() {
   useEffect(() => {
     if (autoNavDone.current || dailyLoading) return;
     autoNavDone.current = true;
-    if (dailyMission && !dailyMission.cleared) setNav('daily');
+    if (dailyMission && !dailyMission.cleared) setNavState('daily');
   }, [dailyLoading, dailyMission]);
 
   return (
@@ -72,7 +81,13 @@ function ShellInner() {
             <ExercisesView />
           ))}
         {nav === 'mypage' && (
-          <MyPageView onOpenProfile={() => setProfileOpen(true)} />
+          <MyPageView
+            onOpenProfile={() => setProfileOpen(true)}
+            onNavigate={setNav}
+          />
+        )}
+        {nav === 'report' && (
+          <WeeklyReportView onBack={() => setNav(prevNav.current)} />
         )}
       </main>
 

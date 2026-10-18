@@ -62,7 +62,8 @@
 /* 特別イベント提案 / イベント承認 / 意見箱 の3つを横並び */
 .eventRow {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* ウィークリー / 特別イベント提案 / イベント承認 / 意見箱 の 2×2 */
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-bottom: var(--sp-4);
 }
@@ -109,4 +110,17 @@
 /* 「成長記録」見出しはテーマ行と同じ見た目（.themeLabel）を使う */
 .progressSection {
   margin-bottom: var(--sp-4);
+}
+
+.newBadge {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }

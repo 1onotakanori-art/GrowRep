@@ -12,18 +12,23 @@ import SpecialEventProposalModal from '../features/special/SpecialEventProposalM
 import SpecialEventApprovalModal from '../features/special/SpecialEventApprovalModal';
 import SpecialEventInboxModal from '../features/special/SpecialEventInboxModal';
 import SuggestionBoxModal from '../features/suggestion/SuggestionBoxModal';
+import { useWeeklyReportUnseen } from '../hooks/useWeeklyReportUnseen';
+import type { NavKey } from '../shell/BottomNav';
 import type { SpecialEventProposal } from '../lib/special-event';
 import styles from './MyPageView.module.css';
 
 export default function MyPageView({
   onOpenProfile,
+  onNavigate,
 }: {
   onOpenProfile: () => void;
+  onNavigate: (k: NavKey) => void;
 }) {
   const { user, userData, isGuest } = useAuth();
   const { theme, setTheme } = useTheme();
   const { pending, reload } = useSpecialEvent();
   const { mode } = useMode();
+  const weeklyUnseen = useWeeklyReportUnseen();
   const displayName = userData?.userName || (isGuest ? 'ゲスト' : 'ユーザー');
 
   const [proposalOpen, setProposalOpen] = useState(false);
@@ -54,6 +59,14 @@ export default function MyPageView({
       </button>
 
       <div className={styles.eventRow}>
+        <button
+          className={styles.eventBtn}
+          onClick={() => onNavigate('report')}
+        >
+          <i className="fa-solid fa-newspaper" />
+          ウィークリー
+          {weeklyUnseen && <span className={styles.newBadge}>NEW</span>}
+        </button>
         <button
           className={styles.eventBtn}
           onClick={() => setProposalOpen(true)}
