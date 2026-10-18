@@ -97,30 +97,3 @@ export async function editFreeExercise(
   await saveFreeExercises(map);
   return map;
 }
-
-/** 種目を削除。app.js: deleteFreeExercise */
-export async function deleteFreeExercise(key: string): Promise<FreeExerciseMap> {
-  const map = await loadFreeExercises();
-  delete map[key];
-  await saveFreeExercises(map);
-  return map;
-}
-
-/** 削除済み種目キーの復元（マップに直接追加して保存）。 */
-export async function restoreExercise(
-  key: string,
-  input: ExerciseInput,
-): Promise<FreeExerciseMap> {
-  const map = await loadFreeExercises();
-  map[key] = {
-    name: input.name,
-    rule: input.rule,
-    icon: input.icon || 'fa-dumbbell',
-    tags: input.tags || [],
-    barbarian: input.barbarian || false,
-    excludeFromWeekly: input.excludeFromWeekly || false,
-    excludeFromDaily: input.excludeFromDaily || false,
-  };
-  await saveFreeExercises(map);
-  return map;
-}

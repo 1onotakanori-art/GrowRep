@@ -125,15 +125,6 @@ export async function editDropsetExercise(
   return map;
 }
 
-export async function deleteDropsetExercise(
-  key: string,
-): Promise<DropsetExerciseMap> {
-  const map = await loadDropsetExercises();
-  delete map[key];
-  await saveDropsetExercises(map);
-  return map;
-}
-
 /** 全挑戦記録を取得（6人規模なので全件で足りる）。 */
 export async function getDropsetPosts(): Promise<DropsetPost[]> {
   const snap = await getDocs(collection(db, DROPSET_POSTS));

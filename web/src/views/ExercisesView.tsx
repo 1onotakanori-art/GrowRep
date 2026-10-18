@@ -17,11 +17,19 @@ import ExerciseFormModal, {
 import RatingModal from '../features/exercises/RatingModal';
 import ReviewsModal from '../features/exercises/ReviewsModal';
 import ExerciseDashboard from '../features/exercises/ExerciseDashboard';
+import { addFreeExercise, editFreeExercise } from '../lib/exercises';
+import ArchivePanel from '../features/exercises/ArchivePanel';
 import {
-  addFreeExercise,
-  editFreeExercise,
-  deleteFreeExercise,
-} from '../lib/exercises';
+  archiveBlockReason,
+  findOrphanExercises,
+  type Archived,
+} from '../lib/exercise-archive';
+import {
+  archiveExercise,
+  loadArchivedExercises,
+  restoreArchivedExercise,
+  restoreOrphanExercise,
+} from '../lib/exercise-archive-engine';
 import {
   getExerciseRatingSummaries,
   getUserExerciseRatings,
@@ -40,12 +48,13 @@ import type { ExerciseRatingSummary, FreeExercise } from '../lib/types';
 import styles from './ExercisesView.module.css';
 
 type Sort = 'name' | 'rating' | 'new' | 'posts' | 'wc' | 'prob';
-type Tab = 'list' | 'dashboard';
+type Tab = 'list' | 'dashboard' | 'archive';
 
 export default function ExercisesView() {
   const { user, userData } = useAuth();
   const { refresh, refreshToken } = useMode();
-  const { freeExercises, setFreeExercises, usersMap } = useData();
+  const { freeExercises, setFreeExercises, usersMap, reloadExercises, dailyMission } =
+    useData();
   const { toast } = useToast();
 
   const [summaries, setSummaries] = useState<Record<string, ExerciseRatingSummary>>({});
@@ -67,6 +76,9 @@ export default function ExercisesView() {
   const [ratingModal, setRatingModal] = useState<string | null>(null);
   const [reviewsModal, setReviewsModal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // アーカイブ（null = 未読み込み）。タブを開いた時に読む
+  const [archive, setArchive] = useState<Record<string, Archived<FreeExercise>> | null>(null);
+  const [archiveBusyKey, setArchiveBusyKey] = useState<string | null>(null);
 
   const keys = useMemo(() => Object.keys(freeExercises), [freeExercises]);
 
@@ -118,6 +130,36 @@ export default function ExercisesView() {
     return () => window.clearTimeout(id);
   }, [insights, ratingsReady, freeExercises, summaries, usersMap]);
   const estimatesReady = Object.keys(estimates).length > 0;
+
+  useEffect(() => {
+    if (tab !== 'archive' || archive !== null) return;
+    loadArchivedExercises<FreeExercise>('settings_free')
+      .then(setArchive)
+      .catch((e) => {
+        console.error('[アーカイブ] 読み込み失敗:', e);
+        setArchive({});
+        toast('アーカイブの読み込みに失敗しました', 'error');
+      });
+  }, [tab, archive, toast]);
+
+  const orphans = useMemo(
+    () =>
+      insights && archive
+        ? findOrphanExercises(
+            Object.fromEntries(
+              Object.entries(insights.postStats).map(([k, v]) => [k, v.total]),
+            ),
+            freeExercises,
+            archive,
+          )
+        : [],
+    [insights, archive, freeExercises],
+  );
+
+  const actor = () => ({
+    uid: user!.uid,
+    name: userData?.userName || user?.email || 'Unknown',
+  });
 
   const allTags = useMemo(() => {
     const s = new Set<string>();
@@ -184,19 +226,56 @@ export default function ExercisesView() {
     }
   }
 
-  async function handleDelete(key: string) {
-    if (!confirm(`種目「${freeExercises[key]?.name}」を削除しますか？`)) return;
+  async function handleArchive(key: string) {
+    const name = freeExercises[key]?.name;
+    if (
+      !confirm(
+        `種目「${name}」をアーカイブしますか？\n\n一覧・週間チャレンジの抽選・デイリーミッションから外れます。これまでの記録は残り、「アーカイブ」タブからいつでも戻せます。`,
+      )
+    )
+      return;
     setBusy(true);
     try {
-      const map = await deleteFreeExercise(key);
-      setFreeExercises(map);
+      await archiveExercise('settings_free', key, actor());
+      await reloadExercises();
+      setArchive(null);
       setFormModal(null);
-      toast('種目を削除しました', 'success');
+      toast(`「${name}」をアーカイブしました`, 'success');
       refresh();
-    } catch {
-      toast('削除に失敗しました', 'error');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'アーカイブに失敗しました', 'error');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleRestore(key: string) {
+    const name = archive?.[key]?.name;
+    setArchiveBusyKey(key);
+    try {
+      await restoreArchivedExercise('settings_free', key);
+      await reloadExercises();
+      setArchive(await loadArchivedExercises<FreeExercise>('settings_free'));
+      toast(`「${name}」を戻しました`, 'success');
+      refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '戻せませんでした', 'error');
+    } finally {
+      setArchiveBusyKey(null);
+    }
+  }
+
+  async function handleRestoreOrphan(key: string, name: string) {
+    setArchiveBusyKey(key);
+    try {
+      await restoreOrphanExercise(key, name, actor());
+      await reloadExercises();
+      toast(`「${name}」として戻しました`, 'success');
+      refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '戻せませんでした', 'error');
+    } finally {
+      setArchiveBusyKey(null);
     }
   }
 
@@ -219,6 +298,7 @@ export default function ExercisesView() {
         options={[
           { value: 'list', label: '種目一覧' },
           { value: 'dashboard', label: 'ダッシュボード' },
+          { value: 'archive', label: 'アーカイブ' },
         ]}
         value={tab}
         onChange={setTab}
@@ -238,6 +318,23 @@ export default function ExercisesView() {
         ) : (
           <Skeleton count={4} />
         ))}
+
+      {tab === 'archive' && (
+        <ArchivePanel
+          archive={archive}
+          postCounts={
+            insights
+              ? Object.fromEntries(
+                  Object.entries(insights.postStats).map(([k, v]) => [k, v.total]),
+                )
+              : undefined
+          }
+          busyKey={archiveBusyKey}
+          onRestore={handleRestore}
+          orphans={orphans}
+          onRestoreOrphan={handleRestoreOrphan}
+        />
+      )}
 
       {tab === 'list' && (
         <>
@@ -402,10 +499,18 @@ export default function ExercisesView() {
           busy={busy}
           onClose={() => setFormModal(null)}
           onSubmit={handleFormSubmit}
-          onDelete={
+          onArchive={
             formModal.mode === 'edit'
-              ? () => handleDelete(formModal.key)
+              ? () => handleArchive(formModal.key)
               : undefined
+          }
+          archiveBlocked={
+            formModal.mode === 'edit'
+              ? archiveBlockReason(formModal.key, {
+                  weeklyKeys: insights?.currentWeekKeys,
+                  dailyKey: dailyMission?.exerciseKey,
+                })
+              : null
           }
         />
       )}

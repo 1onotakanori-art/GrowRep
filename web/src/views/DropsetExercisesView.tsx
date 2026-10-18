@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useDropset } from '../context/DropsetContext';
 import { useMode } from '../context/ModeContext';
@@ -9,9 +9,17 @@ import DropsetExerciseFormModal, {
 } from '../features/dropset/DropsetExerciseFormModal';
 import {
   addDropsetExercise,
-  deleteDropsetExercise,
   editDropsetExercise,
+  loadDropsetExercises,
 } from '../lib/dropset-engine';
+import ArchivePanel from '../features/exercises/ArchivePanel';
+import type { Archived } from '../lib/exercise-archive';
+import {
+  archiveExercise,
+  loadArchivedExercises,
+  restoreArchivedExercise,
+} from '../lib/exercise-archive-engine';
+import type { DropsetExercise } from '../lib/types';
 import { TARGET_REPS, formatWeight, progressOf } from '../lib/dropset';
 import styles from './DropsetExercisesView.module.css';
 
@@ -25,6 +33,29 @@ export default function DropsetExercisesView() {
     { mode: 'add' } | { mode: 'edit'; key: string } | null
   >(null);
   const [busy, setBusy] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
+  const [archive, setArchive] = useState<Record<
+    string,
+    Archived<DropsetExercise>
+  > | null>(null);
+  const [archiveBusyKey, setArchiveBusyKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showArchive || archive !== null) return;
+    loadArchivedExercises<DropsetExercise>('settings_dropset')
+      .then(setArchive)
+      .catch((e) => {
+        console.error('[アーカイブ] 読み込み失敗:', e);
+        setArchive({});
+        toast('アーカイブの読み込みに失敗しました', 'error');
+      });
+  }, [showArchive, archive, toast]);
+
+  const postCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    attempts.forEach((a) => (c[a.exerciseType] = (c[a.exerciseType] || 0) + 1));
+    return c;
+  }, [attempts]);
 
   const list = useMemo(
     () =>
@@ -59,24 +90,46 @@ export default function DropsetExercisesView() {
     }
   }
 
-  async function handleDelete(key: string) {
+  async function handleArchive(key: string) {
+    if (!user) return;
+    const name = exercises[key]?.name;
     if (
       !confirm(
-        `種目「${exercises[key]?.name}」を削除しますか？\n\nこれまでの挑戦記録は残りますが、一覧には出なくなります。`,
+        `種目「${name}」をアーカイブしますか？\n\n一覧から外れます。これまでの挑戦記録は残り、「アーカイブ済みの種目」からいつでも戻せます。`,
       )
     )
       return;
     setBusy(true);
     try {
-      const map = await deleteDropsetExercise(key);
-      setExercises(map);
+      await archiveExercise<DropsetExercise>('settings_dropset', key, {
+        uid: user.uid,
+        name: userData?.userName || user.email || 'Unknown',
+      });
+      setExercises(await loadDropsetExercises());
+      setArchive(null);
       setFormModal(null);
-      toast('種目を削除しました', 'success');
+      toast(`「${name}」をアーカイブしました`, 'success');
       refresh();
-    } catch {
-      toast('削除に失敗しました', 'error');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'アーカイブに失敗しました', 'error');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleRestore(key: string) {
+    const name = archive?.[key]?.name;
+    setArchiveBusyKey(key);
+    try {
+      await restoreArchivedExercise<DropsetExercise>('settings_dropset', key);
+      setExercises(await loadDropsetExercises());
+      setArchive(await loadArchivedExercises<DropsetExercise>('settings_dropset'));
+      toast(`「${name}」を戻しました`, 'success');
+      refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '戻せませんでした', 'error');
+    } finally {
+      setArchiveBusyKey(null);
     }
   }
 
@@ -175,6 +228,23 @@ export default function DropsetExercisesView() {
         </div>
       )}
 
+      <button
+        className={styles.archiveToggle}
+        onClick={() => setShowArchive((v) => !v)}
+        aria-expanded={showArchive}
+      >
+        <i className="fa-solid fa-box-archive" /> アーカイブ済みの種目
+        <i className={`fa-solid fa-chevron-${showArchive ? 'up' : 'down'}`} />
+      </button>
+      {showArchive && (
+        <ArchivePanel
+          archive={archive}
+          postCounts={postCounts}
+          busyKey={archiveBusyKey}
+          onRestore={handleRestore}
+        />
+      )}
+
       {formModal && (
         <DropsetExerciseFormModal
           mode={formModal.mode}
@@ -184,9 +254,9 @@ export default function DropsetExercisesView() {
           busy={busy}
           onClose={() => setFormModal(null)}
           onSubmit={handleFormSubmit}
-          onDelete={
+          onArchive={
             formModal.mode === 'edit'
-              ? () => handleDelete(formModal.key)
+              ? () => handleArchive(formModal.key)
               : undefined
           }
         />
