@@ -6,6 +6,8 @@ serviceAccountKey.json
 *.serviceaccount.json
 # 分析エクスポート（投稿データ=個人情報を含む）
 analytics/exports/
+# 意見箱の回収結果（ユーザーの投稿本文・名前を含む）
+analytics/suggestions/
 .env
 .env.local
 .env.development
