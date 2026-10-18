@@ -1,0 +1,37 @@
+name: Web CI
+
+# Vercel 版（web/）の型チェック・ビルド・ユニットテスト。
+# main のブランチ保護で必須チェックにして、PR の自動マージはこれが通ってから行う。
+# 必須チェックにするとパス指定で走らなかった PR が止まるので、paths で絞らず毎回走らせる。
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: web-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # package-lock.json はリポジトリに含めていない（.gitignore）ので npm install
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Type check & build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
