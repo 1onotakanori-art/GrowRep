@@ -1,0 +1,211 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--sp-2);
+}
+.card {
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+.cardTitle i {
+  color: var(--accent);
+}
+.rank {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.rank li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.no {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 800;
+}
+.rank li:first-child .no {
+  background: var(--gold-soft);
+  color: color-mix(in srgb, var(--gold) 80%, var(--text));
+}
+.exName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.exName i {
+  color: var(--accent);
+  margin-right: 2px;
+}
+.val {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.up {
+  color: var(--success);
+}
+.down {
+  color: var(--danger);
+}
+.empty {
+  padding: 8px 0;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.note {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: var(--sp-3);
+  font-size: 15px;
+}
+.sectionTitle i {
+  color: var(--accent);
+}
+
+.tier {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tierHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 800;
+}
+.tier_excellent {
+  background: var(--gold-soft);
+  color: color-mix(in srgb, var(--gold) 80%, var(--text));
+}
+.tier_good {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+}
+.tier_bad {
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.creator {
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.creatorHead {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  text-align: left;
+}
+.creatorIcon {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.creatorName {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.creatorRating {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+.creatorRating i {
+  color: var(--gold);
+  font-size: 11px;
+}
+.sub {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+.chev {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.creatorList {
+  list-style: none;
+  padding: 4px 14px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.creatorList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 13px;
+}
+.creatorList li:last-child {
+  border-bottom: none;
+}
+.creatorList .exName {
+  flex-basis: 100%;
+}
+.meta {
+  display: inline-flex;
+  gap: 10px;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.meta i {
+  color: var(--text-3);
+  font-size: 10px;
+}
