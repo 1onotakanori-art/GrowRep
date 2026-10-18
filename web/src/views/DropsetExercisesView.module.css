@@ -136,3 +136,18 @@
   gap: 6px;
   margin-top: 10px;
 }
+
+.archiveToggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: var(--sp-5) 0 var(--sp-3);
+  padding: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 700;
+}

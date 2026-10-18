@@ -29,14 +29,18 @@ export default function DropsetExerciseFormModal({
   initial,
   onClose,
   onSubmit,
-  onDelete,
+  onArchive,
+  archiveBlocked,
   busy,
 }: {
   mode: 'add' | 'edit';
   initial?: DropsetExercise;
   onClose: () => void;
   onSubmit: (v: DropsetExerciseFormValue) => void;
-  onDelete?: () => void;
+  /** 種目のアーカイブ（削除はしない）。編集時のみ */
+  onArchive?: () => void;
+  /** アーカイブできない理由（今週のチャレンジで使用中など）。あればボタンを止める */
+  archiveBlocked?: string | null;
   busy?: boolean;
 }) {
   const [name, setName] = useState(initial?.name || '');
@@ -232,10 +236,20 @@ export default function DropsetExerciseFormModal({
             '保存する'
           )}
         </button>
-        {mode === 'edit' && onDelete && (
-          <button className="btn-danger" disabled={busy} onClick={onDelete}>
-            <i className="fa-solid fa-trash" /> 種目を削除
-          </button>
+        {mode === 'edit' && onArchive && (
+          <>
+            <button
+              className="btn-secondary"
+              disabled={busy || !!archiveBlocked}
+              onClick={onArchive}
+            >
+              <i className="fa-solid fa-box-archive" /> 種目をアーカイブ
+            </button>
+            <p className={styles.hint}>
+              {archiveBlocked ||
+                'アーカイブすると一覧や抽選から外れます。記録は残り、いつでも戻せます。'}
+            </p>
+          </>
         )}
       </div>
     </Modal>
