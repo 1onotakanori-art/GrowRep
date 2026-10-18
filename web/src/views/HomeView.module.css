@@ -189,3 +189,42 @@
   color: var(--text);
   border: 1px solid var(--border);
 }
+
+/* ウィークリー未読バナー（最新を開くと消える） */
+.weeklyBanner {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: var(--sp-4);
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--accent-grad);
+  color: var(--text-on-accent);
+  box-shadow: var(--shadow-accent);
+  text-align: left;
+}
+.weeklyBanner > i:first-child {
+  font-size: 20px;
+}
+.weeklyBannerText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.weeklyBannerText strong {
+  font-size: 14px;
+}
+.weeklyBannerText span {
+  font-size: 11.5px;
+  opacity: 0.85;
+}
+.weeklyBannerNew {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: #fff;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+}

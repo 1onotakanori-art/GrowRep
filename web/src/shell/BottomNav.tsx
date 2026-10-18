@@ -8,7 +8,9 @@ export type NavKey =
   | 'post'
   | 'ranking'
   | 'center'
-  | 'mypage';
+  | 'mypage'
+  /** ボトムナビには出さないサブページ（ホームのバナー／マイページから開く） */
+  | 'report';
 
 interface Item {
   key: NavKey;
