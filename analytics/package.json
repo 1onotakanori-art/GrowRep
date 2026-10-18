@@ -9,8 +9,10 @@
     "digest": "node build-digest.js",
     "weekly": "node export-firestore.js && node build-digest.js",
     "select": "node select-weekly.js",
-    "announce": "node select-weekly.js && node export-firestore.js && node build-digest.js",
-    "publish": "node publish-report.js"
+    "announce": "node select-weekly.js && node export-firestore.js && node build-digest.js && (node collect-suggestions.js || echo [suggestions] 回収に失敗しました（announce は続行）)",
+    "publish": "node publish-report.js",
+    "suggestions": "node collect-suggestions.js",
+    "test": "node --test"
   },
   "dependencies": {
     "firebase-admin": "^13.0.0",

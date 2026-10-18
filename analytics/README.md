@@ -74,6 +74,27 @@ npm run publish -- --date=2026-06-07 # 日付指定で配信
 > Windows でダブルクリック運用したい場合は、`npm run announce` / `npm run publish` を呼ぶ
 > `.bat` を2つ作ると楽です。
 
+### 意見箱の回収（announce の最後に自動実行）
+
+アプリの「意見箱」（Firestore `suggestions`）を `analytics/suggestions/` に回収します。
+`announce` の最後に走り、失敗しても `announce` 自体は成功扱いのまま続きます。
+
+| ファイル | 中身 |
+|---|---|
+| `suggestions/BACKLOG.md` | 全件を状態（未対応・対応中・対応済み…）ごとに整理。毎回作り直し |
+| `suggestions/inbox/<日付>.md` | その回に初めて回収した意見だけ |
+| `suggestions/status.json` | 各意見の状態。回収しても既存の状態は消えない |
+
+```powershell
+npm run suggestions                                        # 回収して BACKLOG.md を更新
+node collect-suggestions.js --offline --set=<id>:done --note="対応内容" --pr="https://..."   # 状態を変える
+npm test                                                   # 回収ロジックのテスト
+```
+
+Claude Code で「意見箱を見て」と頼むと、`.claude/skills/suggestions-triage/SKILL.md` の手順で
+BACKLOG.md を読み、改修案を出して（着手は確認してから）対応し、状態を更新します。
+⚠️ 意見は個人の投稿なので `suggestions/` は .gitignore 済み（リポジトリは公開）。
+
 ---
 
 ## ダッシュボードで見られるもの（人間向け）
