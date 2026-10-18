@@ -197,20 +197,7 @@
 
 ## ファイル構成
 
-```
-GrowRep/
-├── index.html                  # メインHTML
-├── styles.css                  # スタイルシート
-├── app.js                      # アプリケーションロジック
-├── firebase-config.js          # Firebase設定
-├── firestore.rules             # Firestoreセキュリティルール
-├── .gitignore                  # Git除外設定
-├── .prettierrc                 # Prettierフォーマット設定
-├── .eslintrc.json              # ESLint設定
-├── README.md                   # セットアップ手順
-├── ENV_AND_RULES.md            # このファイル（構想・ルール）
-└── DEVELOPMENT_WORKFLOW.md     # GitHub開発フロー・ブランチ戦略
-```
+最新のフォルダ構成はリポジトリ直下の [README.md](../README.md#フォルダ構成) を参照。
 
 ## 開発履歴
 

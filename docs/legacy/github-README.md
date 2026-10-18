@@ -6,7 +6,7 @@
 
 ## クイックスタート
 
-詳細なセットアップ手順は [README.md](README.md) をご覧ください。
+詳細なセットアップ手順は [README.md](README-github-pages.md) をご覧ください。
 
 ### 必要な準備
 1. Firebaseプロジェクトの作成

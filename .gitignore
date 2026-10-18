@@ -42,6 +42,8 @@ coverage/
 .nyc_output/
 
 # その他
+# Firebase CLI のデプロイキャッシュ
+.firebase/
 .cache/
 temp/
 tmp/
