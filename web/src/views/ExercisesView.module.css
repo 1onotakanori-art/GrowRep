@@ -132,6 +132,30 @@
   gap: 6px;
   margin-top: 10px;
 }
+.weekChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--flame) 14%, transparent);
+  color: var(--flame);
+}
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.stats i {
+  color: var(--text-3);
+  font-size: 10px;
+}
 .exclChip {
   display: inline-flex;
   align-items: center;
