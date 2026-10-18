@@ -235,6 +235,28 @@ export function computeWeeklyScores(
   return userRecords;
 }
 
+/**
+ * 記録値（exercises）だけを書き換えた週間レコードの得点を付け直す（破壊的）。
+ * %換算・下位3採用は computeWeeklyScores と同じ。ストリークは投稿日数で
+ * 決まり記録値に左右されないので、各レコードの streakBonus をそのまま足す。
+ * シミュレーター（weekly-simulator.ts）用。
+ */
+export function rescoreWeeklyRecords(
+  userRecords: UserRecords,
+  exerciseKeys: string[],
+  freeExercises: FreeExerciseMap,
+): void {
+  Object.values(userRecords).forEach((user) => {
+    user.scores = {};
+  });
+  computePercentages(userRecords, exerciseKeys, freeExercises, false);
+  Object.values(userRecords).forEach((user) => {
+    user.totalScore =
+      sumAdoptedScores(exerciseKeys.map((k) => user.scores[k] || 0)) +
+      (user.streakBonus || 0);
+  });
+}
+
 /** 総合得点で降順ソートし、同点は同順位にする。app.js の表示ロジックに対応。 */
 export function rankUsers(
   userRecords: UserRecords,

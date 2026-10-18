@@ -4,6 +4,7 @@
   gap: 8px;
 }
 .row {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -70,6 +71,24 @@
   font-variant-numeric: tabular-nums;
   color: var(--accent);
 }
+.scoreCol {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.15;
+}
+.deltaUp,
+.deltaDown {
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.deltaUp {
+  color: var(--success);
+}
+.deltaDown {
+  color: var(--danger);
+}
 .pct {
   font-size: 12px;
   color: var(--text-3);
@@ -92,6 +111,22 @@
   gap: 8px;
   padding: 5px 0;
   font-size: 12px;
+}
+/* シミュレーター: 名前 | 入力 | % の下にバーを全幅で */
+.bItemSim {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 40px;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 7px 0;
+  font-size: 12px;
+  border-bottom: 1px dashed var(--border);
+}
+.bItemSim:last-of-type {
+  border-bottom: none;
+}
+.bBarFull {
+  grid-column: 1 / -1;
 }
 .bName {
   color: var(--text-2);
@@ -199,6 +234,26 @@
  * fill-mode は backwards（forwards/both にすると transform の計算値が
  * 単位行列のまま残り、position:fixed の包含ブロックになってしまう）。
  */
+/* シミュレーターで順位が動いた行を一瞬光らせる（行に重ねる飾り） */
+.movedFlash {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: movedFlash 0.9s ease backwards;
+  opacity: 0;
+}
+@keyframes movedFlash {
+  0% {
+    opacity: 1;
+    box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--accent) 60%, transparent);
+    background: var(--accent-soft);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes riseIn {
   from {
     opacity: 0;
