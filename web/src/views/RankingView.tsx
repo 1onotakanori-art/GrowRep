@@ -157,14 +157,6 @@ export default function RankingView() {
 
       {tab === 'total' && (
         <>
-          {simAvailable && (
-            <SimulatorControl
-              enabled={simOn}
-              onToggle={toggleSim}
-              overrideCount={countSimOverrides(overrides)}
-              onReset={() => setOverrides({})}
-            />
-          )}
           <ScoreRadar records={shown} exerciseKeys={exerciseKeys} />
           <div className={styles.board}>
             {ranked.map(({ userId, rec, rank }) => {
@@ -275,6 +267,15 @@ export default function RankingView() {
               );
             })}
           </div>
+          {/* シミュレーターは全員の順位の下（ページの一番下）に置く */}
+          {simAvailable && (
+            <SimulatorControl
+              enabled={simOn}
+              onToggle={toggleSim}
+              overrideCount={countSimOverrides(overrides)}
+              onReset={() => setOverrides({})}
+            />
+          )}
         </>
       )}
 
