@@ -1,5 +1,6 @@
 .card {
-  margin-bottom: var(--sp-3);
+  /* ランキングの下に置くので上側に余白 */
+  margin-top: var(--sp-4);
   padding: 12px 14px;
   border-radius: var(--radius);
   background: var(--surface);
