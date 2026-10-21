@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   canWithdrawProposal,
   getProposableWeeks,
+  isAutoSelectReservation,
   mondayKeyOfWeekStart,
   planWeeklyOverride,
   resolveApprovedOutcome,
@@ -712,5 +713,43 @@ describe('planWeeklyOverride（週切り替え時にどの上書き設定を使�
         weekStart,
       }),
     ).toEqual({ use: 'week', cleanupLegacy: false });
+  });
+});
+
+describe('isAutoSelectReservation（日曜の自動選出は特別イベントではない）', () => {
+  it('select-weekly.js がラベル無しで書いた予約は自動選出', () => {
+    // 2026-10-18 週に本番で実際に書かれていた形
+    expect(
+      isAutoSelectReservation({
+        generatedBy: 'select-weekly.js',
+        label: null,
+      }),
+    ).toBe(true);
+  });
+
+  it('--label 付きで実行した予約は意図的な上書き（特別イベント扱い）', () => {
+    expect(
+      isAutoSelectReservation({
+        generatedBy: 'select-weekly.js',
+        label: '特別回',
+      }),
+    ).toBe(false);
+  });
+
+  it('承認された特別イベントは自動選出ではない', () => {
+    expect(
+      isAutoSelectReservation({
+        source: 'special_event_proposal',
+        label: '特別イベント（神谷提案）',
+      }),
+    ).toBe(false);
+  });
+
+  it('管理画面の手動上書きは自動選出ではない', () => {
+    expect(isAutoSelectReservation({ source: 'admin', label: null })).toBe(
+      false,
+    );
+    // source を持たない古い手動上書きも従来どおり特別イベント扱い
+    expect(isAutoSelectReservation({ label: null })).toBe(false);
   });
 });

@@ -43,6 +43,7 @@ import { RANKING_TIE_EPSILON } from './constants';
 import { isWeeklyPausedWeekStart, WEEKLY_PAUSE_LABEL } from './raid-mode';
 import {
   mondayKeyOfWeekStart,
+  isAutoSelectReservation,
   planWeeklyOverride,
   weeklyOverrideDocId,
 } from './special-event';
@@ -65,6 +66,8 @@ interface OverrideDoc {
   /** 承認された提案のID（管理画面の手動上書きでは無い） */
   proposalId?: string;
   source?: string;
+  /** ローカルPCの日曜自動選出が書いたときは 'select-weekly.js' */
+  generatedBy?: string;
 }
 
 // ---------------------------------------------------------------------
@@ -76,7 +79,8 @@ export async function getWeeklyConfig(): Promise<WeeklyConfig> {
     fairnessMode: 'two_stage',
     normalCount: 2,
     barbarianCount: 1,
-    exerciseCount: 4,
+    // 通常週は3種目（通常2＋タイムアタック1）。4 は weekly_config で明示したときだけ
+    exerciseCount: 3,
     enableStreak: false,
     streakBonusPerDay: 3,
     streakBonusCap: 15,
@@ -314,7 +318,8 @@ export async function getOrUpdateWeeklyChallenge(
       return pausedChallenge(existingHistory, existingCreatorHistory);
     }
 
-    // 上書き設定の確認（承認された特別イベント / 管理画面の手動上書き）。
+    // 上書き設定の確認（承認された特別イベント / 管理画面の手動上書き /
+    // 日曜の自動選出の予約）。
     // 対象週ごとに 1 ドキュメント（settings_free/weekly_override_<月曜キー>）
     // なので、来週ぶんを適用しても再来週ぶんの予約は消えない。
     const applyOverride = async (
@@ -322,7 +327,10 @@ export async function getOrUpdateWeeklyChallenge(
       sourceRef: DocumentReference,
     ): Promise<WeeklyChallenge> => {
       const selected = ov.exercises || [];
-      const label = ov.label || '特別イベント';
+      // 自動選出の予約は種目だけ受け取り、通常週として扱う（バッジなし・
+      // 水曜解禁と種目補充あり）
+      const isManual = !isAutoSelectReservation(ov);
+      const label = isManual ? ov.label || '特別イベント' : null;
       const newHistory = { ...existingHistory };
       selected.forEach((k) => {
         newHistory[k] = (newHistory[k] || 0) + 1;
@@ -338,12 +346,12 @@ export async function getOrUpdateWeeklyChallenge(
         exercises: selected,
         selectionHistory: newHistory,
         creatorSelectionHistory: newCreatorHistory,
-        isManualOverride: true,
+        isManualOverride: isManual,
         overrideLabel: label,
         // どの提案が適用されたか（管理画面の手動上書きなら空）。
         // 負けた提案の提案者に「上書きされた」と伝えるのに使う
         overrideProposalId: ov.proposalId || null,
-        overrideSource: ov.source || 'admin',
+        overrideSource: isManual ? ov.source || 'admin' : 'auto_select',
         updatedAt: serverTimestamp(),
       });
       // 適用済みの印。exercises / proposalId は「どの提案が勝ったか」の
@@ -355,7 +363,7 @@ export async function getOrUpdateWeeklyChallenge(
         exercises: selected,
         selectionHistory: newHistory,
         creatorSelectionHistory: newCreatorHistory,
-        isManualOverride: true,
+        isManualOverride: isManual,
         overrideLabel: label,
       } as WeeklyChallenge;
     };

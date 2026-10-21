@@ -1,8 +1,8 @@
 # 引き継ぎメモ：週間チャレンジが毎週「特別イベント」扱いになるバグ
 
 - 作成日: 2026-10-21
-- 状態: **調査完了・未修正**（コード変更なし）
-- 次の担当がやること: 下の「未確認事項」を確認 → 「修正方針」に沿って実装
+- 状態: **修正済み**（2026-10-22。①②を実装。本番の未確認事項は 2026-10-22 に確認済み: `weekly_config.exerciseCount` は未設定＝ケース (b)、`weekly_override` は `generatedBy: 'select-weekly.js'`、今週の `weekly_challenge` は `isManualOverride: true`）
+- 残作業: ④（今週ぶんのバッジ消し）は任意。`weekly_config.exerciseCount = 3` の明示書き込みを推奨（キャッシュされた旧クライアント対策）
 
 ---
 

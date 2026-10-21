@@ -6345,7 +6345,7 @@ async function getWeeklyConfig() {
         fairnessMode: 'two_stage', // 'two_stage'（作成者公平）| 'legacy'（旧・種目単位）
         normalCount: 2,
         barbarianCount: 1,
-        exerciseCount: 4,          // 3=従来 / 4=水曜13時に4種目目追加・下位3採用（それまで？？？表示）
+        exerciseCount: 3,          // 3=従来（通常週の既定） / 4=水曜13時に4種目目追加・下位3採用（それまで？？？表示）
         enableStreak: false,       // 連続投稿ストリーク加点
         streakBonusPerDay: 3,      // 1連続日あたりの加点
         streakBonusCap: 15,        // ストリーク加点の上限
@@ -6752,12 +6752,16 @@ async function getOrUpdateWeeklyChallenge() {
             return setPausedChallenge(existingHistory, existingCreatorHistory);
         }
 
-        // 上書き設定の確認（承認された特別イベント / 管理画面の手動上書き）。
+        // 上書き設定の確認（承認された特別イベント / 管理画面の手動上書き /
+        // 日曜の自動選出の予約）。
         // 対象週ごとに1ドキュメント（settings_free/weekly_override_<月曜キー>）なので、
         // 来週ぶんを適用しても再来週ぶんの予約は消えない。
         const applyOverride = async (overrideData, sourceRef) => {
             const selectedExercises = overrideData.exercises || [];
-            const label = overrideData.label || '特別イベント';
+            // 自動選出の予約は種目だけ受け取り、通常週として扱う（バッジなし・
+            // 水曜解禁と種目補充あり）
+            const isManual = !isAutoSelectReservation(overrideData);
+            const label = isManual ? (overrideData.label || '特別イベント') : null;
             const newHistory = { ...existingHistory };
             selectedExercises.forEach(key => { newHistory[key] = (newHistory[key] || 0) + 1; });
             const newCreatorHistory = incrementCreatorHistory(existingCreatorHistory, selectedExercises, freeExercises);
@@ -6767,12 +6771,12 @@ async function getOrUpdateWeeklyChallenge() {
                 exercises: selectedExercises,
                 selectionHistory: newHistory,
                 creatorSelectionHistory: newCreatorHistory,
-                isManualOverride: true,
+                isManualOverride: isManual,
                 overrideLabel: label,
                 // どの提案が適用されたか（管理画面の手動上書きなら null）。
                 // 負けた提案の提案者に「上書きされた」と伝えるのに使う
                 overrideProposalId: overrideData.proposalId || null,
-                overrideSource: overrideData.source || 'admin',
+                overrideSource: isManual ? (overrideData.source || 'admin') : 'auto_select',
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
             // 適用済みの印。exercises / proposalId は「どの提案が勝ったか」の
@@ -6783,7 +6787,7 @@ async function getOrUpdateWeeklyChallenge() {
                 exercises: selectedExercises,
                 selectionHistory: newHistory,
                 creatorSelectionHistory: newCreatorHistory,
-                isManualOverride: true,
+                isManualOverride: isManual,
                 overrideLabel: label
             };
             weeklyChallengeLoaded = true;
@@ -12096,7 +12100,7 @@ document.getElementById('submit-rating-btn')?.addEventListener('click', async ()
 // ====================================================================
 
 const SPECIAL_EVENT_COL = 'special_event_proposals';
-/** 提案に必要な種目数。週間チャレンジの exerciseCount と揃えている。 */
+/** 提案に必要な種目数。通常週（既定3種目）より多い、特別イベント専用の値。 */
 const SPECIAL_EVENT_EXERCISE_COUNT = 4;
 /** 提案に必要な承認者の人数。全員が承認して初めて成立する。 */
 const SPECIAL_EVENT_APPROVER_COUNT = 3;
@@ -12202,6 +12206,19 @@ function planWeeklyOverride(input) {
     }
     // 過ぎた週ぶんだけ掃除。先の週ぶんはそのまま残す
     return { use: null, cleanupLegacy: target.getTime() < input.weekStart.getTime() };
+}
+
+/**
+ * 上書き設定が「日曜の自動選出の予約」かどうか。
+ * web/src/lib/special-event.ts の isAutoSelectReservation と同じ判定にすること。
+ *
+ * select-weekly.js は通常週の選出結果も旧形式の weekly_override に書くため、
+ * これを特別イベント扱いにすると毎週バッジが出て、水曜解禁と種目補充も止まっていた。
+ * source（特別イベント・管理画面が付ける）か label（--label 指定）があれば
+ * 意図的な上書きとみなし、従来どおり特別イベント扱いにする。
+ */
+function isAutoSelectReservation(overrideData) {
+    return overrideData.generatedBy === 'select-weekly.js' && !overrideData.source && !overrideData.label;
 }
 
 /** 対象週の開始前で、まだ上書き設定に反映できるか。 */
