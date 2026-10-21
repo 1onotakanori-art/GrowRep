@@ -28,7 +28,7 @@ import type { UserData } from './types';
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** 提案に必要な種目数。週間チャレンジの exerciseCount と揃えている。 */
+/** 提案に必要な種目数。通常週（既定3種目）より多い、特別イベント専用の値。 */
 export const SPECIAL_EVENT_EXERCISE_COUNT = 4;
 /** 提案に必要な承認者の人数。全員が承認して初めて成立する。 */
 export const SPECIAL_EVENT_APPROVER_COUNT = 3;
@@ -249,6 +249,26 @@ export function planWeeklyOverride(input: {
   }
   // 過ぎた週ぶんだけ掃除。先の週ぶんはそのまま残す
   return { use: null, cleanupLegacy: target.getTime() < input.weekStart.getTime() };
+}
+
+/** ローカルPCの日曜自動選出（analytics/select-weekly.js）が付ける generatedBy。 */
+export const AUTO_SELECT_GENERATOR = 'select-weekly.js';
+
+/**
+ * 上書き設定が「日曜の自動選出の予約」かどうか。
+ *
+ * select-weekly.js は通常週の選出結果も旧形式の weekly_override に書くため、
+ * 特別イベント / 管理画面の手動上書きと同じ経路で適用される。これを特別イベント
+ * 扱いにすると毎週バッジが出て、水曜解禁と種目補充も止まっていた。
+ * source（特別イベント・管理画面が付ける）か label（--label 指定）があれば
+ * 意図的な上書きとみなし、従来どおり特別イベント扱いにする。
+ */
+export function isAutoSelectReservation(ov: {
+  generatedBy?: string | null;
+  source?: string | null;
+  label?: string | null;
+}): boolean {
+  return ov.generatedBy === AUTO_SELECT_GENERATOR && !ov.source && !ov.label;
 }
 
 /** 週の開始境界（日曜17:00 JST）から対象週の月曜キー（JST, YYYY-MM-DD）。 */
