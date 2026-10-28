@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GrowRep Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+:root {
+    --pri: #667eea; --pri-d: #5568d3; --bg: linear-gradient(135deg,#667eea,#764ba2);
+    --card: #fff; --sh: 0 1px 8px rgba(0,0,0,.07); --tx: #333; --tx2: #888; --bdr: #e8e8e8;
+    --ok: #27ae60; --ng: #e74c3c; --warn: #f39c12; --info: #3498db;
+    --r: 10px; --fs: 12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:var(--bg);min-height:100vh}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;color:var(--tx);font-size:var(--fs);padding:6px;min-height:100vh}
+
+/* ---- Login ---- */
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh}
+.login-box{background:#fff;border-radius:var(--r);padding:24px;max-width:340px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.18);text-align:center}
+.login-box h1{font-size:1.5em;color:var(--pri);margin-bottom:2px}
+.login-box .sub{color:var(--tx2);font-size:12px;margin-bottom:16px}
+.login-box input{width:100%;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--bdr);border-radius:7px;font-size:13px}
+.login-box input:focus{outline:none;border-color:var(--pri)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:8px 14px;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:.2s}
+.btn-pri{background:var(--pri);color:#fff;width:100%}.btn-pri:active{background:var(--pri-d)}
+.btn-sm{padding:5px 10px;font-size:11px;border-radius:6px}
+.btn-info{background:var(--info);color:#fff}.btn-info:active{background:#2980b9}
+.btn-ng{background:var(--ng);color:#fff}.btn-ng:active{background:#c0392b}
+.btn-warn{background:var(--warn);color:#fff}.btn-warn:active{background:#e67e22}
+.btn-ok{background:var(--ok);color:#fff}.btn-ok:active{background:#219a52}
+.btn-ghost{background:transparent;color:var(--pri);border:1.5px solid var(--pri)}.btn-ghost:active{background:#eef2ff}
+.err{color:var(--ng);font-size:11px;margin-top:6px}.err:empty{display:none}
+
+/* ---- Header ---- */
+.hdr{background:#fff;border-radius:var(--r);padding:10px 14px;margin-bottom:8px;box-shadow:var(--sh);display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.hdr h1{font-size:1.1em;color:var(--pri);white-space:nowrap}
+.hdr-acts{display:flex;gap:5px;align-items:center}
+.hdr-user{font-size:10px;color:var(--tx2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- Loading ---- */
+.loading{position:fixed;inset:0;background:rgba(255,255,255,.85);display:flex;align-items:center;justify-content:center;z-index:999;font-size:13px;color:var(--pri)}
+.loading.hide{display:none}
+
+/* ---- Accordion Card ---- */
+.card{background:var(--card);border-radius:var(--r);margin-bottom:8px;box-shadow:var(--sh);overflow:hidden}
+.card-h{padding:10px 14px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.card-h .ico{font-size:13px}.card-h .arr{margin-left:auto;transition:.2s;font-size:10px}
+.card-h.shut .arr{transform:rotate(-90deg)}
+.card-b{padding:10px 14px}.card-b.shut{display:none}
+
+/* Color themes */
+.th-green{background:linear-gradient(135deg,#43e97b,#38f9d7);color:#1a5c2e}
+.th-orange{background:linear-gradient(135deg,#f7971e,#ffd200);color:#6b3a00}
+.th-pink{background:linear-gradient(135deg,#f093fb,#f5576c);color:#5c0a2e}
+.th-purple{background:linear-gradient(135deg,var(--pri),#764ba2);color:#fff}
+
+/* ---- Stats chips ---- */
+.stats{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.chip{background:#f5f7ff;border:1px solid #e0e4ff;border-radius:8px;padding:6px 10px;text-align:center;min-width:58px}
+.chip .v{font-size:1.3em;font-weight:800;color:var(--pri);line-height:1.1}
+.chip .l{font-size:9px;color:var(--tx2)}
+
+/* ---- Exercise card list ---- */
+.ex-card{background:#f8f9ff;border:1px solid #eef1ff;border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;gap:8px;align-items:flex-start}
+.ex-card .ex-icon{font-size:16px;color:var(--pri);min-width:20px;text-align:center;padding-top:1px}
+.ex-card .ex-body{flex:1;min-width:0}
+.ex-card .ex-name{font-weight:700;font-size:12px}
+.ex-card .ex-meta{font-size:10px;color:var(--tx2);margin-top:2px;word-break:break-word}
+.ex-card .ex-tags{margin-top:3px;display:flex;flex-wrap:wrap;gap:3px}
+
+/* ---- Badges ---- */
+.badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600}
+.badge-tag{background:#eef2ff;color:var(--pri)}
+.badge-barb{background:#fff3e0;color:#e65100}
+.badge-sel{background:#e8f5e9;color:#2e7d32}
+.badge-star{background:#fff8e1;color:#f57f17}
+
+/* ---- Weekly challenge exercise cards ---- */
+.wk-ex{background:linear-gradient(135deg,#fff8e1,#fff3e0);border:1px solid #ffe0b2;border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.wk-ex .wk-icon{font-size:18px;color:#f57f17}
+.wk-ex .wk-body{flex:1;min-width:0}
+.wk-ex .wk-name{font-weight:700;font-size:12px}
+.wk-ex .wk-sub{font-size:10px;color:#888;margin-top:1px}
+.wk-ex .wk-acts{display:flex;gap:4px}
+
+/* ---- Weight list ---- */
+.wt-item{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f3f3f3}
+.wt-item:last-child{border-bottom:none}
+.wt-rank{font-size:10px;color:var(--tx2);min-width:16px;text-align:right}
+.wt-name{flex:1;font-size:11px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wt-count{font-size:10px;color:var(--tx2);min-width:28px;text-align:center}
+.wt-bar-wrap{width:60px;height:10px;background:#f0f0f0;border-radius:5px;overflow:hidden;flex-shrink:0}
+.wt-bar{height:100%;border-radius:5px;transition:.3s}
+.wt-pct{font-size:10px;font-weight:700;min-width:34px;text-align:right}
+
+/* ---- Info panel ---- */
+.info-panel{background:#f8f9ff;border:1px solid #e0e4ff;border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:11px}
+.info-panel .ip-row{display:flex;justify-content:space-between;padding:2px 0}
+.info-panel .ip-label{color:var(--tx2);font-weight:600}
+.info-panel .ip-val{font-weight:700;color:var(--tx)}
+
+/* ---- Config controls ---- */
+.cfg-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.cfg-row label{font-size:11px;font-weight:600;color:var(--tx);white-space:nowrap}
+.cfg-row input[type=number],.cfg-row select{padding:6px 8px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px;width:70px}
+.cfg-hint{font-size:10px;color:var(--tx2);margin-bottom:8px;line-height:1.4}
+.cfg-result{font-size:11px;padding:8px 10px;background:#e8f5e9;border-radius:7px;color:var(--ok);margin-top:6px}
+.cfg-result:empty{display:none}
+.cfg-result.cfg-err{background:#fde8e8;color:var(--ng)}
+
+/* ---- Multiplier grid ---- */
+.mul-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:5px;margin-bottom:10px}
+.mul-item{background:#f8f9ff;border:1px solid #e8ecff;border-radius:7px;padding:6px 8px;text-align:center}
+.mul-item .mn{font-size:9px;color:var(--tx2)}
+.mul-item .mv{font-size:1.2em;font-weight:800;color:var(--pri)}
+
+/* ---- Champ cards ---- */
+.champ-card{background:linear-gradient(135deg,#fffde7,#fff8e1);border:1px solid #ffe082;border-radius:8px;padding:8px 10px;margin-bottom:6px}
+.champ-card .cc-week{font-size:10px;color:#bf8f00;font-weight:600}
+.champ-card .cc-name{font-size:12px;font-weight:700;color:#f57f17}
+.champ-card .cc-score{font-size:11px;color:var(--tx)}
+.champ-card .cc-ex{margin-top:3px;display:flex;flex-wrap:wrap;gap:3px}
+
+/* ---- History list ---- */
+.hist-item{padding:6px 0;border-bottom:1px solid #f3f3f3;font-size:11px}
+.hist-item:last-child{border-bottom:none}
+.hist-id{font-size:10px;color:var(--tx2);font-family:monospace}
+.hist-date{color:var(--tx2)}
+.hist-ex{margin-top:2px;display:flex;flex-wrap:wrap;gap:3px}
+
+/* ---- User grid ---- */
+.usr-grid{display:grid;grid-template-columns:1fr;gap:5px}
+.usr-card{background:#f8f9ff;border:1px solid #e8ecff;border-radius:7px;padding:7px 10px}
+.usr-card .un{font-weight:700;color:var(--pri);font-size:11px}
+.usr-card .ue{font-size:10px;color:var(--tx2)}
+
+/* ---- Confirm overlay ---- */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.overlay.hide{display:none}
+.overlay-box{background:#fff;border-radius:var(--r);padding:18px;max-width:340px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.15)}
+.overlay-box h3{font-size:14px;margin-bottom:8px;color:var(--tx)}
+.overlay-box p{font-size:12px;color:var(--tx2);margin-bottom:12px}
+.overlay-btns{display:flex;gap:8px;justify-content:flex-end}
+
+/* ---- Toast ---- */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;z-index:2000;opacity:0;transition:.3s;pointer-events:none}
+.toast.show{opacity:1}
+
+/* ---- Responsive ---- */
+@media(min-width:600px){
+    body{padding:10px;max-width:600px;margin:0 auto}
+    .usr-grid{grid-template-columns:1fr 1fr}
+}
+@media(min-width:900px){
+    body{max-width:800px;font-size:13px}
+}
+    </style>
+</head>
+<body>
+
+<!-- ========== Login ========== -->
+<div id="login-wrap" class="login-wrap" style="display:none">
+    <div class="login-box">
+        <h1><i class="fa-solid fa-shield-halved"></i> GrowRep</h1>
+        <p class="sub">管理者ダッシュボード</p>
+        <input type="email" id="email" placeholder="メールアドレス">
+        <input type="password" id="password" placeholder="パスワード">
+        <button id="login-btn" class="btn btn-pri"><i class="fa-solid fa-right-to-bracket"></i> ログイン</button>
+        <p id="auth-error" class="err"></p>
+    </div>
+</div>
+
+<!-- ========== Main ========== -->
+<div id="app" style="display:none">
+
+<!-- Header -->
+<div class="hdr">
+    <h1><i class="fa-solid fa-shield-halved"></i> Admin</h1>
+    <div class="hdr-acts">
+        <span id="user-label" class="hdr-user"></span>
+        <button id="refresh-btn" class="btn btn-sm btn-info"><i class="fa-solid fa-rotate"></i></button>
+        <button id="logout-btn" class="btn btn-sm btn-ng"><i class="fa-solid fa-right-from-bracket"></i></button>
+    </div>
+</div>
+
+<div id="loading" class="loading hide"><i class="fa-solid fa-spinner fa-spin"></i> 読込中...</div>
+
+<!-- ===== 1. Weekly Challenge (top priority) ===== -->
+<div class="card">
+    <div class="card-h th-orange" onclick="tog(this)">
+        <i class="ico fa-solid fa-bolt"></i> 今週のチャレンジ
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b" id="sec-weekly"></div>
+</div>
+
+<!-- ===== 1.2 Daily mission ===== -->
+<div class="card">
+    <div class="card-h th-green" onclick="tog(this)">
+        <i class="ico fa-solid fa-calendar-day"></i> 今日のデイリーミッション
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b" id="sec-daily"></div>
+</div>
+
+<!-- ===== 1.5 Summer raid ===== -->
+<div class="card">
+    <div class="card-h th-purple" onclick="tog(this)">
+        <i class="ico fa-solid fa-dragon"></i> 夏休みレイド（目標回数）
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b" id="sec-raid"></div>
+</div>
+
+<!-- ===== 2. Weight Config ===== -->
+<div class="card">
+    <div class="card-h th-orange" onclick="tog(this)">
+        <i class="ico fa-solid fa-scale-balanced"></i> 選出確率 / 重み設定
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b" id="sec-weight"></div>
+</div>
+
+<!-- ===== 3. Free exercises ===== -->
+<div class="card">
+    <div class="card-h th-green shut" onclick="tog(this)">
+        <i class="ico fa-solid fa-dumbbell"></i> フリーモード種目
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b shut" id="sec-free"></div>
+</div>
+
+<!-- ===== 4. Multipliers ===== -->
+<div class="card">
+    <div class="card-h th-purple shut" onclick="tog(this)">
+        <i class="ico fa-solid fa-sliders"></i> 倍率設定
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b shut" id="sec-mul"></div>
+</div>
+
+<!-- ===== 5. Champions ===== -->
+<div class="card">
+    <div class="card-h th-orange shut" onclick="tog(this)">
+        <i class="ico fa-solid fa-crown"></i> 歴代チャンピオン
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b shut" id="sec-champ"></div>
+</div>
+
+<!-- ===== 6. Challenge history ===== -->
+<div class="card">
+    <div class="card-h th-orange shut" onclick="tog(this)">
+        <i class="ico fa-solid fa-clock-rotate-left"></i> チャレンジ履歴
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b shut" id="sec-hist"></div>
+</div>
+
+<!-- ===== 7. Users ===== -->
+<div class="card">
+    <div class="card-h th-pink shut" onclick="tog(this)">
+        <i class="ico fa-solid fa-users"></i> ユーザー
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b shut" id="sec-users"></div>
+</div>
+
+</div><!-- /app -->
+
+<!-- Confirm overlay -->
+<div id="confirm-overlay" class="overlay hide">
+    <div class="overlay-box">
+        <h3 id="confirm-title"></h3>
+        <p id="confirm-msg"></p>
+        <div class="overlay-btns">
+            <button class="btn btn-sm btn-ghost" onclick="closeConfirm()">キャンセル</button>
+            <button class="btn btn-sm btn-warn" id="confirm-ok">実行</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<!-- Firebase は web アプリと同じ設定（VITE_FIREBASE_*）で初期化し、
+     auth / db / firebase をグローバルに置いてから /admin/app.js（画面の処理）を読み込む -->
+<script type="module" src="/src/admin/main.ts"></script>
+</body>
+</html>

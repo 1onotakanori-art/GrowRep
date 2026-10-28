@@ -203,7 +203,7 @@ export function getProposableWeeks(
 /**
  * 対象週の上書き設定ドキュメントID。週ごとに分けることで、別々の週を狙った
  * 承認済みイベントが同時に生きていられる（単一ドキュメントだと後勝ちで消える）。
- * ⚠️ app.js / admin.html / weekly-engine.ts と同じ命名にすること。
+ * ⚠️ app.js / 管理画面（public/admin/app.js） / weekly-engine.ts と同じ命名にすること。
  */
 export function weeklyOverrideDocId(mondayKey: string): string {
   return `weekly_override_${mondayKey}`;

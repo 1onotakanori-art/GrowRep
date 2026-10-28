@@ -42,6 +42,16 @@ npm run build     # tsc 型チェック + 本番ビルド（dist/）
    に Vercel の本番/プレビュードメイン（例: `xxx.vercel.app`）を追加。
    これを行わないとログインできません。
 
+## 管理画面（`/admin`）
+
+本番: https://grow-rep.vercel.app/admin
+
+- `admin.html`（画面）＋ `public/admin/app.js`（処理）。旧 GitHub Pages 版から移したもので、
+  Firebase は compat SDK を使う。`src/admin/main.ts` がアプリと同じ `VITE_FIREBASE_*` で
+  初期化して `auth` / `db` / `firebase` をグローバルに置き、そのあと `app.js` を読み込む。
+- `app.js` は onclick 属性から関数を呼ぶため classic script のまま（Vite の変換・型チェック対象外）。
+- 旧 URL（GitHub Pages の `admin.html`）はこちらへ転送するだけのページになっている。
+
 ## 構成
 
 ```
@@ -154,7 +164,7 @@ Firestore コレクション `special_event_proposals`（1提案 = 1ドキュメ
 `planWeeklyOverride`）。適用済みの印は `merge` で立てるので `exercises` / `proposalId` は
 残り、「その週にどの提案が採用されたか」をあとから読めます。
 
-管理画面（`admin.html`）の「来週のチャレンジを手動設定」も同じ週ごとドキュメントに
+管理画面（`/admin`）の「来週のチャレンジを手動設定」も同じ週ごとドキュメントに
 書きます。その週に承認済みの特別イベントがある場合は確認ダイアログを挟んでから
 上書きし、「今週を強制再選定」は**今週ぶんの設定だけ**を無効化します（来週以降を
 狙った承認済みイベントの予約には触りません）。

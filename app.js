@@ -8178,7 +8178,7 @@ function isRaidInputOpen(dateKey, now = new Date()) {
 const RAID_POINTS_PER_DAY = 100;
 
 // 管理者が目標回数を上書きする Firestore ドキュメント（settings_free/）
-// ⚠️ admin.html の「夏休みレイド」セクションと同じドキュメント名・形状にすること
+// ⚠️ 管理画面（web/public/admin/app.js）の「夏休みレイド」セクションと同じドキュメント名・形状にすること
 const RAID_CONFIG_DOC = 'raid_config';
 // 目標回数として受け付ける範囲。桁を打ち間違えても壊れないように上限を置く
 const RAID_GOAL_MIN = 1;
@@ -12169,7 +12169,7 @@ function mondayKeyOfWeekStart(weekStart) {
 /**
  * 対象週の上書き設定ドキュメントID。週ごとに分けることで、別々の週を狙った
  * 承認済みイベントが同時に生きていられる（単一ドキュメントだと後勝ちで消える）。
- * ⚠️ web/src/lib/special-event.ts / admin.html と同じ命名にすること。
+ * ⚠️ web/src/lib/special-event.ts / 管理画面（web/public/admin/app.js）と同じ命名にすること。
  */
 function weeklyOverrideDocId(mondayKey) {
     return `weekly_override_${mondayKey}`;
