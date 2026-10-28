@@ -196,6 +196,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
     <div class="card-b" id="sec-weekly"></div>
 </div>
 
+<!-- ===== 1.2 Daily mission ===== -->
+<div class="card">
+    <div class="card-h th-green" onclick="tog(this)">
+        <i class="ico fa-solid fa-calendar-day"></i> 今日のデイリーミッション
+        <i class="arr fa-solid fa-chevron-down"></i>
+    </div>
+    <div class="card-b" id="sec-daily"></div>
+</div>
+
 <!-- ===== 1.5 Summer raid ===== -->
 <div class="card">
     <div class="card-h th-purple" onclick="tog(this)">
@@ -288,6 +297,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
 // ====================================================================
 const $ = id => document.getElementById(id);
 let _exercises = {}, _wc = null, _wcConfig = {}, _users = {}, _override = null;
+// settings_free/daily_mission（今日の種目・直近の選出履歴・過去最高回数）
+let _dm = null;
 // settings_free/raid_config の goals（日付キー→目標回数）。未設定の日は既定値
 let _raidGoals = {};
 // settings_free/raid_config の exercises（日付キー→種目キー）。未設定の日は名前から自動解決
@@ -428,13 +439,14 @@ $('refresh-btn').addEventListener('click', () => loadAll());
 async function loadAll() {
     $('loading').classList.remove('hide');
     try {
-        const [exDoc, wcDoc, cfgDoc, legacyOverrideDoc, nextWeekOverrideDoc, raidDoc, mFree, mNorm, mInt, champSnap, histSnap, usrSnap] = await Promise.all([
+        const [exDoc, wcDoc, cfgDoc, legacyOverrideDoc, nextWeekOverrideDoc, raidDoc, dmDoc, mFree, mNorm, mInt, champSnap, histSnap, usrSnap] = await Promise.all([
             db.collection('settings_free').doc('exercises').get(),
             db.collection('settings_free').doc('weekly_challenge').get(),
             db.collection('settings_free').doc('weekly_config').get(),
             db.collection('settings_free').doc('weekly_override').get(),
             db.collection('settings_free').doc(weeklyOverrideDocId(mondayKeyOfWeekStart(getNextWeekStart()))).get(),
             db.collection('settings_free').doc('raid_config').get(),
+            db.collection('settings_free').doc('daily_mission').get(),
             db.collection('settings_free').doc('multipliers').get(),
             db.collection('settings').doc('multipliers').get(),
             db.collection('settings_interval').doc('multipliers').get(),
@@ -458,10 +470,12 @@ async function loadAll() {
         _raidGoals = raidDoc.exists ? sanitizeRaidGoals(raidDoc.data().goals) : {};
         _raidExercises = raidDoc.exists ? sanitizeRaidExercises(raidDoc.data().exercises) : {};
         _raidMembers = raidDoc.exists ? (raidDoc.data().memberCounts || {}) : {};
+        _dm = dmDoc.exists ? dmDoc.data() : null;
         _users = {};
         usrSnap.forEach(d => { _users[d.id] = d.data(); });
 
         renderWeekly();
+        renderDaily();
         renderRaid();
         renderWeight();
         renderFree();
@@ -583,6 +597,108 @@ async function rerollOne(oldKey, idx) {
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
             toast(`${_exercises[picked]?.name || picked} に入替完了`);
+            await loadAll();
+        } catch (e) { console.error(e); toast('エラー: ' + e.message); }
+        finally { $('loading').classList.add('hide'); }
+    });
+}
+
+// ====================================================================
+// 1.2 DAILY MISSION（今日の種目の引き直し）
+// 保存先: settings_free/daily_mission { dateKey, exerciseKey, recentKeys, bestValue... }
+// アプリは「dateKey が今日で exerciseKey が存在すればそれを使う」ので、
+// ここで exerciseKey を差し替えればリロードした人から新しい種目になる。
+// 過去最高回数（ピーク）は種目キーと照合して使われるため null で潰しておけば
+// アプリ側が新しい種目で引き直す。目標回数はシード（ユーザー×日付×種目）から再計算。
+// ====================================================================
+
+const DAILY_REPS_DEFAULT_PEAK = 30; // app.js / web と同じ（投稿が無い種目のピーク）
+const DAILY_RECENT_AVOID = 5;
+
+/** デイリーミッションの候補（Barbarian・デイリー除外以外）。app.js: getDailyMissionCandidates */
+function dailyCandidates() {
+    return Object.keys(_exercises).filter(k => _exercises[k] && !_exercises[k].barbarian && !_exercises[k].excludeFromDaily);
+}
+
+function renderDaily() {
+    const el = $('sec-daily');
+    const today = todayDateKeyJST();
+    const isRaidDay = RAID_SCHEDULE.some(d => d.dateKey === today);
+    const curKey = _dm && _dm.dateKey === today ? _dm.exerciseKey : null;
+    const cur = curKey ? _exercises[curKey] : null;
+    let html = '<div class="info-panel">';
+    html += `<div class="ip-row"><span class="ip-label">日付</span><span class="ip-val">${esc(fmtRaidDate(today))}</span></div>`;
+    if (curKey) {
+        const best = _dm.bestValueKey === curKey && _dm.bestValueDateKey === today ? _dm.bestValue : null;
+        const bestStr = best == null ? '未集計' : (best > 0 ? `${best}回（ピーク${_dm.peak ?? best}）` : `投稿なし（ピーク既定${DAILY_REPS_DEFAULT_PEAK}）`);
+        html += `<div class="ip-row"><span class="ip-label">種目</span><span class="ip-val">${esc((cur && cur.name) || curKey)}</span></div>
+        <div class="ip-row"><span class="ip-label">過去最高</span><span class="ip-val">${esc(bestStr)}</span></div>
+        <div class="ip-row"><span class="ip-label">更新</span><span class="ip-val">${fmtTs(_dm.updatedAt)}</span></div>`;
+    } else {
+        html += '<div class="ip-row"><span class="ip-label">種目</span><span class="ip-val">未生成（誰かがアプリを開くと決まります）</span></div>';
+    }
+    html += '</div>';
+    if (isRaidDay) {
+        html += '<p class="cfg-hint"><i class="fa-solid fa-circle-info" style="color:var(--info)"></i> 今日はレイド開催日のため、種目はレイドの設定で決まります（上の「夏休みレイド」から変更）</p>';
+        el.innerHTML = html;
+        return;
+    }
+    const opts = dailyCandidates()
+        .filter(k => k !== curKey)
+        .sort((a, b) => (_exercises[a].name || '').localeCompare(_exercises[b].name || '', 'ja'))
+        .map(k => `<option value="${esc(k)}">${esc(_exercises[k].name || k)}</option>`).join('');
+    html += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+        <select id="daily-reroll-ex" style="padding:6px 8px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px">
+            <option value="">🎲 ランダム（投稿実績のある種目から）</option>${opts}
+        </select>
+    </div>
+    <p class="cfg-hint">直近${DAILY_RECENT_AVOID}日に出た種目はランダムの対象外です。変更後はアプリをリロードした人から新しい種目・目標回数になります。</p>
+    <button class="btn btn-warn" style="width:100%" onclick="rerollDaily()"><i class="fa-solid fa-dice"></i> 今日の種目を引き直す</button>`;
+    el.innerHTML = html;
+}
+
+/** その種目に投稿が1件でもあるか */
+async function hasAnyPost(key) {
+    const snap = await db.collection('posts_free').where('exerciseType', '==', key).limit(1).get();
+    return !snap.empty;
+}
+
+async function rerollDaily() {
+    const today = todayDateKeyJST();
+    const curKey = _dm && _dm.dateKey === today ? _dm.exerciseKey : null;
+    const chosen = $('daily-reroll-ex').value;
+    const curName = curKey ? ((_exercises[curKey] && _exercises[curKey].name) || curKey) : '（未生成）';
+    const msg = chosen
+        ? `今日の種目「${curName}」を「${(_exercises[chosen] && _exercises[chosen].name) || chosen}」に変更しますか？`
+        : `今日の種目「${curName}」をランダムに引き直しますか？`;
+    showConfirm('デイリーミッション引き直し', msg, async () => {
+        $('loading').classList.remove('hide');
+        try {
+            // 引き直す前の種目は実際には使われなかったので、履歴から取り除く
+            const recent = (Array.isArray(_dm && _dm.recentKeys) ? _dm.recentKeys : []).filter(k => k !== curKey);
+            let picked = chosen;
+            if (!picked) {
+                const avoid = new Set([...recent, curKey]);
+                const pool = dailyCandidates().filter(k => !avoid.has(k));
+                // 一度もやられていない種目は目標回数が既定値頼みになるので、投稿実績のある種目に絞る
+                const done = await Promise.all(pool.map(k => hasAnyPost(k).then(ok => ok ? k : null)));
+                const withPosts = done.filter(Boolean);
+                const finalPool = withPosts.length > 0 ? withPosts : pool;
+                if (finalPool.length === 0) { toast('入替候補がありません'); return; }
+                picked = finalPool[Math.floor(Math.random() * finalPool.length)];
+            }
+            await db.collection('settings_free').doc('daily_mission').set({
+                dateKey: today,
+                exerciseKey: picked,
+                recentKeys: [picked, ...recent.filter(k => k !== picked)].slice(0, DAILY_RECENT_AVOID),
+                // 旧種目の過去最高回数を新種目のピークとして使わせない（アプリ側で引き直させる）
+                peak: null,
+                bestValue: null,
+                bestValueKey: null,
+                bestValueDateKey: null,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            toast(`${(_exercises[picked] && _exercises[picked].name) || picked} に変更しました`);
             await loadAll();
         } catch (e) { console.error(e); toast('エラー: ' + e.message); }
         finally { $('loading').classList.add('hide'); }
