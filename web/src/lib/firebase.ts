@@ -1,6 +1,6 @@
 // Firebase 初期化（modular SDK）
 // 既存アプリ（firebase-config.js, compat SDK）と同じプロジェクトに接続する。
-// 値は Vite の環境変数（VITE_FIREBASE_*）から注入する。
+// 値は Vite の環境変数（VITE_FIREBASE_*）から注入する（lib/firebase-config.ts）。
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import {
@@ -8,21 +8,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
-
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-};
-
-if (!firebaseConfig.apiKey) {
-  console.warn(
-    '⚠️ Firebase 設定が未完了です。web/.env（またはVercel環境変数）に VITE_FIREBASE_* を設定してください。',
-  );
-}
+import { firebaseConfig } from './firebase-config';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);

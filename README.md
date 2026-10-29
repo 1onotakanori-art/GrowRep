@@ -14,6 +14,7 @@
 ```
 GrowRep/
 ├── web/                     # ★ メインのアプリ（Vercel）。開発・テストの手順は web/README.md
+│   ├── admin.html  public/admin/app.js  #   管理画面（/admin。週間チャレンジ・デイリーミッション・レイドの調整など）
 │   └── src/
 │       ├── views/           #   画面（ボトムナビの各タブ）
 │       ├── features/        #   画面の部品（機能ごと）
@@ -31,7 +32,7 @@ GrowRep/
 │   ── 以下は旧版（GitHub Pages）。Pages を閉じるときにまとめて片付ける ──
 ├── index.html  app.js  styles.css  icon-style.css
 ├── firebase-config.js  firebase-config.template.js
-├── admin.html               # 管理画面（週間チャレンジの手動調整・レイドの目標など）
+├── admin.html               # Vercel の管理画面（/admin）への転送だけ
 ├── exercises.html           # 種目 & 評価（web の「種目 & ルール」に移植済み）
 ├── report.html  report.js   # 週報（web の「ウィークリー」に移植済み）
 └── icon-preview.html        # 種目アイコンの確認用

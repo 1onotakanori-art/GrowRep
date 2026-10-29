@@ -9,6 +9,11 @@ export default defineConfig({
     target: 'es2021',
     // Firebase を個別チャンクに分離し、初期ロードのメインバンドルを軽量化
     rollupOptions: {
+      // 管理画面（/admin）を別ページとして同じビルドに含める
+      input: {
+        main: 'index.html',
+        admin: 'admin.html',
+      },
       output: {
         manualChunks: {
           firebase: [
