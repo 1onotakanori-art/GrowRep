@@ -123,6 +123,14 @@ async function main() {
       dumpDoc('settings_free', 'raid_config'),
     ]);
 
+  // 週ごとの上書き設定（settings_free/weekly_override_<月曜キー>）。
+  // 特別イベント週のラベルを週報に出すために使う。少数なので collection を一度読んで絞る
+  const weeklyOverrides = {};
+  const settingsSnap = await db.collection('settings_free').get();
+  for (const d of settingsSnap.docs) {
+    if (d.id.startsWith('weekly_override_')) weeklyOverrides[d.id] = serialize(d.data());
+  }
+
   // 各種目評価のユーザー別内訳（user_ratings サブコレクション）
   const ratingDetail = {};
   for (const r of ratingsRaw) {
@@ -208,6 +216,7 @@ async function main() {
     weeklyChallenge,
     weeklyConfig,
     weeklyOverride,
+    weeklyOverrides,
     weeklyChampions,
     weeklyHistory,
     dailyMission,

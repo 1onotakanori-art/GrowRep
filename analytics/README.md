@@ -118,8 +118,9 @@ BACKLOG.md を読み、改修案を出して（着手は確認してから）対
 
 | セクション | 内容 |
 |---|---|
-| `weeklyChallenge` | 今週の3種目・順位表(`standings`)・王者(`champion`)・各人の逆転材料(`perUser`)。**本体と同じ得点ロジックを再現**（平日・今週の3種目、通常=self/max×100、バーバリアン=min/self×100、合計） |
-| `monthlyDerby` | その月の各週の週間チャレンジ得点を合計した総合順位。`leader`/`leadMargin`/週別推移(`weeklyScores`)。`monthOver` が false の間は暫定 |
+| `weeklyChallenge` | 今週の種目・順位表(`standings`)・王者(`champion`)・各人の逆転材料(`perUser`)。特別イベント週は `overrideLabel` にラベル、休止週は `paused: true`。**本体と同じ得点ロジックを再現**（平日・今週の3種目、通常=self/max×100、バーバリアン=min/self×100、合計） |
+| `monthlyDerby` | その月の各週の週間チャレンジ得点を合計した総合順位。`leader`/`leadMargin`/週別推移(`weeklyScores`)。`monthOver` は最終週の金曜が終わって確定したら true（それまでは暫定） |
+| `dailyMission` | 対象週（月〜日）のデイリーミッション。日ごとの種目・各人の目標とクリア（`days`）、週の通算（`perUser`: クリア日数・平日皆勤・連続クリア）、名場面（`highlights`）、関門と本戦の関係（`gate`）。アプリが `settings_free/daily_mission` の `history` に残した日ごとの種目が元。目標回数は `daily-analytics.js` がアプリと同じ抽選で再現。記録が1日も無ければ `null` |
 | `offChallenge` | 今週あえてチャレンジ3種目以外をやった人（個性・偏愛のシグナル。`challengeDoneCount` 付き） |
 | `nextWeekConfirmed` | **日曜17時に確定した来週の3種目**（`select-weekly.js` が書いた `weekly_override` 由来）。各種目に出たら本命(`favorite`)・対抗(`contenders`)。選出前は `null` |
 | `nextWeekForecast` | 次週に出やすい種目の**確率予想**（本体の選出アルゴリズムを再現）。候補ごとに本命記録保持者つき。`nextWeekConfirmed` が無いときのフォールバック用 |

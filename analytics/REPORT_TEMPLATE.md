@@ -18,7 +18,7 @@
 - **今週の顔ぶれ**: `days` の各日の種目を1行ずつ（例「月 スクワット / 火 懸垂 …」）。`raid` のある日は「レイド（協力戦）」と明記。
 - **入場券レース**: `perUser` を `weekdayClearDays` の多い順に。`allWeekdaysCleared:true` の人は「平日皆勤」として称える。`clearStreak` も添える。
 - **名場面**: `highlights` から数件。
-  - `rareClears` … 確率○%の鬼目標を突破（最大の見せ場）
+  - `rareClears` … 上位○%（`topPct`）の鬼目標を突破（最大の見せ場）
   - `nearMisses` … あと□回で届かず（前向きに煽る）
   - `overkills` … 目標の○倍をやり切った
   - `allClearDays` … 動いた全員がクリアした日

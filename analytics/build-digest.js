@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildChallengeSections } from './weekly-analytics.js';
+import { buildDailyMissionDigest, dateKeyJST } from './daily-analytics.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -615,6 +616,22 @@ const summary = {
 const challenge = buildChallengeSections(ds, exByKey, nameOf);
 
 // ====================================================================
+// デイリーミッション（日ごとの記録 history から、対象週の目標・クリアを再現）
+// ====================================================================
+// 本戦の種目は「デイリーの対象週と同じ週」のときだけ渡す（関門と本戦の関係 gate 用）
+const wcForGate = challenge.weeklyChallenge;
+const wcMondayKey =
+  wcForGate && !wcForGate.paused && wcForGate.period?.weekStart
+    ? dateKeyJST(new Date(wcForGate.period.weekStart).getTime() + DAY)
+    : null;
+const dailyMission = buildDailyMissionDigest(ds, {
+  exByKey,
+  nameOf,
+  challengeKeys: (period) =>
+    period.from === wcMondayKey ? (wcForGate.exercises || []).map((e) => e.key) : null,
+});
+
+// ====================================================================
 // digest 組み立て & 出力
 // ====================================================================
 const digest = {
@@ -629,6 +646,7 @@ const digest = {
   summary,
   // ▼ 主役: 週間チャレンジ & 月間ダービー（優勝争い）
   weeklyChallenge: challenge.weeklyChallenge,
+  dailyMission, // 毎日の関門（history が無ければ null）
   monthlyDerby: challenge.monthlyDerby,
   offChallenge: challenge.offChallenge,
   nextWeekForecast: challenge.nextWeekForecast,
