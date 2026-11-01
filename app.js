@@ -6521,7 +6521,7 @@ function selectExercisesTwoStage(candidateKeys, allExercises, history, creatorHi
  * @param {number} weightExponent - 重み指数
  * @param {Object} [exerciseRatings={}] - 種目評価集計
  * @param {Object} [creatorData={}] - 作成者データ
- * @param {Object} [options={}] - { fairnessMode, creatorHistory, normalCount, barbarianCount, revealCount }
+ * @param {Object} [options={}] - { fairnessMode, creatorHistory, normalCount, barbarianCount, revealCount, excludeKeys }
  * @returns {string[]} 並び順は [基本normal..., barbarian, 水曜公開の追加normal...]（公開枠は末尾）
  */
 function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExponent = 2, exerciseRatings = {}, creatorData = {}, options = {}) {
@@ -6531,14 +6531,21 @@ function selectWeeklyExercisesWithBarbarianSlot(allExercises, history, weightExp
         normalCount = 2,
         barbarianCount = 1,
         revealCount = 0, // 水曜13時に追加公開する normal 種目数（末尾に付与）。0=従来3種目
+        excludeKeys = [], // 前週の種目。2週連続で同じ種目が出ないよう候補から外す
     } = options;
     const targetCount = normalCount + barbarianCount + revealCount;
 
     const allKeys = Object.keys(allExercises || {}).filter(key => !allExercises[key]?.excludeFromWeekly);
     if (allKeys.length === 0) return [];
 
-    const normalKeys = allKeys.filter(key => !(allExercises[key] && allExercises[key].barbarian));
-    const barbarianKeys = allKeys.filter(key => allExercises[key] && allExercises[key].barbarian);
+    // 前週の種目を外す。外すと枠数に足りないプールだけは外さずに使う
+    const excluded = new Set(excludeKeys);
+    const withoutPrevWeek = (pool, need) => {
+        const fresh = pool.filter(key => !excluded.has(key));
+        return fresh.length >= need ? fresh : pool;
+    };
+    const normalKeys = withoutPrevWeek(allKeys.filter(key => !(allExercises[key] && allExercises[key].barbarian)), normalCount + revealCount);
+    const barbarianKeys = withoutPrevWeek(allKeys.filter(key => allExercises[key] && allExercises[key].barbarian), barbarianCount);
 
     const usedCreators = new Set();
     const pickNormal = (pool, n) => fairnessMode === 'legacy'
@@ -6863,6 +6870,8 @@ async function getOrUpdateWeeklyChallenge() {
                 barbarianCount: weeklyConfig.barbarianCount || 1,
                 // exerciseCount>=4 で水曜公開の追加normalを1枠付与（末尾）
                 revealCount: Math.max(0, (weeklyConfig.exerciseCount || 3) - 3),
+                // 前週の種目は選ばない（2週連続の同一種目を防ぐ）
+                excludeKeys: (doc.exists && doc.data().exercises) || [],
             }
         );
 

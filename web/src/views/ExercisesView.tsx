@@ -121,6 +121,7 @@ export default function ExercisesView() {
           exercises: freeExercises,
           history: insights.history,
           creatorHistory: insights.creatorHistory,
+          excludeKeys: insights.currentWeekKeys,
           ratings: summaries,
           creators: usersMap,
           config: insights.config,

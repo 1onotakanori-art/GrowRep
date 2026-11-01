@@ -179,12 +179,18 @@ export interface SelectionOptions {
   normalCount?: number;
   barbarianCount?: number;
   revealCount?: number;
+  /**
+   * 前週の種目。2週連続で同じ種目が出ないよう候補から外す。
+   * 外すと枠が埋まらない（種目が少ない）ときだけ候補に戻す。
+   */
+  excludeKeys?: string[];
 }
 
 /**
  * 「通常n種目 + バーバリアン1種目 (+水曜公開枠)」で選出。
  * app.js: selectWeeklyExercisesWithBarbarianSlot
  * 並び順: [基本normal..., barbarian, 水曜公開の追加normal...]
+ * options.excludeKeys（前週の種目）は選ばない。
  */
 export function selectWeeklyExercisesWithBarbarianSlot(
   allExercises: FreeExerciseMap,
@@ -200,6 +206,7 @@ export function selectWeeklyExercisesWithBarbarianSlot(
     normalCount = 2,
     barbarianCount = 1,
     revealCount = 0,
+    excludeKeys = [],
   } = options;
   const targetCount = normalCount + barbarianCount + revealCount;
 
@@ -208,11 +215,19 @@ export function selectWeeklyExercisesWithBarbarianSlot(
   );
   if (allKeys.length === 0) return [];
 
-  const normalKeys = allKeys.filter(
-    (key) => !(allExercises[key] && allExercises[key].barbarian),
+  // 前週の種目を外す。外すと枠数に足りないプールだけは外さずに使う
+  const excluded = new Set(excludeKeys);
+  const withoutPrevWeek = (pool: string[], need: number) => {
+    const fresh = pool.filter((key) => !excluded.has(key));
+    return fresh.length >= need ? fresh : pool;
+  };
+  const normalKeys = withoutPrevWeek(
+    allKeys.filter((key) => !(allExercises[key] && allExercises[key].barbarian)),
+    normalCount + revealCount,
   );
-  const barbarianKeys = allKeys.filter(
-    (key) => allExercises[key] && allExercises[key].barbarian,
+  const barbarianKeys = withoutPrevWeek(
+    allKeys.filter((key) => allExercises[key] && allExercises[key].barbarian),
+    barbarianCount,
   );
 
   const usedCreators = new Set<string>();
