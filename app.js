@@ -9051,6 +9051,78 @@ function pushRecentMissionKeys(recentKeys, exerciseKey) {
 }
 
 // --------------------------------------------------------------------
+// 日ごとの記録（history）
+// ⚠️ web版 daily-mission.ts / daily-mission-engine.ts の同名関数のミラー。
+// settings_free/daily_mission の history.<日付キー> に、その日の確定内容
+// （種目・ピーク・過去最高・レイドの日数と目標）を残す。週次集計用で表示には使わない。
+// 管理画面の引き直しが書く rerolledFrom / rerolledAt は消さない（merge で自分のフィールドだけ書く）。
+// --------------------------------------------------------------------
+
+/** history を残す日数。これより古い日は日付が変わる書き込みのついでに消す */
+const DAILY_HISTORY_KEEP_DAYS = 180;
+
+/** 通常日の history エントリ。過去最高を引けなかった日は peak も null */
+function buildDailyHistoryEntry(exerciseKey, bestValue) {
+    const best = (typeof bestValue === 'number' && isFinite(bestValue) && bestValue >= 0) ? bestValue : null;
+    return {
+        exerciseKey: exerciseKey,
+        peak: best == null ? null : resolveDailyPeak(best),
+        bestValue: best,
+        raidDay: null,
+        raidGoal: null
+    };
+}
+
+/** レイド開催日の history エントリ */
+function buildRaidHistoryEntry(exerciseKey, raidDay, raidGoal) {
+    return {
+        exerciseKey: exerciseKey,
+        peak: null,
+        bestValue: null,
+        raidDay: (typeof raidDay === 'number' && isFinite(raidDay)) ? raidDay : null,
+        raidGoal: (typeof raidGoal === 'number' && isFinite(raidGoal)) ? raidGoal : null
+    };
+}
+
+/** 保存済みの history.<日付キー> が entry と同じなら true（書き込み不要） */
+function isDailyHistoryUpToDate(history, dateKey, entry) {
+    if (!history || typeof history !== 'object') return false;
+    const saved = history[dateKey];
+    if (!saved || typeof saved !== 'object') return false;
+    return Object.keys(entry).every(k => (saved[k] ?? null) === (entry[k] ?? null));
+}
+
+/** keepDays 日以上前の history のキー（日付キーの形のものだけ） */
+function staleDailyHistoryKeys(history, dateKey, keepDays = DAILY_HISTORY_KEEP_DAYS) {
+    if (!history || typeof history !== 'object') return [];
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const t = new Date(Date.UTC(y, m - 1, d) - keepDays * 24 * 60 * 60 * 1000);
+    const cutoff = `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+    return Object.keys(history).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && k <= cutoff).sort();
+}
+
+/** history.<日付キー> を merge で書くフィールド。prune なら古い日の削除も同じ書き込みで行う */
+function dailyHistoryFields(saved, dateKey, entry, prune) {
+    const history = { [dateKey]: entry };
+    if (prune) {
+        staleDailyHistoryKeys((saved || {}).history, dateKey).forEach(k => {
+            history[k] = firebase.firestore.FieldValue.delete();
+        });
+    }
+    return { history: history };
+}
+
+/** ほかの書き込みが無い経路で、history が食い違っていたときだけ書き足す（await しない） */
+async function ensureDailyHistory(ref, saved, dateKey, entry) {
+    if (isDailyHistoryUpToDate((saved || {}).history, dateKey, entry)) return;
+    try {
+        await ref.set(dailyHistoryFields(saved, dateKey, entry, false), { merge: true });
+    } catch (e) {
+        console.warn('[デイリーミッション] 履歴の記録に失敗（表示は続行）:', e);
+    }
+}
+
+// --------------------------------------------------------------------
 // 分布グラフ（みんなの目標を1枚に並べる）
 // --------------------------------------------------------------------
 
@@ -9411,6 +9483,7 @@ async function getOrCreateDailyMission(exercises, now = new Date(), presetOverri
         const raidKey = resolveRaidExerciseKey(scheduledRaid, exercises, raidOverrides.exercises);
         if (raidKey) {
             const raidConfig = applyRaidGoalOverride(scheduledRaid, raidOverrides.goals);
+            const raidHistory = buildRaidHistoryEntry(raidKey, raidConfig.day, raidConfig.goal);
             // 書き込みは日付が変わった1回だけ（recentKeys を毎回積み増さないため）
             if (saved.dateKey !== dateKey) {
                 const prevKeys = Array.isArray(saved.recentKeys) ? saved.recentKeys : [];
@@ -9426,11 +9499,15 @@ async function getOrCreateDailyMission(exercises, now = new Date(), presetOverri
                         bestValue: null,
                         bestValueKey: null,
                         bestValueDateKey: null,
+                        history: dailyHistoryFields(saved, dateKey, raidHistory, true).history,
                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     }, { merge: true });
                 } catch (e) {
                     console.warn('[レイド] 保存失敗（表示は続行）:', e);
                 }
+            } else {
+                // 開催中に管理画面で目標・種目を変えたときも記録を追従させる
+                ensureDailyHistory(ref, saved, dateKey, raidHistory);
             }
             return {
                 dateKey: dateKey,
@@ -9473,11 +9550,15 @@ async function getOrCreateDailyMission(exercises, now = new Date(), presetOverri
         // 別種目・別日の値や旧バージョンの書き込みは信用せず引き直す
         const cached = readCachedBestValue(saved, dateKey, savedKey);
         if (cached != null) {
+            ensureDailyHistory(ref, saved, dateKey, buildDailyHistoryEntry(savedKey, cached));
             return toDailyMission(dateKey, savedKey, cached);
         }
         const savedBest = await resolveBest(savedKey);
         try {
-            await ref.set(bestFields(savedKey, savedBest), { merge: true });
+            await ref.set(Object.assign({},
+                bestFields(savedKey, savedBest),
+                dailyHistoryFields(saved, dateKey, buildDailyHistoryEntry(savedKey, savedBest), false)
+            ), { merge: true });
         } catch (e) {
             // 書けなくても各端末で同じ値を再計算できる
         }
@@ -9496,7 +9577,8 @@ async function getOrCreateDailyMission(exercises, now = new Date(), presetOverri
             exerciseKey: exerciseKey,
             recentKeys: pushRecentMissionKeys(recentKeys, exerciseKey),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-        }, bestFields(exerciseKey, bestValue)), { merge: true });
+        }, bestFields(exerciseKey, bestValue),
+        dailyHistoryFields(saved, dateKey, buildDailyHistoryEntry(exerciseKey, bestValue), true)), { merge: true });
     } catch (e) {
         console.warn('[デイリーミッション] 保存失敗（表示は続行）:', e);
     }

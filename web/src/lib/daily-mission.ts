@@ -318,6 +318,123 @@ export function pushRecentMissionKeys(
 }
 
 // ---------------------------------------------------------------------
+// 日ごとの記録（history）
+//
+// settings_free/daily_mission は「今日の分」しか持たないので、過去の日に
+// どの種目だったかを後から確実に知る手段がなかった（管理画面で引き直す
+// こともあるので、シードからの再現も当てにならない）。
+// そこで同じドキュメントの history.<日付キー> に、その日の確定内容を残す。
+// 週次の集計（analytics）がこれを読んで、デイリーの結果を週報に載せる。
+//
+// - 書くのは web / app.js / 管理画面（引き直し）の3か所。どれも merge で
+//   history.<日付キー> の中の自分が知っているフィールドだけを書く。
+//   管理画面だけが書く rerolledFrom / rerolledAt はアプリ側が消さない。
+// - 表示には使わない（記録用）。目標回数は従来どおりシードから再計算。
+// ---------------------------------------------------------------------
+
+/** history を残す日数。これより古い日は日付が変わる書き込みのついでに消す。 */
+export const DAILY_HISTORY_KEEP_DAYS = 180;
+
+/** history.<日付キー> の中身（アプリが書くぶん）。 */
+export interface DailyHistoryEntry {
+  /** その日に確定した種目（引き直し後の最終） */
+  exerciseKey: string;
+  /** その日のピーク回数。過去最高を引けていなければ null（集計側で再計算） */
+  peak: number | null;
+  /** ピークの根拠になった過去最高回数（その日 0:00 より前の全投稿の最大） */
+  bestValue: number | null;
+  /** レイド開催日なら何日目か・目標回数。通常日は null */
+  raidDay: number | null;
+  raidGoal: number | null;
+}
+
+/**
+ * 通常日の history エントリ。bestValue が引けなかった日は peak も null にして、
+ * 次の読み込みで引き直したときに上書きされるようにする。
+ * app.js: buildDailyHistoryEntry
+ */
+export function buildDailyHistoryEntry(
+  exerciseKey: string,
+  bestValue: number | null,
+): DailyHistoryEntry {
+  const best =
+    typeof bestValue === 'number' && isFinite(bestValue) && bestValue >= 0
+      ? bestValue
+      : null;
+  return {
+    exerciseKey,
+    peak: best == null ? null : resolveDailyPeak(best),
+    bestValue: best,
+    raidDay: null,
+    raidGoal: null,
+  };
+}
+
+/** レイド開催日の history エントリ。app.js: buildRaidHistoryEntry */
+export function buildRaidHistoryEntry(
+  exerciseKey: string,
+  raidDay: number | null | undefined,
+  /** 人数割りの日など、固定の目標回数が無い日は undefined */
+  raidGoal: number | null | undefined,
+): DailyHistoryEntry {
+  return {
+    exerciseKey,
+    peak: null,
+    bestValue: null,
+    raidDay: typeof raidDay === 'number' && isFinite(raidDay) ? raidDay : null,
+    raidGoal: typeof raidGoal === 'number' && isFinite(raidGoal) ? raidGoal : null,
+  };
+}
+
+/**
+ * 保存済みの history.<日付キー> が entry と同じなら true（書き込み不要）。
+ * entry のフィールドだけを見るので、管理画面が書いた rerolledFrom などは
+ * 比較に影響しない。毎回の読み込みで書き込みが走らないようにするための判定。
+ * app.js: isDailyHistoryUpToDate
+ */
+export function isDailyHistoryUpToDate(
+  history: unknown,
+  dateKey: string,
+  entry: DailyHistoryEntry,
+): boolean {
+  if (!history || typeof history !== 'object') return false;
+  const saved = (history as Record<string, unknown>)[dateKey];
+  if (!saved || typeof saved !== 'object') return false;
+  const s = saved as Record<string, unknown>;
+  return (Object.keys(entry) as Array<keyof DailyHistoryEntry>).every(
+    (k) => (s[k] ?? null) === (entry[k] ?? null),
+  );
+}
+
+/**
+ * 日付キーを n 日ずらす（JST の暦日。日付キー同士の計算なのでタイムゾーンに依らない）。
+ */
+function shiftDateKey(dateKey: string, days: number): string {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d) + days * 24 * 60 * 60 * 1000);
+  const yy = t.getUTCFullYear();
+  const mm = String(t.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(t.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+/**
+ * keepDays より古い（dateKey から数えて keepDays 日以上前の）history のキー。
+ * 日付キーの形をしていないキーは触らない。app.js: staleDailyHistoryKeys
+ */
+export function staleDailyHistoryKeys(
+  history: unknown,
+  dateKey: string,
+  keepDays: number = DAILY_HISTORY_KEEP_DAYS,
+): string[] {
+  if (!history || typeof history !== 'object') return [];
+  const cutoff = shiftDateKey(dateKey, -keepDays);
+  return Object.keys(history as object)
+    .filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && k <= cutoff)
+    .sort();
+}
+
+// ---------------------------------------------------------------------
 // 分布グラフ（みんなの目標を1枚に並べる）
 // ---------------------------------------------------------------------
 

@@ -6,6 +6,7 @@
 // =====================================================================
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -17,16 +18,21 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import {
+  buildDailyHistoryEntry,
   buildDailyParticipants,
+  buildRaidHistoryEntry,
   dailyTargetProbability,
   getDailyBoundariesJST,
   getDailyDateKeyJST,
   generateDailyMissionTarget,
   pickDailyMissionExercise,
   pushRecentMissionKeys,
+  isDailyHistoryUpToDate,
   readCachedBestValue,
   resolveDailyPeak,
+  staleDailyHistoryKeys,
   sumDailyTotals,
+  type DailyHistoryEntry,
   type DailyMission,
   type DailyMissionState,
 } from './daily-mission';
@@ -75,6 +81,54 @@ interface MissionDoc {
   /** レイド開催日に記録する何日目か・目標回数（表示には使わず記録用） */
   raidDay?: number | null;
   raidGoal?: number | null;
+  /**
+   * 日ごとの確定内容（日付キー → DailyHistoryEntry ＋管理画面が書く
+   * rerolledFrom / rerolledAt）。週次集計用で、表示には使わない。
+   */
+  history?: Record<string, unknown>;
+}
+
+/**
+ * history.<日付キー> を merge で書くためのフィールド。
+ * prune が true なら、古い日（DAILY_HISTORY_KEEP_DAYS 以上前）の削除も同じ書き込みで行う。
+ * 日付が変わる書き込み（1日1回）のときだけ prune する。app.js: dailyHistoryFields
+ */
+function dailyHistoryFields(
+  saved: MissionDoc,
+  dateKey: string,
+  entry: DailyHistoryEntry,
+  prune: boolean,
+): { history: Record<string, unknown> } {
+  const history: Record<string, unknown> = { [dateKey]: entry };
+  if (prune) {
+    staleDailyHistoryKeys(saved.history, dateKey).forEach((k) => {
+      history[k] = deleteField();
+    });
+  }
+  return { history };
+}
+
+/**
+ * ほかの書き込みが無い経路（当日分を読むだけの経路）で、history が
+ * 今日の内容と食い違っていたときだけ書き足す。旧版（app.js の古いキャッシュ）が
+ * その日を作った・管理画面で引き直した、などで history が欠けている日を埋める。
+ * 表示を待たせないよう呼び出し側は await しない。app.js: ensureDailyHistory
+ */
+async function ensureDailyHistory(
+  saved: MissionDoc,
+  dateKey: string,
+  entry: DailyHistoryEntry,
+): Promise<void> {
+  if (isDailyHistoryUpToDate(saved.history, dateKey, entry)) return;
+  try {
+    await setDoc(
+      doc(db, SETTINGS, MISSION_DOC),
+      dailyHistoryFields(saved, dateKey, entry, false),
+      { merge: true },
+    );
+  } catch (e) {
+    console.warn('[デイリーミッション] 履歴の記録に失敗（表示は続行）:', e);
+  }
 }
 
 /**
@@ -228,6 +282,11 @@ export async function getOrCreateDailyMission(
     );
     if (raidKey) {
       const raidConfig = applyRaidGoalOverride(scheduled, overrides.goals);
+      const raidHistory = buildRaidHistoryEntry(
+        raidKey,
+        raidConfig.day,
+        raidConfig.goal,
+      );
       // 書き込みは日付が変わった1回だけ（recentKeys を毎回積み増さないため）
       if (saved.dateKey !== dateKey) {
         const prevKeys = Array.isArray(saved.recentKeys) ? saved.recentKeys : [];
@@ -245,6 +304,7 @@ export async function getOrCreateDailyMission(
               bestValue: null,
               bestValueKey: null,
               bestValueDateKey: null,
+              ...dailyHistoryFields(saved, dateKey, raidHistory, true),
               updatedAt: serverTimestamp(),
             },
             { merge: true },
@@ -252,6 +312,9 @@ export async function getOrCreateDailyMission(
         } catch (e) {
           console.warn('[レイド] 保存失敗（表示は続行）:', e);
         }
+      } else {
+        // 開催中に管理画面で目標・種目を変えたときも記録を追従させる
+        void ensureDailyHistory(saved, dateKey, raidHistory);
       }
       return toRaidMission(dateKey, raidKey, raidConfig);
     }
@@ -298,11 +361,30 @@ export async function getOrCreateDailyMission(
     // 今日のこの種目の値だと確認できたときだけキャッシュを使う。
     // 別種目・別日の値や旧バージョンの書き込みは信用せず引き直す。
     const cached = readCachedBestValue(saved, dateKey, savedKey);
-    if (cached != null) return toMission(dateKey, savedKey, cached);
+    if (cached != null) {
+      void ensureDailyHistory(
+        saved,
+        dateKey,
+        buildDailyHistoryEntry(savedKey, cached),
+      );
+      return toMission(dateKey, savedKey, cached);
+    }
 
     const bestValue = await resolveBest(savedKey);
     try {
-      await setDoc(ref, bestFields(savedKey, bestValue), { merge: true });
+      await setDoc(
+        ref,
+        {
+          ...bestFields(savedKey, bestValue),
+          ...dailyHistoryFields(
+            saved,
+            dateKey,
+            buildDailyHistoryEntry(savedKey, bestValue),
+            false,
+          ),
+        },
+        { merge: true },
+      );
     } catch {
       // 書けなくても各端末で同じ値を再計算できる
     }
@@ -327,6 +409,12 @@ export async function getOrCreateDailyMission(
         exerciseKey,
         ...bestFields(exerciseKey, bestValue),
         recentKeys: pushRecentMissionKeys(recentKeys, exerciseKey),
+        ...dailyHistoryFields(
+          saved,
+          dateKey,
+          buildDailyHistoryEntry(exerciseKey, bestValue),
+          true,
+        ),
         updatedAt: serverTimestamp(),
       },
       { merge: true },
