@@ -1,7 +1,7 @@
 # 引き継ぎメモ：週報（Cowork 定期タスク）をデイリーミッション対応にする
 
 - 作成日: 2026-11-01
-- 状態: **①②⑤済み**（デイリーの日ごとの記録・export・指示文の差し替え）。**③④が残り**
+- 状態: **すべて実装済み**（①②⑤ = PR #63、③④ = 2026-11-01 の続き）。残りは運用での確認だけ（4. を参照）
 - 関連ファイル: `analytics/PROMPT.md` / `analytics/REPORT_TEMPLATE.md`（2026-11 に v2 へ差し替え）
 
 ---
@@ -64,65 +64,43 @@
 `analytics/export-firestore.js` が `settings_free/daily_mission`（history 込み）と `settings_free/raid_config` を
 dataset の `dailyMission` / `raidConfig` に入れる。種目には `excludeFromDaily` も追加。
 
-### ③ digest に `dailyMission` を追加（残り）
+### ③ digest に `dailyMission` を追加（済み）
 
-`analytics/build-digest.js` か新規 `daily-analytics.js`。対象期間は週報の対象週の **月曜〜日曜（JST 暦日）**。
-export 時点で終わっていない日は `inProgress: true`。
+`analytics/daily-analytics.js`（`build-digest.js` から呼ぶ）。
 
-- 日ごとの種目・ピークは `dataset.dailyMission.history[dateKey]` を使う。
-  `peak` が null の日は「その日 0:00 JST より前の、その種目の全投稿の最大値」から `resolveDailyPeak` で再計算する。
-- history に無い日は `source: "none"` として扱い、その日は days に入れない（推測で埋めない）。
-- 目標回数・確率は `web/src/lib/daily-mission.ts` の純粋関数を **そのまま移植**する
-  （`hashStringToSeed` / `createSeededRandom` / `seededNormal` / `resolveDailyPeak` /
-  `generateDailyMissionTarget` / `dailyTargetProbability`）。シード文字列・定数を変えないこと。
-- 合計はその日の `posts_free` のうち、その日の種目の value の足し上げ。
+- 対象週は **export 日以前で最も新しい日曜で終わる月〜日**（JST 暦日）。日曜夕方の export なら、その日曜は `inProgress: true`。
+- 日ごとの種目・ピークは `dataset.dailyMission.history[dateKey]`。`peak` が null の日（引き直し直後など）は、その日 0:00 JST より前の全投稿の最大から再計算する（`peakSource: "recomputed"`）。
+- history に無い日は推測で埋めず `missingDays` に出す。期間内に1日も無ければ `dailyMission: null`。
+- 目標回数・確率は `web/src/lib/daily-mission.ts` の純粋関数をそのまま移植した（シード文字列・定数は同じ）。
+  一致は `daily-analytics.test.js` の固定値（web 版の関数で作った値）で確かめている。
+  10/26〜10/30 の実データでも、多くの人がちょうど目標の回数で投稿を止めており、アプリの抽選と一致していた。
+- 参加者は「その日 posts_free に1件以上投稿した人」（アプリはその日ログインした人を並べるが、後から数え直せないため）。
 
-```jsonc
-"dailyMission": {
-  "period": { "from": "2026-11-02", "to": "2026-11-08" },
-  "days": [{
-    "dateKey": "2026-11-02", "weekdayLabel": "月", "isWeekday": true, "inProgress": false,
-    "exerciseKey": "...", "exerciseName": "...", "peak": 40, "rerolled": false,
-    "raid": null,                 // レイド日なら { day, goal, teamTotal, cleared }
-    "activeCount": 3,             // その日フリーに1件以上投稿した人数
-    "clearedCount": 2,
-    "participants": [{            // その日フリーに1件以上投稿した人（ログイン者は後から数え直せないため）
-      "userName": "渡邉", "target": 38, "probability": 0.041,
-      "totalValue": 40, "cleared": true, "ratio": 1.05,
-      "status": "cleared"         // cleared / short（挑んだが未達）/ untouched（その種目は0回）
-    }]
-  }],
-  "perUser": [{
-    "userName": "渡邉", "clearDays": 6, "attemptDays": 6,
-    "weekdayClearDays": 5, "allWeekdaysCleared": true,
-    "clearStreak": 6              // 期間内の最長連続クリア日数
-  }],
-  "highlights": {
-    "rareClears":  [{ "userName", "dateKey", "exerciseName", "target", "probability" }],  // cleared かつ probability < 0.05、確率の低い順に最大3件
-    "nearMisses":  [{ "userName", "dateKey", "exerciseName", "target", "totalValue", "short" }], // 未達かつ totalValue >= target×0.8
-    "overkills":   [{ "userName", "dateKey", "exerciseName", "target", "totalValue", "ratio" }],  // ratio >= 1.5、大きい順に最大3件
-    "allClearDays": ["2026-11-04"]  // activeCount >= 2 かつ全員クリア
-  },
-  "gate": [{ "userName": "渡邉", "weekdayClearDays": 5, "weeklyPostDays": 5 }]  // weeklyPostDays = 本戦種目に投稿した平日の数
-}
-```
+主な項目（全体は `analytics/README.md` と digest の `dailyMission.note`）:
 
-期間内に history のある日が1日も無ければ `dailyMission: null` にする。指示側は null なら「準備中」と1行で済ませる。
+| 項目 | 中身 |
+|---|---|
+| `days[]` | 種目・`peak`・各人の `target` / `topPct` / `totalValue` / `cleared` / `ratio` / `status`（cleared・short・untouched）。`rerolled`、レイド日は `raid` |
+| `perUser[]` | `clearDays` / `attemptDays` / `activeDays` / `weekdayClearDays` / `allWeekdaysCleared` / `clearStreak` |
+| `highlights` | `rareClears`（上位10%以内の重い目標を突破）/ `nearMisses`（達成率80%以上で未達）/ `overkills`（1.5倍以上）/ `allClearDays` |
+| `gate[]` | 平日にデイリーを突破した日数と、本戦種目に投稿した平日の数 |
 
-### ④ 週間チャレンジ・月間ダービーの小修正（残り、`analytics/weekly-analytics.js`）
+**目標の重さについて:** アプリの確率（`probabilityPct`）は「その回数ぴったり」を引く確率なので、ピークが大きい種目ではどの回数も1%前後になり、重さの比較に使えなかった（実データで全員が「確率1%の鬼目標」になった）。そこで「その回数以上を引く確率」`topPct` を足し、鬼目標の判定と指示文はこちらを使う。
 
-- `weeklyChallenge.paused`: 休止週（`isWeeklyPausedWeekStart` 相当）なら true。
-- `monthlyDerby.monthOver`: 「集めた最後の週がダービー最終週（その週の日曜 = derbyEnd）で、かつ確定済み」なら true にする。
-  今の `todayUTC > derbyEnd` だと最終週の週報（derbyEnd 当日の日曜）で必ず false になる。
+### ④ 週間チャレンジ・月間ダービーの修正（済み、`analytics/weekly-analytics.js`）
+
+- `weeklyChallenge.paused`: 直近に終わった週が休止週（`WEEKLY_PAUSE_WEEK_KEYS`。web の raid-mode.ts のミラー）なら、`paused: true` の告知用の形を返す。これまでは休止週を飛ばして「その前の週」を先週として実況してしまう作りだった。
+- `weeklyChallenge.overrideLabel`: 週ごとの上書き設定 `settings_free/weekly_override_<月曜キー>` のラベルを引く（export に `weeklyOverrides` を追加）。champion / history の記録はラベルを持たないため、特別イベント週でも null になっていた。
+- `monthlyDerby.monthOver`: 最終週（derbyEnd の日曜で終わる週）の金曜が終わって確定していれば true。11/1 のデータで 10月ダービーが確定扱いになることを確認した。
 
 ### ⑤ 指示の差し替え（済み）
 
 - `analytics/PROMPT.md` / `REPORT_TEMPLATE.md` を v2 に差し替えた。③が入るまでは、デイリーの節は「準備中」の1行になる。
-- 残り: `analytics/README.md` の digest セクション表に `dailyMission` を追記（③と一緒に）。
+- `analytics/README.md` の digest セクション表に `dailyMission` などを追記した。
 - claude.ai の GrowRep プロジェクトの指示（旧 PROMPT.md の写し）は手で貼り替える。
 
-## 4. テスト
+## 4. 運用での確認
 
-- ③で移植した目標回数・確率が web と一致すること: `web` 側の関数の出力を数件（ユーザー×日付×種目×ピーク）固定値として
-  analytics の `node --test` に書き、同じ値になるか照合する。
-- ①のデプロイ後、最初の週報（丸1週間たった日曜）の export で `daily_history=7日` 前後になっていること（export のログに出る）。
+- 11/8（日）の announce の export ログで `daily_history=` の日数を見る。PR #63 のデプロイ（11/1）以降に誰かがアプリを開いた日だけ記録がある。
+- 11/8 の digest では、11/2（月）〜11/7（土）が集計対象、11/8（日）は `inProgress`。
+- 休止週の告知は `WEEKLY_PAUSE_WEEK_KEYS` に週を足したときだけ動く。休止を増やすときは web の raid-mode.ts と analytics/weekly-analytics.js の両方を直す。

@@ -102,6 +102,35 @@ function currentDerbyYearMonth(nowMs) {
   return { year, month };
 }
 
+// 週間チャレンジを休止した週（週の開始＝日曜17:00 JST の日付キー）。
+// ⚠️ web/src/lib/raid-mode.ts WEEKLY_PAUSE_WEEK_KEYS のミラー。休止を増やすときは両方そろえる。
+const WEEKLY_PAUSE_WEEK_KEYS = ['2026-08-09'];
+const WEEKLY_PAUSE_LABEL = '夏休み休止';
+
+// 日付キー（日曜）→ その日 17:00 JST の週開始（UTC ms）
+function weekStartMsOfSunday(dateKey) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return Date.UTC(y, m - 1, d, 17) - JST_OFFSET_MS;
+}
+
+// 週開始 → 対象週の月曜キー（web: mondayKeyOfWeekStart）
+function mondayKeyOfWeekStart(weekStartMs) {
+  const { monJST } = championDocMeta(weekStartMs);
+  const d = new Date(monJST);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/**
+ * 対象週の特別イベント／手動上書きのラベル。
+ * settings_free/weekly_override_<月曜キー>（週ごとの上書き。export の weeklyOverrides）を見る。
+ * 日曜の自動選出（select-weekly.js）が書いた予約はラベルを持たないので null になる。
+ */
+function overrideLabelForWeek(ds, weekStartMs) {
+  const ov = (ds.weeklyOverrides || {})[`weekly_override_${mondayKeyOfWeekStart(weekStartMs)}`];
+  if (!ov || ov.invalidated) return null;
+  return typeof ov.label === 'string' && ov.label.trim() ? ov.label.trim() : null;
+}
+
 // 競技順位付け（同点は同順位、タイブレークは uid）
 function applyCompetitionRank(arr, scoreKey = 'totalScore') {
   arr.sort((a, b) =>
@@ -303,14 +332,47 @@ function resolveReportWeek(ds) {
   pool.sort((a, b) => b.weekStartMs - a.weekStartMs);
   const picked = pool[0];
   picked.decided = isChampionWeekDecided(picked.weekStartMs, nowMs);
+  // ラベルは週ごとの上書き設定が正（champion / history はラベルを持たない）
+  picked.overrideLabel = picked.overrideLabel || overrideLabelForWeek(ds, picked.weekStartMs);
   return picked;
+}
+
+/**
+ * 直近に終わった週が休止週なら、その週開始（UTC ms）を返す。
+ * 休止週は種目も得点も無いので候補に上がらず、放っておくと
+ * 「その前の週」を先週として実況してしまうため、先に見分ける。
+ */
+function pausedReportWeekStart(ds) {
+  const nowMs = tsMs(ds.meta?.exportedAt) || Date.now();
+  const decidedPaused = WEEKLY_PAUSE_WEEK_KEYS.map(weekStartMsOfSunday)
+    .filter((ms) => isChampionWeekDecided(ms, nowMs) && nowMs - ms < 14 * DAY)
+    .sort((a, b) => b - a);
+  return decidedPaused[0] ?? null;
 }
 
 /**
  * 週間チャレンジ標準分析（総決算対象 = 直近終了週）
  */
 function buildWeeklyChallenge(ds, exByKey, nameOf) {
+  const pausedMs = pausedReportWeekStart(ds);
   const target = resolveReportWeek(ds);
+  // 直近に終わった週が休止週（＝選ばれた週より新しい）なら、休止を告知するだけの形を返す
+  if (pausedMs !== null && (!target || pausedMs > target.weekStartMs)) {
+    return {
+      paused: true,
+      pauseLabel: WEEKLY_PAUSE_LABEL,
+      period: {
+        weekStart: new Date(pausedMs).toISOString(),
+        weekEnd: new Date(pausedMs + 7 * DAY).toISOString(),
+        label: periodLabel(pausedMs),
+      },
+      isFinishedWeek: true,
+      exercises: [],
+      standings: [],
+      perUser: [],
+      champion: null,
+    };
+  }
   if (!target || !Array.isArray(target.exercises) || target.exercises.length === 0) return null;
   const { weekStartMs, weekEndMs } = target;
   const targetKeys = target.exercises;
@@ -394,6 +456,7 @@ function buildWeeklyChallenge(ds, exByKey, nameOf) {
       weekEnd: new Date(weekEndMs).toISOString(),
       label: periodLabel(weekStartMs),
     },
+    paused: false,
     isFinishedWeek: !!target.decided, // 金曜終了済みの「総決算」週か（進行中の今週なら false）
     isManualOverride: !!target.isManualOverride,
     overrideLabel: target.overrideLabel || null,
@@ -493,7 +556,11 @@ function buildMonthlyDerby(ds, exByKey, nameOf) {
     const j = new Date(nowMs + JST_OFFSET_MS);
     return Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate());
   })();
-  const monthOver = todayUTC > derbyEnd;
+  // 最終週（derbyEnd の日曜で終わる週）の金曜が終わって確定していれば、月そのものは
+  // まだ日曜でも勝負は決している。週報は derbyEnd 当日の日曜に作るので、
+  // 「今日 > derbyEnd」だけだと最終週の週報で一度も戴冠できない。
+  const finalWeekStartMs = derbyEnd - 7 * DAY + 8 * 60 * 60 * 1000; // 最終週の開始＝前の日曜 17:00 JST
+  const monthOver = todayUTC > derbyEnd || isChampionWeekDecided(finalWeekStartMs, nowMs);
 
   return {
     year,
