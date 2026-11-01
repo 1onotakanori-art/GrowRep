@@ -315,12 +315,21 @@ async function rerollOne(oldKey, idx) {
 
 // ====================================================================
 // 1.2 DAILY MISSION（今日の種目の引き直し）
-// 保存先: settings_free/daily_mission { dateKey, exerciseKey, recentKeys, bestValue... }
+// 保存先: settings_free/daily_mission { dateKey, exerciseKey, recentKeys, bestValue..., history }
 // アプリは「dateKey が今日で exerciseKey が存在すればそれを使う」ので、
 // ここで exerciseKey を差し替えればリロードした人から新しい種目になる。
 // 過去最高回数（ピーク）は種目キーと照合して使われるため null で潰しておけば
 // アプリ側が新しい種目で引き直す。目標回数はシード（ユーザー×日付×種目）から再計算。
+//
+// history.<日付キー> は日ごとの確定内容（週次集計用）。アプリ（web / app.js）が
+// exerciseKey・peak・bestValue・raidDay・raidGoal を書き、引き直しではここで
+// exerciseKey を差し替えて peak を null に戻す（新しい種目のピークはアプリが埋める）。
+// 引き直しの経緯は rerolledFrom（使われなかった種目、古い順）と rerolledAt に残す。
+// アプリはこの2つを書かないので消されない。
 // ====================================================================
+
+/** 管理画面に出す history の日数 */
+const DAILY_HISTORY_SHOW_DAYS = 7;
 
 const DAILY_REPS_DEFAULT_PEAK = 30; // app.js / web と同じ（投稿が無い種目のピーク）
 const DAILY_RECENT_AVOID = 5;
@@ -348,6 +357,7 @@ function renderDaily() {
         html += '<div class="ip-row"><span class="ip-label">種目</span><span class="ip-val">未生成（誰かがアプリを開くと決まります）</span></div>';
     }
     html += '</div>';
+    html += renderDailyHistory();
     if (isRaidDay) {
         html += '<p class="cfg-hint"><i class="fa-solid fa-circle-info" style="color:var(--info)"></i> 今日はレイド開催日のため、種目はレイドの設定で決まります（上の「夏休みレイド」から変更）</p>';
         el.innerHTML = html;
@@ -365,6 +375,23 @@ function renderDaily() {
     <p class="cfg-hint">直近${DAILY_RECENT_AVOID}日に出た種目はランダムの対象外です。変更後はアプリをリロードした人から新しい種目・目標回数になります。</p>
     <button class="btn btn-warn" style="width:100%" onclick="rerollDaily()"><i class="fa-solid fa-dice"></i> 今日の種目を引き直す</button>`;
     el.innerHTML = html;
+}
+
+/** 直近の記録（history）。記録が溜まっているかをここで確かめられる */
+function renderDailyHistory() {
+    const history = (_dm && _dm.history && typeof _dm.history === 'object') ? _dm.history : {};
+    const keys = Object.keys(history).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort().reverse().slice(0, DAILY_HISTORY_SHOW_DAYS);
+    let html = '<div class="info-panel" style="margin-top:8px">';
+    html += '<div class="ip-row"><span class="ip-label">記録</span><span class="ip-val">' + (keys.length ? `直近${keys.length}日（週報の集計用）` : 'まだありません（アプリを開いた日から溜まります）') + '</span></div>';
+    keys.forEach(k => {
+        const e = history[k] || {};
+        const name = (_exercises[e.exerciseKey] && _exercises[e.exerciseKey].name) || e.exerciseKey || '?';
+        const detail = e.raidDay != null ? `レイド${e.raidDay}日目` : (e.peak != null ? `ピーク${e.peak}` : 'ピーク未集計');
+        const rerolled = Array.isArray(e.rerolledFrom) && e.rerolledFrom.length ? `・引き直し${e.rerolledFrom.length}回` : '';
+        html += `<div class="ip-row"><span class="ip-label">${esc(fmtRaidDate(k))}</span><span class="ip-val">${esc(name)}（${esc(detail + rerolled)}）</span></div>`;
+    });
+    html += '</div>';
+    return html;
 }
 
 /** その種目に投稿が1件でもあるか */
@@ -397,6 +424,10 @@ async function rerollDaily() {
                 if (finalPool.length === 0) { toast('入替候補がありません'); return; }
                 picked = finalPool[Math.floor(Math.random() * finalPool.length)];
             }
+            // 日ごとの記録も差し替える。使われなかった種目は rerolledFrom に積む
+            const prevEntry = (_dm && _dm.history && _dm.history[today]) || {};
+            const rerolledFrom = (Array.isArray(prevEntry.rerolledFrom) ? prevEntry.rerolledFrom : [])
+                .concat(curKey && curKey !== picked ? [curKey] : []);
             await db.collection('settings_free').doc('daily_mission').set({
                 dateKey: today,
                 exerciseKey: picked,
@@ -406,6 +437,18 @@ async function rerollDaily() {
                 bestValue: null,
                 bestValueKey: null,
                 bestValueDateKey: null,
+                history: {
+                    [today]: {
+                        exerciseKey: picked,
+                        // ピークはアプリが新しい種目で集計し直して書く
+                        peak: null,
+                        bestValue: null,
+                        raidDay: null,
+                        raidGoal: null,
+                        rerolledFrom: rerolledFrom,
+                        rerolledAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }
+                },
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
             toast(`${(_exercises[picked] && _exercises[picked].name) || picked} に変更しました`);

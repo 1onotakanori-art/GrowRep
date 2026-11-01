@@ -111,12 +111,17 @@ async function main() {
   ]);
 
   // settings_free 配下の主要ドキュメント
-  const [exercisesDoc, weeklyChallenge, weeklyConfig, weeklyOverride] = await Promise.all([
-    dumpDoc('settings_free', 'exercises'),
-    dumpDoc('settings_free', 'weekly_challenge'),
-    dumpDoc('settings_free', 'weekly_config'),
-    dumpDoc('settings_free', 'weekly_override'),
-  ]);
+  // daily_mission: 今日の種目と history（日ごとの確定内容。週報のデイリー集計に使う）
+  // raid_config: レイドの目標・種目の上書きとログイン人数の記録
+  const [exercisesDoc, weeklyChallenge, weeklyConfig, weeklyOverride, dailyMission, raidConfig] =
+    await Promise.all([
+      dumpDoc('settings_free', 'exercises'),
+      dumpDoc('settings_free', 'weekly_challenge'),
+      dumpDoc('settings_free', 'weekly_config'),
+      dumpDoc('settings_free', 'weekly_override'),
+      dumpDoc('settings_free', 'daily_mission'),
+      dumpDoc('settings_free', 'raid_config'),
+    ]);
 
   // 各種目評価のユーザー別内訳（user_ratings サブコレクション）
   const ratingDetail = {};
@@ -158,6 +163,7 @@ async function main() {
     icon: ex.icon || 'fa-dumbbell',
     barbarian: !!ex.barbarian,
     excludeFromWeekly: !!ex.excludeFromWeekly,
+    excludeFromDaily: !!ex.excludeFromDaily,
     createdBy: ex.createdBy || null,
     createdByName: ex.createdByName || null,
     createdAt: ex.createdAt || null,
@@ -204,6 +210,8 @@ async function main() {
     weeklyOverride,
     weeklyChampions,
     weeklyHistory,
+    dailyMission,
+    raidConfig,
     // 旧モードは分析対象外だが将来用に生で保持
     legacy: {
       posts: postsRaw,
@@ -218,7 +226,8 @@ async function main() {
 
   console.log(
     `[export] 完了: ${outPath}\n` +
-      `  users=${users.length}, exercises=${exercises.length}, posts_free=${posts.length}`
+      `  users=${users.length}, exercises=${exercises.length}, posts_free=${posts.length}` +
+      `, daily_history=${Object.keys((dailyMission && dailyMission.history) || {}).length}日`
   );
 }
 
