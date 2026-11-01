@@ -672,7 +672,7 @@ function renderWeight() {
     const allKeys = Object.keys(_exercises);
 
     // Config editor
-    let html = `<div class="cfg-hint"><i class="fa-solid fa-circle-info"></i> 重み = 1/(選出回数+1)<sup>指数</sup> — 指数が大きいほど再選出されにくい</div>
+    let html = `<div class="cfg-hint"><i class="fa-solid fa-circle-info"></i> 重み = 1/(選出回数+1)<sup>指数</sup> — 指数が大きいほど再選出されにくい。前週の種目は選ばれない（2週連続なし）</div>
     <div class="cfg-row">
         <label>重み指数:</label>
         <input type="number" id="cfg-exp" value="${exp}" min="0.5" max="10" step="0.5" style="width:60px">

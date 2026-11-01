@@ -139,6 +139,8 @@ export interface SelectionInput {
   ratings: Record<string, ExerciseRatingSummary | null | undefined>;
   /** uid → users ドキュメント（作成者評価） */
   creators: Record<string, UserData | null | undefined>;
+  /** 今週の種目（次の選出では前週の種目として外れる） */
+  excludeKeys?: string[];
   config: Pick<
     WeeklyConfig,
     'weightExponent' | 'fairnessMode' | 'normalCount' | 'barbarianCount' | 'exerciseCount'
@@ -177,6 +179,7 @@ function runTrials(
           normalCount: config.normalCount || 2,
           barbarianCount: config.barbarianCount || 1,
           revealCount: Math.max(0, (config.exerciseCount || 3) - 3),
+          excludeKeys: input.excludeKeys,
         },
       );
       for (const k of picked) counts[k] = (counts[k] || 0) + 1;

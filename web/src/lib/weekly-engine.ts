@@ -448,6 +448,10 @@ export async function getOrUpdateWeeklyChallenge(
         normalCount: weeklyConfig.normalCount || 2,
         barbarianCount: weeklyConfig.barbarianCount || 1,
         revealCount: Math.max(0, (weeklyConfig.exerciseCount || 3) - 3),
+        // 前週の種目は選ばない（2週連続の同一種目を防ぐ）
+        excludeKeys:
+          (snap.exists() && (snap.data() as { exercises?: string[] }).exercises) ||
+          [],
       },
     );
 

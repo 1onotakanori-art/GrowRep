@@ -85,3 +85,80 @@ describe('selectWeeklyExercisesWithBarbarianSlot', () => {
     expect(new Set(picks).size).toBe(4);
   });
 });
+
+describe('selectWeeklyExercisesWithBarbarianSlot: 前週の種目を外す', () => {
+  const mk = (createdBy: string, barbarian = false) => ({
+    name: createdBy,
+    rule: '',
+    icon: '',
+    tags: [],
+    createdBy,
+    ...(barbarian ? { barbarian: true } : {}),
+  });
+
+  it('excludeKeys の種目は2週連続で選ばれない（作成者内で回数が並んでいても）', () => {
+    // 同じ作成者のTAが2つ・どちらも選出1回。前週は b1
+    const ex: FreeExerciseMap = {
+      n1: mk('c1'),
+      n2: mk('c2'),
+      n3: mk('c3'),
+      n4: mk('c4'),
+      b1: mk('c5', true),
+      b2: mk('c5', true),
+    };
+    const history = { b1: 1, b2: 1, n1: 1, n2: 1 };
+    for (let i = 0; i < 300; i++) {
+      const picks = selectWeeklyExercisesWithBarbarianSlot(ex, history, 3, {}, {}, {
+        normalCount: 2,
+        barbarianCount: 1,
+        excludeKeys: ['n1', 'n2', 'b1'],
+      });
+      expect(picks).toHaveLength(3);
+      expect(picks).not.toContain('b1');
+      expect(picks).not.toContain('n1');
+      expect(picks).not.toContain('n2');
+    }
+  });
+
+  it('外すと枠が埋まらないプールだけは前週の種目も候補に戻す', () => {
+    // TA は1つしか無い → 前週と同じでも選ぶ。normal は外しても足りる
+    const ex: FreeExerciseMap = {
+      n1: mk('c1'),
+      n2: mk('c2'),
+      n3: mk('c3'),
+      n4: mk('c4'),
+      b1: mk('c5', true),
+    };
+    for (let i = 0; i < 100; i++) {
+      const picks = selectWeeklyExercisesWithBarbarianSlot(ex, {}, 2, {}, {}, {
+        normalCount: 2,
+        barbarianCount: 1,
+        excludeKeys: ['n1', 'n2', 'b1'],
+      });
+      expect(picks).toContain('b1');
+      expect(picks.slice(0, 2).sort()).toEqual(['n3', 'n4']);
+    }
+  });
+
+  it('水曜公開枠も前週の種目を避ける', () => {
+    const ex: FreeExerciseMap = {
+      n1: mk('c1'),
+      n2: mk('c2'),
+      n3: mk('c3'),
+      n4: mk('c4'),
+      n5: mk('c5'),
+      b1: mk('c6', true),
+    };
+    for (let i = 0; i < 100; i++) {
+      const picks = selectWeeklyExercisesWithBarbarianSlot(ex, {}, 2, {}, {}, {
+        normalCount: 2,
+        barbarianCount: 1,
+        revealCount: 1,
+        excludeKeys: ['n1', 'n2'],
+      });
+      expect(picks).toHaveLength(4);
+      expect(picks).not.toContain('n1');
+      expect(picks).not.toContain('n2');
+    }
+  });
+});

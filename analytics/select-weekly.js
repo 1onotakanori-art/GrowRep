@@ -171,13 +171,19 @@ function selectExercisesTwoStage(candidateKeys, ctx, count, weightExponent, used
 
 function selectWithBarbarianSlot(ctx, weightExponent, options = {}) {
   const { exercises } = ctx;
-  const { fairnessMode = 'two_stage', normalCount = 2, barbarianCount = 1, revealCount = 0 } = options;
+  const { fairnessMode = 'two_stage', normalCount = 2, barbarianCount = 1, revealCount = 0, excludeKeys = [] } = options;
   const targetCount = normalCount + barbarianCount + revealCount;
 
   const allKeys = Object.keys(exercises).filter((k) => !exercises[k]?.excludeFromWeekly);
   if (allKeys.length === 0) return [];
-  const normalKeys = allKeys.filter((k) => !exercises[k]?.barbarian);
-  const barbarianKeys = allKeys.filter((k) => exercises[k]?.barbarian);
+  // 前週の種目を外す（2週連続の同一種目を防ぐ）。外すと枠数に足りないプールだけは外さずに使う
+  const excluded = new Set(excludeKeys);
+  const withoutPrevWeek = (pool, need) => {
+    const fresh = pool.filter((k) => !excluded.has(k));
+    return fresh.length >= need ? fresh : pool;
+  };
+  const normalKeys = withoutPrevWeek(allKeys.filter((k) => !exercises[k]?.barbarian), normalCount + revealCount);
+  const barbarianKeys = withoutPrevWeek(allKeys.filter((k) => exercises[k]?.barbarian), barbarianCount);
 
   const usedCreators = new Set();
   const pick = (pool, n) =>
@@ -245,6 +251,8 @@ async function main() {
     barbarianCount: cfg.barbarianCount || 1,
     // exerciseCount>=4 で木曜公開の追加normalを末尾に付与
     revealCount: Math.max(0, (cfg.exerciseCount || 3) - 3),
+    // 日曜17時前に走るので weekly_challenge はまだ「今週」＝来週から見た前週
+    excludeKeys: (wcDoc.exists && wcDoc.data().exercises) || [],
   };
 
   const exerciseRatings = {};
