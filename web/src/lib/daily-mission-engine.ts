@@ -20,11 +20,13 @@ import { db } from './firebase';
 import {
   buildDailyHistoryEntry,
   buildDailyParticipants,
+  buildDailyZoneWeek,
   buildRaidHistoryEntry,
   dailyTargetProbability,
   getDailyBoundariesJST,
   getDailyDateKeyJST,
   generateDailyMissionTarget,
+  getDailyZone,
   pickDailyMissionExercise,
   pushRecentMissionKeys,
   isDailyHistoryUpToDate,
@@ -639,13 +641,16 @@ export async function loadDailyMissionState(
   });
 
   const totalValue = totals[userId] || 0;
+  const zone = getDailyZone(userId, mission.dateKey);
   return {
     dateKey: mission.dateKey,
     exerciseKey: mission.exerciseKey,
     target,
     totalValue,
     cleared: totalValue >= target,
-    probability: dailyTargetProbability(target, mission.peak),
+    probability: dailyTargetProbability(target, mission.peak, zone),
+    zone,
+    zoneWeek: buildDailyZoneWeek(userId, mission.dateKey),
     peak: mission.peak,
     bestValue: mission.bestValue,
     peakSource: mission.peakSource,

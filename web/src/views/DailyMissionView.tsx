@@ -8,6 +8,8 @@ import { RAID_SET_SPLITS, suggestSetSplits, sumSetValues } from '../lib/multi-se
 import {
   buildDailyTeamProgress,
   dailyContributionRatio,
+  dailyZoneRepsRange,
+  DAILY_ZONE_NAMES,
   formatDailyCount,
   formatDailyDateLabel,
   formatDailyProbability,
@@ -486,6 +488,9 @@ export default function DailyMissionView() {
     peakSource,
     probability,
   } = dailyMission;
+  const zone = dailyMission.zone ?? null;
+  const zoneWeek = dailyMission.zoneWeek ?? null;
+  const zoneRange = zone != null ? dailyZoneRepsRange(zone, peak) : null;
   const percent = Math.min(100, Math.round((totalValue / target) * 100));
   const remaining = Math.max(0, target - totalValue);
   const clearedCount = dailyMission.participants.filter((p) => p.cleared).length;
@@ -536,8 +541,16 @@ export default function DailyMissionView() {
             {target}
             <span className={styles.targetUnit}>{unit}</span>
           </span>
+          {zone != null && zoneRange && (
+            <span className={styles.targetZone}>
+              今日の領域 {zone + 1}/5「{DAILY_ZONE_NAMES[zone]}」（{zoneRange.min}〜
+              {zoneRange.max}
+              {unit}）
+            </span>
+          )}
           <span className={styles.targetProb}>
-            この数字を引く確率 {formatDailyProbability(probability)}
+            {zone != null ? '領域の中で' : ''}この数字を引く確率{' '}
+            {formatDailyProbability(probability)}
           </span>
         </div>
 
@@ -657,9 +670,47 @@ export default function DailyMissionView() {
             participants={dailyMission.participants}
             unit={unit}
             peak={peak}
+            zoneWeek={zoneWeek}
           />
+          {zoneWeek && (
+            <ul className={styles.zoneStrip} aria-label="今週の領域">
+              {zoneWeek.map((d) => {
+                // 先の曜日にどの領域が来るかは伏せる（残りの組み合わせはグラフで分かる）
+                const open = d.status !== 'future';
+                const range = open ? dailyZoneRepsRange(d.zone, peak) : null;
+                return (
+                  <li
+                    key={d.dateKey}
+                    className={`${styles.zoneChip} ${
+                      d.status === 'today'
+                        ? styles.zoneChipToday
+                        : d.status === 'past'
+                          ? styles.zoneChipPast
+                          : ''
+                    }`}
+                  >
+                    <span className={styles.zoneChipDay}>{d.weekday}</span>
+                    <span className={styles.zoneChipName}>
+                      {open ? DAILY_ZONE_NAMES[d.zone] : '？'}
+                    </span>
+                    {range && d.status === 'today' && (
+                      <span className={styles.zoneChipRange}>
+                        {range.min}〜{range.max}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
           <p className={styles.distNote}>
-            並ぶのは今日ログインした人だけ。名前の横の％は、その回数を引く確率です。
+            並ぶのは今日ログインした人だけ。名前の横の％は、その回数を引く確率です
+            {zoneWeek
+              ? '（平日はその人の今日の領域の中での確率）'
+              : ''}
+            。
+            {zoneWeek &&
+              '点線は分布を確率20%ずつに分けた5つの領域で、月〜金に1回ずつ、曜日の順番は人ごとにバラバラに割り当てられます。グレーは今週もう引いた領域。土日は全域から抽選。'}
             目標は {peak}
             {unit} をピークに、大きい側を狭めた分布から一人ひとり抽選されます
             {peakSource === 'best'

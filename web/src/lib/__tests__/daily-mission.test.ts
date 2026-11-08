@@ -753,6 +753,7 @@ describe('buildDailyTeamProgress / resolveDailyTeamGoal', () => {
     userId,
     userName: userId,
     target,
+    zone: null,
     probability: 0.1,
     totalValue,
     cleared: totalValue >= target,

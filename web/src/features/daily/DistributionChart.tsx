@@ -4,10 +4,13 @@ import {
   buildDailyDistributionCurve,
   dailyAxisWindow,
   dailyRepsBounds,
+  dailyZoneBoundaries,
+  DAILY_ZONE_COUNT,
   formatDailyProbability,
   truncateLabelName,
   usedLaneCount,
   type DailyParticipant,
+  type DailyZoneDay,
 } from '../../lib/daily-mission';
 import styles from './DistributionChart.module.css';
 
@@ -20,6 +23,8 @@ const MAX_LANES = 12;
 const PEAK_GAP = 18; // ラベル段とカーブの間（「ピーク30」の見出しを置く）
 const CURVE_H = 132;
 const AXIS_H = 26;
+/** 領域ラベル（曜日・「今日」）を x 軸から上げる量（上端だとピーク付近のカーブや点とぶつかる） */
+const ZONE_LABEL_DY = 6;
 
 /**
  * ラベル幅の目安（衝突判定とはみ出し防止用）。
@@ -48,10 +53,13 @@ export default function DistributionChart({
   participants,
   unit,
   peak,
+  zoneWeek,
 }: {
   participants: DailyParticipant[];
   unit: string;
   peak: number;
+  /** 自分の今週の領域。渡すと分割線と、引き終えた領域のグレーアウトを描く */
+  zoneWeek?: DailyZoneDay[] | null;
 }) {
   const model = useMemo(() => {
     if (participants.length === 0) return null;
@@ -125,6 +133,36 @@ export default function DistributionChart({
     const ticks: number[] = [];
     for (let v = xMin; v <= xMax; v += step) ticks.push(v);
 
+    // 5つの領域（累積確率で5等分）。両端の領域は窓の端まで伸ばす
+    const clampX = (v: number) => Math.min(xMax, Math.max(xMin, v));
+    const edges = [xMin, ...dailyZoneBoundaries(peak).map(clampX), xMax];
+    const zoneDays = zoneWeek || [];
+    // 土日は5つとも引き終えている。全部グレーにすると何も見えないので、
+    // 曜日のラベルだけ出して塗らない（週末は全域から引く）
+    const weekDone =
+      zoneDays.length === DAILY_ZONE_COUNT &&
+      zoneDays.every((d) => d.status === 'past');
+    const zones = zoneWeek
+      ? Array.from({ length: DAILY_ZONE_COUNT }, (_, zone) => {
+          const day = zoneDays.find((d) => d.zone === zone);
+          const x1 = toX(edges[zone]);
+          const x2 = toX(edges[zone + 1]);
+          return {
+            zone,
+            x1,
+            x2,
+            status: day?.status ?? 'future',
+            label:
+              day?.status === 'today'
+                ? '今日'
+                : day?.status === 'past'
+                  ? day.weekday
+                  : '',
+          };
+        })
+      : [];
+    const dividers = zoneWeek ? edges.slice(1, -1).map(toX) : [];
+
     return {
       H,
       curveTop,
@@ -135,8 +173,11 @@ export default function DistributionChart({
       points,
       ticks,
       peakX: toX(peak),
+      zones,
+      dividers,
+      weekDone,
     };
-  }, [participants, peak]);
+  }, [participants, peak, zoneWeek]);
 
   if (!model) return null;
   const { H, curveTop, baseY } = model;
@@ -178,6 +219,44 @@ export default function DistributionChart({
       {/* 分布 */}
       <path d={model.area} fill="url(#dmArea)" />
       <path d={model.line} className={styles.curve} />
+
+      {/* 領域：引き終えた日はグレーアウト、今日はうっすら色付け */}
+      {model.zones.map((z) =>
+        z.status === 'future' || model.weekDone ? null : (
+          <rect
+            key={`zone-${z.zone}`}
+            x={z.x1}
+            y={curveTop}
+            width={Math.max(0, z.x2 - z.x1)}
+            height={baseY - curveTop}
+            className={z.status === 'today' ? styles.zoneToday : styles.zonePast}
+          />
+        ),
+      )}
+      {model.dividers.map((x, i) => (
+        <line
+          key={`div-${i}`}
+          x1={x}
+          y1={curveTop}
+          x2={x}
+          y2={baseY}
+          className={styles.zoneDivider}
+        />
+      ))}
+      {model.zones.map((z) =>
+        z.label ? (
+          <text
+            key={`zl-${z.zone}`}
+            x={(z.x1 + z.x2) / 2}
+            y={baseY - ZONE_LABEL_DY}
+            className={
+              z.status === 'today' ? styles.zoneLabelToday : styles.zoneLabel
+            }
+          >
+            {z.label}
+          </text>
+        ) : null,
+      )}
       <line
         x1={model.peakX}
         y1={curveTop}

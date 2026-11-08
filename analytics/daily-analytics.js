@@ -78,12 +78,66 @@ function dailyRepsBounds(peak) {
 export function generateDailyMissionTarget(userId, dateKey, exerciseKey, peak = DAILY_REPS_DEFAULT_PEAK) {
   const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
   const rand = createSeededRandom(hashStringToSeed(`daily-reps|${userId}|${dateKey}|${exerciseKey}`));
+  const { min, max } = dailyRepsBounds(p);
+  // 平日は今日の領域（累積確率の 1/5 幅）の中から引く
+  const zone = getDailyZone(userId, dateKey);
+  if (zone != null) {
+    const u = (zone + rand()) / DAILY_ZONE_COUNT;
+    return Math.min(max, Math.max(min, Math.round(dailyTargetQuantile(u, p))));
+  }
   const center = dailyLogCenter(p);
   const side = rand();
   const z = Math.abs(seededNormal(rand));
   const y = side < DAILY_LOW_WEIGHT ? center - DAILY_SIGMA_LOW * z : center + DAILY_SIGMA_HIGH * z;
-  const { min, max } = dailyRepsBounds(p);
   return Math.min(max, Math.max(min, Math.round(Math.exp(y))));
+}
+
+// ---- 5つの領域（月〜金で1回ずつ。2026-11-09 から） ----
+export const DAILY_ZONE_COUNT = 5;
+export const DAILY_ZONE_START_DATE_KEY = '2026-11-09';
+export const DAILY_ZONE_NAMES = ['ゆるめ', '軽め', 'ふつう', '重め', 'ハード'];
+
+function dateKeyDayOfWeek(dateKey) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+function dailyZoneWeekStartKey(dateKey) {
+  const dow = dateKeyDayOfWeek(dateKey);
+  return shiftDateKey(dateKey, -((dow + 6) % 7));
+}
+
+export function dailyZoneOrder(userId, weekStartKey) {
+  const rand = createSeededRandom(hashStringToSeed(`daily-zones|${userId}|${weekStartKey}`));
+  const order = Array.from({ length: DAILY_ZONE_COUNT }, (_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.min(i, Math.floor(rand() * (i + 1)));
+    const t = order[i];
+    order[i] = order[j];
+    order[j] = t;
+  }
+  return order;
+}
+
+/** その日に引く領域（0〜4）。土日と領域導入前の日は null（全域から抽選） */
+export function getDailyZone(userId, dateKey) {
+  if (dateKey < DAILY_ZONE_START_DATE_KEY) return null;
+  const dow = dateKeyDayOfWeek(dateKey);
+  if (dow === 0 || dow === 6) return null;
+  return dailyZoneOrder(userId, dailyZoneWeekStartKey(dateKey))[dow - 1];
+}
+
+function dailyTargetQuantile(u, peak) {
+  const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
+  const center = dailyLogCenter(p);
+  let lo = center - 8;
+  let hi = center + 8;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (dailyTargetCdf(Math.exp(mid), p) < u) lo = mid;
+    else hi = mid;
+  }
+  return Math.exp((lo + hi) / 2);
 }
 
 function standardNormalCdf(z) {
@@ -104,9 +158,17 @@ function dailyTargetCdf(x, peak) {
   return DAILY_LOW_WEIGHT + 2 * (1 - DAILY_LOW_WEIGHT) * (standardNormalCdf(d / DAILY_SIGMA_HIGH) - 0.5);
 }
 
-export function dailyTargetProbability(target, peak) {
+export function dailyTargetProbability(target, peak, zone = null) {
   const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
   const { min, max } = dailyRepsBounds(p);
+  if (zone != null) {
+    // その人の今日の領域の中で、その回数を引く確率（アプリの表示と同じ）
+    const a = zone / DAILY_ZONE_COUNT;
+    const b = (zone + 1) / DAILY_ZONE_COUNT;
+    const lo = target <= min ? 0 : dailyTargetCdf(target - 0.5, p);
+    const hi = target >= max ? 1 : dailyTargetCdf(target + 0.5, p);
+    return Math.min(1, Math.max(0, (Math.min(hi, b) - Math.max(lo, a)) / (b - a)));
+  }
   let prob;
   if (target <= min) prob = dailyTargetCdf(min + 0.5, p);
   else if (target >= max) prob = 1 - dailyTargetCdf(max - 0.5, p);
@@ -285,7 +347,8 @@ export function buildDailyMissionDigest(ds, { exByKey, nameOf, challengeKeys: ch
     const participants = activeUids
       .map((uid) => {
         const target = generateDailyMissionTarget(uid, dateKey, key, peak);
-        const probability = dailyTargetProbability(target, peak);
+        const zone = getDailyZone(uid, dateKey);
+        const probability = dailyTargetProbability(target, peak, zone);
         const topShare = dailyTargetTopShare(target, peak);
         const totalValue = totals[uid] || 0;
         const cleared = totalValue >= target;
@@ -293,6 +356,9 @@ export function buildDailyMissionDigest(ds, { exByKey, nameOf, challengeKeys: ch
           uid,
           userName: nameOf(uid),
           target,
+          // 今日の領域（1〜5、軽い順）。土日・導入前は null
+          zone: zone == null ? null : zone + 1,
+          zoneName: zone == null ? null : DAILY_ZONE_NAMES[zone],
           probability: round(probability, 4),
           probabilityPct: formatDailyProbability(probability),
           topShare: round(topShare, 4),

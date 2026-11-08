@@ -7,31 +7,47 @@ import {
   dailyTargetTopShare,
   dayStartMs,
   generateDailyMissionTarget,
+  getDailyZone,
   resolveDailyPeak,
   resolveDailyPeriod,
 } from './daily-analytics.js';
 
 // ---------------------------------------------------------------------
-// web/src/lib/daily-mission.ts との一致（2026-11-01 に web 版の関数で作った固定値）
-// [userId, dateKey, exerciseKey, peak, 目標回数, 確率]
+// web/src/lib/daily-mission.ts との一致（web 版の関数で作った固定値。2026-11-08 に領域つきで更新）
+// [userId, dateKey, exerciseKey, peak, 目標回数, 領域(0〜4 / 土日・導入前は null), 確率]
+// 2026-11-09 より前は従来の全域抽選なので、11/01 に作った値から変わっていないこと。
 // ---------------------------------------------------------------------
 const GOLDEN = [
-  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-02', 'free_1780545539883', 5, 5, 0.5397010367838221],
-  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-02', 'free_1775234504740', 150, 157, 0.008292411350713791],
-  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-03', 'free_1775234504740', 41, 53, 0.0216535164913797],
-  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-12-31', 'free_1775234504740', 30, 33, 0.040214535129670104],
-  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-02', 'free_1775234504740', 12, 11, 0.1009169173693164],
-  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-03', 'free_1775234504740', 5, 10, 0.01861795873432892],
-  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-12-31', 'free_1780545539883', 150, 68, 0.0046251145928660016],
-  ['abc', '2026-11-02', 'free_1780545539883', 41, 20, 0.0033038575603492734],
-  ['abc', '2026-11-03', 'free_1780545539883', 30, 21, 0.024127147902134688],
-  ['abc', '2026-12-31', 'free_1780545539883', 12, 8, 0.05137252153424081],
+  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-02', 'free_1780545539883', 5, 5, null, 0.5397010367838221],
+  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-02', 'free_1775234504740', 150, 157, null, 0.008292411350713791],
+  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-03', 'free_1775234504740', 41, 53, null, 0.0216535164913797],
+  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-12-31', 'free_1775234504740', 30, 21, 0, 0.12063573951067344],
+  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-02', 'free_1775234504740', 12, 11, null, 0.1009169173693164],
+  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-03', 'free_1775234504740', 5, 10, null, 0.01861795873432892],
+  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-12-31', 'free_1780545539883', 150, 128, 1, 0.03752346060416592],
+  ['abc', '2026-11-02', 'free_1780545539883', 41, 20, null, 0.0033038575603492734],
+  ['abc', '2026-11-03', 'free_1780545539883', 30, 21, null, 0.024127147902134688],
+  ['abc', '2026-12-31', 'free_1780545539883', 12, 14, 3, 0.3165126110852572],
+  ['abc', '2026-11-09', 'free_1780545539883', 30, 47, 4, 0.06221929366172109],
+  ['abc', '2026-11-13', 'free_1780545539883', 30, 31, 2, 0.20814171244517293],
+  ['abc', '2026-11-14', 'free_1780545539883', 30, 27, null, 0.03985627516576634],
+  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-11', 'free_1775234504740', 60, 42, 0, 0.06032732735448451],
 ];
 
-test('目標回数・確率が web 版と一致する', () => {
-  for (const [uid, dateKey, key, peak, target, prob] of GOLDEN) {
+test('目標回数・領域・確率が web 版と一致する', () => {
+  for (const [uid, dateKey, key, peak, target, zone, prob] of GOLDEN) {
     assert.equal(generateDailyMissionTarget(uid, dateKey, key, peak), target, `${uid} ${dateKey} ${key} ${peak}`);
-    assert.equal(dailyTargetProbability(target, peak), prob);
+    assert.equal(getDailyZone(uid, dateKey), zone, `${uid} ${dateKey}`);
+    assert.equal(dailyTargetProbability(target, peak, zone), prob);
+  }
+});
+
+test('月〜金で5つの領域がちょうど1回ずつ出る', () => {
+  for (const uid of ['abc', 'u1', 'u2', 'QGTsx53W25Wd5scfpBiJ87Q6PoC2']) {
+    const zones = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'].map((d) =>
+      getDailyZone(uid, d),
+    );
+    assert.deepEqual([...zones].sort(), [0, 1, 2, 3, 4]);
   }
 });
 
