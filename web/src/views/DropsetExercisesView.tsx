@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 import { useDropset } from '../context/DropsetContext';
+import { sortTagsByCatalog } from '../lib/tag-catalog';
 import { useMode } from '../context/ModeContext';
 import { useToast } from '../context/ToastContext';
 import { ViewHeader, EmptyState, Skeleton } from '../components/ui';
@@ -28,6 +30,7 @@ export default function DropsetExercisesView() {
   const { refresh } = useMode();
   const { exercises, setExercises, attempts, loading } = useDropset();
   const { toast } = useToast();
+  const { tagCatalog, addTagsToCatalog } = useData();
 
   const [formModal, setFormModal] = useState<
     { mode: 'add' } | { mode: 'edit'; key: string } | null
@@ -69,6 +72,7 @@ export default function DropsetExercisesView() {
     if (!formModal || !user) return;
     setBusy(true);
     try {
+      await addTagsToCatalog(v.newTags);
       const map =
         formModal.mode === 'add'
           ? await addDropsetExercise(v, {
@@ -215,7 +219,7 @@ export default function DropsetExercisesView() {
 
                 {(ex.tags || []).length > 0 && (
                   <div className={styles.cardTags}>
-                    {ex.tags.map((t) => (
+                    {sortTagsByCatalog(tagCatalog, ex.tags).map((t) => (
                       <span key={t} className="chip">
                         {t}
                       </span>

@@ -16,6 +16,8 @@ import {
 } from '../../lib/exercise-filter';
 import { EmptyState, ExerciseIcon, Barbadge } from '../../components/ui';
 import ExerciseSearchBar from '../../components/ExerciseSearchBar';
+import { favoritesFirst } from '../../lib/favorites';
+import { useFavorites } from '../../hooks/useFavorites';
 import type { NavKey } from '../../shell/BottomNav';
 import styles from './PostComposer.module.css';
 
@@ -32,6 +34,7 @@ export default function PostComposer({
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<ExerciseFilter>(EMPTY_EXERCISE_FILTER);
+  const { favorites } = useFavorites();
 
   const exercises = useMemo(
     () => getModeExercises(mode, freeExercises, weeklyChallenge, new Date(), dailyMission),
@@ -44,9 +47,17 @@ export default function PostComposer({
     () => (searchable ? collectExerciseTags(exercises.map((e) => e.ex)) : []),
     [searchable, exercises],
   );
+  // フリーはお気に入りを先頭に（週間は種目が決まっているので並びを変えない）
   const visible = useMemo(
-    () => (searchable ? filterExercises(exercises, (e) => e.ex, filter) : exercises),
-    [searchable, exercises, filter],
+    () =>
+      searchable
+        ? favoritesFirst(
+            filterExercises(exercises, (e) => e.ex, filter),
+            (e) => e.key,
+            favorites,
+          )
+        : exercises,
+    [searchable, exercises, filter, favorites],
   );
 
   // 週間チャレンジは、その日のデイリーミッションをクリアするまで投稿できない
@@ -157,6 +168,7 @@ export default function PostComposer({
           );
         }
         const open = selected === key;
+        const fav = searchable && favorites.has(key);
         return (
           <div
             key={key}
@@ -172,7 +184,16 @@ export default function PostComposer({
               <span className={styles.icon}>
                 <ExerciseIcon icon={ex.icon} />
               </span>
-              <span className={styles.name}>{ex.name}</span>
+              <span className={styles.name}>
+                {ex.name}
+                {fav && (
+                  <i
+                    className={`fa-solid fa-bookmark ${styles.favMark}`}
+                    title="お気に入り"
+                    aria-label="お気に入り"
+                  />
+                )}
+              </span>
               {ex.barbarian && <Barbadge />}
               <i
                 className={`fa-solid fa-chevron-${open ? 'up' : 'down'} ${styles.chev}`}

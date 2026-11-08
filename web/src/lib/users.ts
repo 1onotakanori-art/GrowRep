@@ -1,5 +1,7 @@
 // ユーザー情報アクセス（既存 app.js の users 系関数を移植）
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -101,6 +103,21 @@ export async function touchUserActivity(
     // 記録できなくてもアプリは動く（自分は必ずグラフに載る）
     console.warn('[ユーザー] ログイン記録に失敗:', e);
   }
+}
+
+/**
+ * お気に入り種目の追加・解除。arrayUnion/arrayRemove なので
+ * 別端末で同時に操作しても互いの変更を消さない。
+ */
+export async function setFavoriteExercise(
+  userId: string,
+  exerciseKey: string,
+  on: boolean,
+): Promise<void> {
+  await updateDoc(doc(db, 'users', userId), {
+    favoriteExercises: on ? arrayUnion(exerciseKey) : arrayRemove(exerciseKey),
+  });
+  invalidateUsersMapCache();
 }
 
 export async function checkUsernameExists(userName: string): Promise<boolean> {

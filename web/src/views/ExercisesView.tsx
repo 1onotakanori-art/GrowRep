@@ -34,7 +34,16 @@ import {
   getExerciseRatingSummaries,
   getUserExerciseRatings,
 } from '../lib/ratings';
-import { matchesExerciseQuery } from '../lib/exercise-filter';
+import {
+  EMPTY_EXERCISE_FILTER,
+  collectExerciseTags,
+  filterExercises,
+  type ExerciseFilter,
+} from '../lib/exercise-filter';
+import ExerciseSearchBar from '../components/ExerciseSearchBar';
+import { favoritesFirst } from '../lib/favorites';
+import { sortTagsByCatalog } from '../lib/tag-catalog';
+import { useFavorites } from '../hooks/useFavorites';
 import {
   estimateSelectionProbabilities,
   formatProb,
@@ -53,14 +62,21 @@ type Tab = 'list' | 'dashboard' | 'archive';
 export default function ExercisesView() {
   const { user, userData } = useAuth();
   const { refresh, refreshToken } = useMode();
-  const { freeExercises, setFreeExercises, usersMap, reloadExercises, dailyMission } =
-    useData();
+  const {
+    freeExercises,
+    setFreeExercises,
+    usersMap,
+    reloadExercises,
+    dailyMission,
+    tagCatalog,
+    addTagsToCatalog,
+  } = useData();
+  const { favorites, canFavorite, toggle: toggleFavorite } = useFavorites();
   const { toast } = useToast();
 
   const [summaries, setSummaries] = useState<Record<string, ExerciseRatingSummary>>({});
   const [myRatings, setMyRatings] = useState<Record<string, boolean>>({});
-  const [search, setSearch] = useState('');
-  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [filter, setFilter] = useState<ExerciseFilter>(EMPTY_EXERCISE_FILTER);
   const [sort, setSort] = useState<Sort>('name');
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [tab, setTab] = useState<Tab>('list');
@@ -162,22 +178,17 @@ export default function ExercisesView() {
     name: userData?.userName || user?.email || 'Unknown',
   });
 
-  const allTags = useMemo(() => {
-    const s = new Set<string>();
-    Object.values(freeExercises).forEach((ex) =>
-      (ex.tags || []).forEach((t) => s.add(t)),
-    );
-    return [...s];
-  }, [freeExercises]);
+  const allTags = useMemo(
+    () => collectExerciseTags(Object.values(freeExercises)),
+    [freeExercises],
+  );
 
   const list = useMemo(() => {
-    let entries = Object.entries(freeExercises);
-    if (search.trim()) {
-      entries = entries.filter(([, ex]) => matchesExerciseQuery(ex, search));
-    }
-    if (tagFilter) {
-      entries = entries.filter(([, ex]) => (ex.tags || []).includes(tagFilter));
-    }
+    const entries = filterExercises(
+      Object.entries(freeExercises),
+      ([, ex]) => ex,
+      filter,
+    );
     entries.sort(([ka, a], [kb, b]) => {
       if (sort === 'rating') {
         return (summaries[kb]?.avgRating || 0) - (summaries[ka]?.avgRating || 0);
@@ -199,13 +210,16 @@ export default function ExercisesView() {
       }
       return a.name.localeCompare(b.name, 'ja');
     });
-    return entries;
-  }, [freeExercises, search, tagFilter, sort, summaries, insights, estimates]);
+    // どの並び順でもお気に入りが先頭（お気に入り同士・それ以外は選んだ順のまま）
+    return favoritesFirst(entries, ([k]) => k, favorites);
+  }, [freeExercises, filter, sort, summaries, insights, estimates, favorites]);
 
   async function handleFormSubmit(v: ExerciseFormValue) {
     if (!formModal) return;
     setBusy(true);
     try {
+      // 新しく作ったタグを先に属性へ登録する（種目だけ保存されて属性が無い状態を避ける）
+      await addTagsToCatalog(v.newTags);
       let map;
       if (formModal.mode === 'add') {
         map = await addFreeExercise(v, {
@@ -339,18 +353,17 @@ export default function ExercisesView() {
 
       {tab === 'list' && (
         <>
-          <div className={styles.controls}>
-            <div className={styles.searchRow}>
-              <i className="fa-solid fa-magnifying-glass" />
-              <input
-                placeholder="種目を検索…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+          <ExerciseSearchBar
+            value={filter}
+            onChange={setFilter}
+            tags={allTags}
+            resultCount={list.length}
+            searchExtra={
               <select
                 className={styles.sortSel}
                 value={sort}
                 onChange={(e) => setSort(e.target.value as Sort)}
+                aria-label="並び順"
               >
                 <option value="name">名前順</option>
                 <option value="rating">評価順</option>
@@ -365,27 +378,8 @@ export default function ExercisesView() {
                   選出確率順
                 </option>
               </select>
-            </div>
-            {allTags.length > 0 && (
-              <div className={styles.tagRow}>
-                <button
-                  className={!tagFilter ? styles.tagOn : styles.tag}
-                  onClick={() => setTagFilter(null)}
-                >
-                  すべて
-                </button>
-                {allTags.map((t) => (
-                  <button
-                    key={t}
-                    className={tagFilter === t ? styles.tagOn : styles.tag}
-                    onClick={() => setTagFilter(t)}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+            }
+          />
 
           {list.length === 0 ? (
             <EmptyState icon="fa-dumbbell" message="種目がありません" />
@@ -396,8 +390,12 @@ export default function ExercisesView() {
                 const isMine =
                   (ex as FreeExercise).createdBy === user?.uid;
                 const inThisWeek = !!insights?.currentWeekKeys.includes(key);
+                const fav = favorites.has(key);
                 return (
-                  <div key={key} className={styles.card}>
+                  <div
+                    key={key}
+                    className={fav ? `${styles.card} ${styles.cardFav}` : styles.card}
+                  >
                     <div className={styles.cardHead}>
                       <span className={styles.icon}>
                         <i className={`fa-solid ${ex.icon || 'fa-dumbbell'}`} />
@@ -410,6 +408,17 @@ export default function ExercisesView() {
                         />
                       </div>
                       {ex.barbarian && <Barbadge />}
+                      {canFavorite ? (
+                        <button
+                          className={fav ? styles.favBtnOn : styles.favBtn}
+                          onClick={() => toggleFavorite(key)}
+                          aria-pressed={fav}
+                          aria-label={fav ? 'お気に入りから外す' : 'お気に入りに追加'}
+                          title={fav ? 'お気に入りから外す' : 'お気に入りに追加'}
+                        >
+                          <i className={`fa-${fav ? 'solid' : 'regular'} fa-bookmark`} />
+                        </button>
+                      ) : null}
                       {isMine && (
                         <button
                           className={styles.editBtn}
@@ -431,7 +440,7 @@ export default function ExercisesView() {
                             <i className="fa-solid fa-bolt" /> 今週のチャレンジ
                           </span>
                         )}
-                        {(ex.tags || []).map((t) => (
+                        {sortTagsByCatalog(tagCatalog, ex.tags || []).map((t) => (
                           <span key={t} className="chip">
                             {t}
                           </span>

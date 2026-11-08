@@ -5,7 +5,9 @@ import {
   isFilterActive,
   matchesExerciseQuery,
   normalizeForSearch,
+  toggleFilterTag,
 } from '../exercise-filter';
+import type { TagCatalog } from '../tag-catalog';
 import type { FreeExerciseMap } from '../types';
 
 const exercises: FreeExerciseMap = {
@@ -52,21 +54,21 @@ describe('filterExercises', () => {
   const get = (k: string) => exercises[k];
 
   it('検索語とタグの両方で絞り込み、解決できないキーは除く', () => {
-    expect(filterExercises(keys, get, { query: '', tag: null })).toEqual([
+    expect(filterExercises(keys, get, { query: '', tags: [] })).toEqual([
       'a',
       'b',
       'c',
       'd',
     ]);
-    expect(filterExercises(keys, get, { query: 'すくわっと', tag: null })).toEqual([
+    expect(filterExercises(keys, get, { query: 'すくわっと', tags: [] })).toEqual([
       'b',
       'd',
     ]);
-    expect(filterExercises(keys, get, { query: '', tag: '上半身' })).toEqual([
+    expect(filterExercises(keys, get, { query: '', tags: ['上半身'] })).toEqual([
       'a',
       'c',
     ]);
-    expect(filterExercises(keys, get, { query: 'sit', tag: '上半身' })).toEqual([
+    expect(filterExercises(keys, get, { query: 'sit', tags: ['上半身'] })).toEqual([
       'c',
     ]);
   });
@@ -82,8 +84,39 @@ describe('collectExerciseTags / isFilterActive', () => {
   });
 
   it('検索語かタグがあれば有効', () => {
-    expect(isFilterActive({ query: ' ', tag: null })).toBe(false);
-    expect(isFilterActive({ query: 'a', tag: null })).toBe(true);
-    expect(isFilterActive({ query: '', tag: 'x' })).toBe(true);
+    expect(isFilterActive({ query: ' ', tags: [] })).toBe(false);
+    expect(isFilterActive({ query: 'a', tags: [] })).toBe(true);
+    expect(isFilterActive({ query: '', tags: ['x'] })).toBe(true);
+  });
+});
+
+describe('複数タグ（属性ごとに1つ）', () => {
+  const catalog: TagCatalog = {
+    categories: [
+      { id: 'part', label: '部位', tags: ['上半身', '下半身', '体幹'] },
+      { id: 'load', label: '負荷', tags: ['自重'] },
+    ],
+  };
+  const ex: FreeExerciseMap = {
+    a: { name: 'a', rule: '', icon: '', tags: ['上半身', '自重'] },
+    b: { name: 'b', rule: '', icon: '', tags: ['上半身'] },
+    c: { name: 'c', rule: '', icon: '', tags: ['下半身', '自重'] },
+  };
+  const get = (k: string) => ex[k];
+
+  it('属性をまたぐタグは AND で絞り込む', () => {
+    expect(
+      filterExercises(['a', 'b', 'c'], get, { query: '', tags: ['上半身', '自重'] }),
+    ).toEqual(['a']);
+  });
+
+  it('同じ属性のタグを選ぶと入れ替わり、別の属性は残る', () => {
+    let f = toggleFilterTag({ query: '', tags: [] }, '上半身', catalog);
+    f = toggleFilterTag(f, '自重', catalog);
+    expect(f.tags).toEqual(['上半身', '自重']);
+    f = toggleFilterTag(f, '下半身', catalog);
+    expect(f.tags).toEqual(['自重', '下半身']);
+    f = toggleFilterTag(f, '自重', catalog);
+    expect(f.tags).toEqual(['下半身']);
   });
 });

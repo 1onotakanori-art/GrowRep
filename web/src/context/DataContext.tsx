@@ -10,6 +10,12 @@ import { useMode } from './ModeContext';
 import { useAuth } from './AuthContext';
 import { loadFreeExercises } from '../lib/exercises';
 import { getUsersMap } from '../lib/users';
+import { loadTagCatalog, saveTagAdditions } from '../lib/tag-catalog-engine';
+import {
+  DEFAULT_TAG_CATALOG,
+  type TagAddition,
+  type TagCatalog,
+} from '../lib/tag-catalog';
 import {
   getOrUpdateWeeklyChallenge,
   getWeeklyConfig,
@@ -36,6 +42,10 @@ interface DataCtx {
   dailyMission: DailyMissionState | null;
   dailyLoading: boolean;
   reloadDailyMission: () => Promise<void>;
+  /** タグの属性（部位・負荷…）。settings_free/tag_catalog */
+  tagCatalog: TagCatalog;
+  /** 新しいタグを属性に登録する（全員に反映） */
+  addTagsToCatalog: (additions: TagAddition[]) => Promise<void>;
 }
 
 const Ctx = createContext<DataCtx | null>(null);
@@ -53,6 +63,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [dailyLoading, setDailyLoading] = useState(true);
+  const [tagCatalog, setTagCatalog] = useState<TagCatalog>(DEFAULT_TAG_CATALOG);
+
+  const addTagsToCatalog = useCallback(async (additions: TagAddition[]) => {
+    if (additions.length === 0) return;
+    setTagCatalog(await saveTagAdditions(additions));
+  }, []);
 
   const reloadExercises = useCallback(async () => {
     const map = await loadFreeExercises();
@@ -78,13 +94,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setDailyLoading(true);
       try {
         const forceUsers = refreshToken > 0;
-        const [exMap, uMap] = await Promise.all([
+        const [exMap, uMap, catalog] = await Promise.all([
           loadFreeExercises(),
           getUsersMap(forceUsers),
+          // 読めなくても種目は使えるので、初期値のまま進める
+          loadTagCatalog().catch((e) => {
+            console.error('[DataProvider] タグ属性の取得失敗:', e);
+            return null;
+          }),
         ]);
         if (cancelled) return;
         setFreeExercises(exMap);
         setUsersMap(uMap);
+        if (catalog) setTagCatalog(catalog);
 
         // デイリーミッションはモード非依存。週間の重い処理より先に解決して、
         // 未クリア時の初期タブ切り替えを待たせない。
@@ -137,6 +159,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         dailyMission,
         dailyLoading,
         reloadDailyMission,
+        tagCatalog,
+        addTagsToCatalog,
       }}
     >
       {children}
