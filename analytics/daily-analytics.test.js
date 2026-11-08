@@ -7,48 +7,58 @@ import {
   dailyTargetTopShare,
   dayStartMs,
   generateDailyMissionTarget,
-  getDailyZone,
+  pickDailyZone,
+  replayDailyZoneWeek,
   resolveDailyPeak,
   resolveDailyPeriod,
 } from './daily-analytics.js';
 
 // ---------------------------------------------------------------------
-// web/src/lib/daily-mission.ts との一致（web 版の関数で作った固定値。2026-11-08 に領域つきで更新）
-// [userId, dateKey, exerciseKey, peak, 目標回数, 領域(0〜4 / 土日・導入前は null), 確率]
-// 2026-11-09 より前は従来の全域抽選なので、11/01 に作った値から変わっていないこと。
+// web/src/lib/daily-mission.ts との一致（web 版の関数で作った固定値。2026-11-08 に7領域で更新）
+// [userId, dateKey, exerciseKey, peak, 領域(0〜6 / null=全域), 目標回数, 確率]
+// 領域 null（導入前の全域抽選）の行は 11/01 に作った値から変わっていないこと。
 // ---------------------------------------------------------------------
 const GOLDEN = [
-  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-02', 'free_1780545539883', 5, 5, null, 0.5397010367838221],
-  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-02', 'free_1775234504740', 150, 157, null, 0.008292411350713791],
-  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-03', 'free_1775234504740', 41, 53, null, 0.0216535164913797],
-  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-12-31', 'free_1775234504740', 30, 21, 0, 0.12063573951067344],
-  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-02', 'free_1775234504740', 12, 11, null, 0.1009169173693164],
-  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-03', 'free_1775234504740', 5, 10, null, 0.01861795873432892],
-  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-12-31', 'free_1780545539883', 150, 128, 1, 0.03752346060416592],
-  ['abc', '2026-11-02', 'free_1780545539883', 41, 20, null, 0.0033038575603492734],
-  ['abc', '2026-11-03', 'free_1780545539883', 30, 21, null, 0.024127147902134688],
-  ['abc', '2026-12-31', 'free_1780545539883', 12, 14, 3, 0.3165126110852572],
-  ['abc', '2026-11-09', 'free_1780545539883', 30, 47, 4, 0.06221929366172109],
-  ['abc', '2026-11-13', 'free_1780545539883', 30, 31, 2, 0.20814171244517293],
-  ['abc', '2026-11-14', 'free_1780545539883', 30, 27, null, 0.03985627516576634],
-  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-11', 'free_1775234504740', 60, 42, 0, 0.06032732735448451],
+  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-02', 'free_1780545539883', 5, null, 5, 0.5397010367838221],
+  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-02', 'free_1775234504740', 150, null, 157, 0.008292411350713791],
+  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-11-03', 'free_1775234504740', 41, null, 53, 0.0216535164913797],
+  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-02', 'free_1775234504740', 12, null, 11, 0.1009169173693164],
+  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-03', 'free_1775234504740', 5, null, 10, 0.01861795873432892],
+  ['abc', '2026-11-02', 'free_1780545539883', 41, null, 20, 0.0033038575603492734],
+  ['abc', '2026-11-03', 'free_1780545539883', 30, null, 21, 0.024127147902134688],
+  ['abc', '2026-11-09', 'free_1780545539883', 30, 0, 18, 0.2575895096231847],
+  ['abc', '2026-11-13', 'free_1780545539883', 30, 3, 32, 0.14171881002828404],
+  ['abc', '2026-11-15', 'free_1780545539883', 30, 6, 57, 0.11324997566292597],
+  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-11', 'free_1775234504740', 60, 4, 81, 0.07110317296590002],
+  ['UZqeErExyaRrqQrD216zkkSfpgs1', '2026-12-31', 'free_1775234504740', 150, 5, 239, 0.02924413769695328],
 ];
+// [userId, dateKey, 7つ全部が残っているときに引く領域]
+const PICK_GOLDEN = [
+  ['abc', '2026-11-09', 4],
+  ['u7', '2026-11-12', 3],
+  ['QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-15', 1],
+];
+const ALL_ZONES = [0, 1, 2, 3, 4, 5, 6];
 
-test('目標回数・領域・確率が web 版と一致する', () => {
-  for (const [uid, dateKey, key, peak, target, zone, prob] of GOLDEN) {
-    assert.equal(generateDailyMissionTarget(uid, dateKey, key, peak), target, `${uid} ${dateKey} ${key} ${peak}`);
-    assert.equal(getDailyZone(uid, dateKey), zone, `${uid} ${dateKey}`);
+test('目標回数・確率・領域の抽選が web 版と一致する', () => {
+  for (const [uid, dateKey, key, peak, zone, target, prob] of GOLDEN) {
+    assert.equal(generateDailyMissionTarget(uid, dateKey, key, peak, zone), target, `${uid} ${dateKey} ${key} ${peak}`);
     assert.equal(dailyTargetProbability(target, peak, zone), prob);
+  }
+  for (const [uid, dateKey, zone] of PICK_GOLDEN) {
+    assert.equal(pickDailyZone(uid, dateKey, ALL_ZONES, 30), zone);
   }
 });
 
-test('月〜金で5つの領域がちょうど1回ずつ出る', () => {
-  for (const uid of ['abc', 'u1', 'u2', 'QGTsx53W25Wd5scfpBiJ87Q6PoC2']) {
-    const zones = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'].map((d) =>
-      getDailyZone(uid, d),
-    );
-    assert.deepEqual([...zones].sort(), [0, 1, 2, 3, 4]);
-  }
+test('毎日クリアすれば7日で7領域を1回ずつ、サボれば軽い順に消える', () => {
+  const week = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14', '2026-11-15'];
+  const days = week.map((dateKey) => ({ dateKey, kind: 'normal', exerciseKey: 'x', peak: 30 }));
+  const all = {};
+  week.forEach((d) => (all[d] = { u: 9999 }));
+  const done = replayDailyZoneWeek('u', days, all);
+  assert.deepEqual(done.days.map((d) => d.zone).sort(), ALL_ZONES);
+  const skipped = replayDailyZoneWeek('u', days, {});
+  assert.deepEqual(skipped.days.map((d) => d.removed), ALL_ZONES);
 });
 
 test('目標の重さ（その回数以上を引く確率）は回数が増えるほど小さい', () => {
@@ -108,6 +118,52 @@ function makeDataset({ history, posts, exportedAt = '2026-11-08T07:45:00Z' }) {
 
 const WEEK = ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08'];
 const fullHistory = Object.fromEntries(WEEK.map((k) => [k, { exerciseKey: EX, peak: PEAK, bestValue: PEAK }]));
+
+test('7領域：前の日の消化を引き継ぐ（クリア→引いた領域 / 未クリア→一番軽い領域が消える）', () => {
+  const ZW = ['2026-11-09', '2026-11-10', '2026-11-11'];
+  // u1: 月曜をクリア / u2: 月曜は投稿なし（未クリア）。どちらも火曜に少しだけ投稿
+  const monZone1 = pickDailyZone('u1', ZW[0], ALL_ZONES, PEAK);
+  const monTarget1 = generateDailyMissionTarget('u1', ZW[0], EX, PEAK, monZone1);
+  const days = ZW.slice(0, 2).map((dateKey) => ({ dateKey, kind: 'normal', exerciseKey: EX, peak: PEAK }));
+  const totals = { [ZW[0]]: { u1: monTarget1 }, [ZW[1]]: { u1: 1, u2: 1 } };
+  const r1 = replayDailyZoneWeek('u1', days, totals);
+  assert.equal(r1.days[0].removed, monZone1);
+  assert.equal(r1.days[0].removedBy, 'clear');
+  const r2 = replayDailyZoneWeek('u2', days, totals);
+  assert.equal(r2.days[0].removed, 0);
+  assert.equal(r2.days[0].removedBy, 'skip');
+  // 火曜は月曜の消化後の残りから引いている
+  assert.ok(!r1.days[1].pool.includes(monZone1));
+  assert.ok(r1.days[1].pool.includes(r1.days[1].zone));
+});
+
+test('7領域の週の週報：参加者の目標は、その人のその日の領域から出す', () => {
+  const ZW = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14', '2026-11-15'];
+  const history = Object.fromEntries(ZW.map((k) => [k, { exerciseKey: EX, peak: PEAK, bestValue: PEAK }]));
+  const monZone = pickDailyZone('u1', ZW[0], ALL_ZONES, PEAK);
+  const monTarget = generateDailyMissionTarget('u1', ZW[0], EX, PEAK, monZone);
+  const posts = [post('u1', ZW[0], EX, monTarget), post('u1', ZW[1], EX, 1), post('u2', ZW[1], EX, 1)];
+  const out = buildDailyMissionDigest(
+    makeDataset({ history, posts, exportedAt: '2026-11-15T07:45:00Z' }),
+    { exByKey, nameOf },
+  );
+  assert.equal(out.period.from, '2026-11-09');
+  const mon = out.days.find((d) => d.dateKey === ZW[0]);
+  const monU1 = mon.participants.find((p) => p.userName === nameOf('u1'));
+  assert.equal(monU1.zone, monZone + 1);
+  assert.equal(monU1.target, monTarget);
+  assert.equal(monU1.cleared, true);
+
+  const days = ZW.slice(0, 2).map((dateKey) => ({ dateKey, kind: 'normal', exerciseKey: EX, peak: PEAK }));
+  const totals = { [ZW[0]]: { u1: monTarget }, [ZW[1]]: { u1: 1, u2: 1 } };
+  const tue = out.days.find((d) => d.dateKey === ZW[1]);
+  for (const uid of ['u1', 'u2']) {
+    const expected = replayDailyZoneWeek(uid, days, totals).days[1];
+    const p = tue.participants.find((x) => x.userName === nameOf(uid));
+    assert.equal(p.zone, expected.zone + 1, uid);
+    assert.equal(p.target, expected.target, uid);
+  }
+});
 
 test('history が無ければ null（推測で埋めない）', () => {
   assert.equal(buildDailyMissionDigest(makeDataset({ history: {}, posts: [] }), { exByKey, nameOf }), null);

@@ -4196,7 +4196,7 @@ body.dark-mode .dm-me { color: #8fa3ff; }
 body.dark-mode .dm-done { color: #43e97b; }
 body.dark-mode .dm-todo { color: #888; }
 
-/* 5つの領域（月〜金で1回ずつ）。web版 DistributionChart.module.css と同じ見た目 */
+/* 7つの領域（月〜日で1つずつ消化）。web版 DistributionChart.module.css と同じ見た目 */
 .dm-zone-divider { stroke: #999; stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.7; }
 .dm-zone-past { fill: #eef0f7; fill-opacity: 0.82; }
 .dm-zone-today { fill: rgba(102, 126, 234, 0.12); }
@@ -4207,6 +4207,10 @@ body.dark-mode .dm-zone-past { fill: #2a2d33; }
 body.dark-mode .dm-zone-today { fill: rgba(143, 163, 255, 0.18); }
 body.dark-mode .dm-zone-label { fill: #888; }
 body.dark-mode .dm-zone-label-today { fill: #8fa3ff; }
+.dm-zone-share { fill: #666; font-size: 8.5px; font-weight: 700; text-anchor: middle; }
+.dm-zone-share-today { fill: #667eea; font-size: 8.5px; font-weight: 900; text-anchor: middle; }
+body.dark-mode .dm-zone-share { fill: #aaa; }
+body.dark-mode .dm-zone-share-today { fill: #8fa3ff; }
 
 .daily-mission-target-zone { font-size: 11px; font-weight: 800; color: #fff; opacity: 0.92; }
 .daily-zone-strip {
@@ -4214,7 +4218,7 @@ body.dark-mode .dm-zone-label-today { fill: #8fa3ff; }
     margin: 8px 0 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 4px;
 }
 .daily-zone-chip {
