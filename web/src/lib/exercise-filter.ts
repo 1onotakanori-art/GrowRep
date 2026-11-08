@@ -1,5 +1,6 @@
 // 種目の検索・タグ絞り込み（種目&ルール / 投稿 / ランキング / 成長記録で共通）
 import type { FreeExercise } from './types';
+import { categoryIdOfTag, type TagCatalog } from './tag-catalog';
 
 /**
  * 検索用に文字列を正規化する。
@@ -32,13 +33,33 @@ export function matchesExerciseQuery(
 
 export interface ExerciseFilter {
   query: string;
-  tag: string | null;
+  /** 選択中のタグ（属性ごとに最大1つ）。すべて含む種目に絞る（AND） */
+  tags: string[];
 }
 
-export const EMPTY_EXERCISE_FILTER: ExerciseFilter = { query: '', tag: null };
+export const EMPTY_EXERCISE_FILTER: ExerciseFilter = { query: '', tags: [] };
 
 export function isFilterActive(f: ExerciseFilter): boolean {
-  return f.query.trim() !== '' || f.tag !== null;
+  return f.query.trim() !== '' || f.tags.length > 0;
+}
+
+/**
+ * タグの選択を切り替える。同じ属性のタグは1つだけ選べる（選び直すと入れ替わる）。
+ * 「胸 × 自重」のように属性をまたいだ組み合わせで絞り込める。
+ */
+export function toggleFilterTag(
+  filter: ExerciseFilter,
+  tag: string,
+  catalog: TagCatalog,
+): ExerciseFilter {
+  if (filter.tags.includes(tag)) {
+    return { ...filter, tags: filter.tags.filter((t) => t !== tag) };
+  }
+  const cat = categoryIdOfTag(catalog, tag);
+  return {
+    ...filter,
+    tags: [...filter.tags.filter((t) => categoryIdOfTag(catalog, t) !== cat), tag],
+  };
 }
 
 /** 検索語とタグで絞り込む。種目が解決できない要素は除外する。 */
@@ -50,7 +71,8 @@ export function filterExercises<T>(
   return items.filter((item) => {
     const ex = getEx(item);
     if (!ex) return false;
-    if (filter.tag && !(ex.tags || []).includes(filter.tag)) return false;
+    const exTags = ex.tags || [];
+    if (!filter.tags.every((t) => exTags.includes(t))) return false;
     return matchesExerciseQuery(ex, filter.query);
   });
 }

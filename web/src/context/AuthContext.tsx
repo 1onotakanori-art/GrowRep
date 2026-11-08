@@ -23,10 +23,12 @@ import {
   createUserData,
   getUserData,
   invalidateUsersMapCache,
+  setFavoriteExercise,
   touchUserActivity,
   updateUserName as fbUpdateUserName,
 } from '../lib/users';
 import { getDailyDateKeyJST } from '../lib/daily-mission';
+import { toggleInList } from '../lib/favorites';
 import type { UserData } from '../lib/types';
 
 interface AuthCtx {
@@ -42,6 +44,12 @@ interface AuthCtx {
   updateUsername: (newName: string) => Promise<void>;
   changePassword: (current: string, next: string) => Promise<void>;
   refreshUserData: () => Promise<void>;
+  /** お気に入り種目の key（ゲストは常に空） */
+  favoriteExercises: string[];
+  /** お気に入りを使えるか（ゲストは全員で1アカウントを共有するので使えない） */
+  canFavorite: boolean;
+  /** お気に入りの追加・解除。画面は即時に反映し、保存に失敗したら戻して投げる */
+  setFavorite: (exerciseKey: string, on: boolean) => Promise<void>;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -147,10 +155,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fbUpdatePassword(u, next);
   }, []);
 
+  const isGuest = user?.email === GUEST_EMAIL;
+  const canFavorite = !!user && !isGuest;
+  const favoriteExercises = canFavorite ? userData?.favoriteExercises || [] : [];
+
+  const setFavorite = useCallback(
+    async (exerciseKey: string, on: boolean) => {
+      const u = auth.currentUser;
+      if (!u || u.email === GUEST_EMAIL) return;
+      const apply = (v: boolean) =>
+        setUserData((prev) =>
+          prev
+            ? {
+                ...prev,
+                favoriteExercises: toggleInList(prev.favoriteExercises || [], exerciseKey, v),
+              }
+            : prev,
+        );
+      apply(on);
+      try {
+        await setFavoriteExercise(u.uid, exerciseKey, on);
+      } catch (e) {
+        apply(!on);
+        throw e;
+      }
+    },
+    [],
+  );
+
   const value: AuthCtx = {
     user,
     userData,
-    isGuest: user?.email === GUEST_EMAIL,
+    isGuest,
     loading,
     login,
     signup,
@@ -160,6 +196,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     updateUsername,
     changePassword,
     refreshUserData,
+    favoriteExercises,
+    canFavorite,
+    setFavorite,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

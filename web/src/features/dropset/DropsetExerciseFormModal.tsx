@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import Modal from '../../components/Modal';
-import { ICON_CHOICES, PRESET_TAGS } from '../../lib/constants';
+import { ICON_CHOICES } from '../../lib/constants';
+import TagPicker from '../../components/TagPicker';
+import { useData } from '../../context/DataContext';
+import type { TagAddition } from '../../lib/tag-catalog';
 import {
   DEFAULT_START_WEIGHT,
   DEFAULT_STEP,
@@ -20,6 +23,8 @@ export interface DropsetExerciseFormValue {
   rule: string;
   icon: string;
   tags: string[];
+  /** このフォームで新しく作ったタグ。保存前に属性カタログへ登録する */
+  newTags: TagAddition[];
   startWeight: number;
   step: number;
 }
@@ -51,19 +56,9 @@ export default function DropsetExerciseFormModal({
     String(initial?.startWeight ?? DEFAULT_START_WEIGHT),
   );
   const [step, setStep] = useState(String(initial?.step ?? DEFAULT_STEP));
-  const [freeTag, setFreeTag] = useState('');
+  const [newTags, setNewTags] = useState<TagAddition[]>([]);
+  const { tagCatalog } = useData();
   const [err, setErr] = useState('');
-
-  function toggleTag(t: string) {
-    setTags((prev) =>
-      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
-    );
-  }
-  function addFreeTag() {
-    const t = freeTag.trim();
-    if (t && !tags.includes(t)) setTags((prev) => [...prev, t]);
-    setFreeTag('');
-  }
 
   const sw = Number(startWeight);
   const st = Number(step);
@@ -88,6 +83,7 @@ export default function DropsetExerciseFormModal({
       rule: rule.trim(),
       icon,
       tags,
+      newTags: newTags.filter((n) => tags.includes(n.tag)),
       startWeight: sw,
       step: st,
     });
@@ -185,45 +181,13 @@ export default function DropsetExerciseFormModal({
         </p>
 
         <label className={styles.label}>タグ</label>
-        <div className={styles.tagChips}>
-          {PRESET_TAGS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={tags.includes(t) ? styles.chipOn : styles.chip}
-              onClick={() => toggleTag(t)}
-            >
-              {t}
-            </button>
-          ))}
-          {tags
-            .filter((t) => !PRESET_TAGS.includes(t))
-            .map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={styles.chipOn}
-                onClick={() => toggleTag(t)}
-              >
-                {t} ✕
-              </button>
-            ))}
-        </div>
-        <div className={styles.freeTagRow}>
-          <input
-            className="field"
-            placeholder="フリータグを入力"
-            maxLength={10}
-            value={freeTag}
-            onChange={(e) => setFreeTag(e.target.value)}
-            onKeyDown={(e) =>
-              e.key === 'Enter' && (e.preventDefault(), addFreeTag())
-            }
-          />
-          <button className="btn-secondary" type="button" onClick={addFreeTag}>
-            <i className="fa-solid fa-plus" />
-          </button>
-        </div>
+        <TagPicker
+          catalog={tagCatalog}
+          value={tags}
+          onChange={setTags}
+          newTags={newTags}
+          onNewTagsChange={setNewTags}
+        />
 
         {err && <p className={styles.err}>{err}</p>}
 

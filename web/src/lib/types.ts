@@ -13,6 +13,8 @@ export interface UserData {
   creatorRatingSum?: number;
   creatorRatingCount?: number;
   creatorAvgRating?: number;
+  /** お気に入りのフリー種目 key（追加順）。種目・投稿・成長記録で先頭に並ぶ */
+  favoriteExercises?: string[];
 }
 
 export interface Comment {

@@ -45,6 +45,11 @@
   font-size: 15px;
   flex: 1;
 }
+.favMark {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--accent);
+}
 .chev {
   color: var(--text-3);
   font-size: 13px;

@@ -44,27 +44,6 @@
   color: var(--text-2);
 }
 
-.tagRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.tag,
-.tagOn {
-  padding: 5px 12px;
-  border-radius: var(--radius-pill);
-  font-size: 12px;
-  font-weight: 600;
-  border: 1.5px solid var(--border);
-  background: var(--surface);
-  color: var(--text-2);
-}
-.tagOn {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
 .metaRow {
   display: flex;
   align-items: center;
@@ -76,4 +55,15 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--text-3);
+}
+.clearTags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-2);
 }

@@ -11,6 +11,8 @@ import {
   filterExercises,
   type ExerciseFilter,
 } from '../../lib/exercise-filter';
+import { favoritesFirst } from '../../lib/favorites';
+import { useFavorites } from '../../hooks/useFavorites';
 import type { Post } from '../../lib/types';
 import type { Timestamp } from 'firebase/firestore';
 import styles from './ProgressChart.module.css';
@@ -28,14 +30,19 @@ export default function ProgressChart() {
   const [loading, setLoading] = useState(true);
   const [exKey, setExKey] = useState<string>('');
   const [filter, setFilter] = useState<ExerciseFilter>(EMPTY_EXERCISE_FILTER);
+  const { favorites } = useFavorites();
 
-  // 種目数が多いので名前順に並べ、検索・タグで選択肢を絞れるようにする
+  // 種目数が多いので お気に入り → 名前順 に並べ、検索・タグで選択肢を絞れるようにする
   const exKeys = useMemo(
     () =>
-      Object.entries(freeExercises)
-        .sort(([, a], [, b]) => a.name.localeCompare(b.name, 'ja'))
-        .map(([k]) => k),
-    [freeExercises],
+      favoritesFirst(
+        Object.entries(freeExercises)
+          .sort(([, a], [, b]) => a.name.localeCompare(b.name, 'ja'))
+          .map(([k]) => k),
+        (k) => k,
+        favorites,
+      ),
+    [freeExercises, favorites],
   );
   const tags = useMemo(
     () => collectExerciseTags(Object.values(freeExercises)),
@@ -104,11 +111,7 @@ export default function ProgressChart() {
             value={exKey}
             onChange={(e) => setExKey(e.target.value)}
           >
-            {visibleKeys.map((k) => (
-              <option key={k} value={k}>
-                {freeExercises[k].name}
-              </option>
-            ))}
+            {renderOptions(visibleKeys, favorites, (k) => freeExercises[k].name)}
           </select>
 
           {points.length === 0 ? (
@@ -119,6 +122,28 @@ export default function ProgressChart() {
         </>
       )}
     </div>
+  );
+}
+
+/** お気に入りがあれば「お気に入り」「その他の種目」の2グループに分け、名前に印を付ける。 */
+function renderOptions(
+  keys: string[],
+  favorites: ReadonlySet<string>,
+  nameOf: (k: string) => string,
+) {
+  const opt = (k: string) => (
+    <option key={k} value={k}>
+      {favorites.has(k) ? `🔖 ${nameOf(k)}` : nameOf(k)}
+    </option>
+  );
+  const fav = keys.filter((k) => favorites.has(k));
+  if (fav.length === 0) return keys.map(opt);
+  const rest = keys.filter((k) => !favorites.has(k));
+  return (
+    <>
+      <optgroup label="お気に入り">{fav.map(opt)}</optgroup>
+      {rest.length > 0 && <optgroup label="その他の種目">{rest.map(opt)}</optgroup>}
+    </>
   );
 }
 

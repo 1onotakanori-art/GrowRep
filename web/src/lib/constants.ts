@@ -70,9 +70,4 @@ export const CACHE_DURATION = 5 * 60 * 1000;
 export const POSTS_PAGE_SIZE = 50;
 export const RANKING_TIE_EPSILON = 1e-6;
 
-// タグのプリセット候補（既存 app.js の PRESET_TAGS と同一）
-// 'レイド' は raid-mode.ts の RAID_TAG。付けた種目がレイドの候補になる
-export const PRESET_TAGS = [
-  '胸', '背中', '肩', '腕', '脚', '腹', '全身', '体幹',
-  '自重', 'ウェイト', '3秒1回', '1分間', 'レイド',
-];
+// タグの候補と属性（部位・負荷…）は tag-catalog.ts / settings_free/tag_catalog
