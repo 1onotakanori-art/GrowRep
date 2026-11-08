@@ -9,7 +9,8 @@ import {
   buildDailyTeamProgress,
   dailyContributionRatio,
   dailyZoneRepsRange,
-  DAILY_ZONE_NAMES,
+  formatDailyZoneShare,
+  DAILY_ZONE_COUNT,
   formatDailyCount,
   formatDailyDateLabel,
   formatDailyProbability,
@@ -491,6 +492,11 @@ export default function DailyMissionView() {
   const zone = dailyMission.zone ?? null;
   const zoneWeek = dailyMission.zoneWeek ?? null;
   const zoneRange = zone != null ? dailyZoneRepsRange(zone, peak) : null;
+  // 今日の領域を引いた確率（残っていた領域の中での面積比）
+  const zoneShare =
+    zone != null && zoneWeek
+      ? zoneWeek.weights[zoneWeek.pool.indexOf(zone)] ?? null
+      : null;
   const percent = Math.min(100, Math.round((totalValue / target) * 100));
   const remaining = Math.max(0, target - totalValue);
   const clearedCount = dailyMission.participants.filter((p) => p.cleared).length;
@@ -543,9 +549,10 @@ export default function DailyMissionView() {
           </span>
           {zone != null && zoneRange && (
             <span className={styles.targetZone}>
-              今日の領域 {zone + 1}/5「{DAILY_ZONE_NAMES[zone]}」（{zoneRange.min}〜
+              今日の領域 {zone + 1}/{DAILY_ZONE_COUNT}（{zoneRange.min}〜
               {zoneRange.max}
               {unit}）
+              {zoneShare != null && ` · この領域を引く確率 ${formatDailyZoneShare(zoneShare)}`}
             </span>
           )}
           <span className={styles.targetProb}>
@@ -674,43 +681,36 @@ export default function DailyMissionView() {
           />
           {zoneWeek && (
             <ul className={styles.zoneStrip} aria-label="今週の領域">
-              {zoneWeek.map((d) => {
-                // 先の曜日にどの領域が来るかは伏せる（残りの組み合わせはグラフで分かる）
-                const open = d.status !== 'future';
-                const range = open ? dailyZoneRepsRange(d.zone, peak) : null;
-                return (
-                  <li
-                    key={d.dateKey}
-                    className={`${styles.zoneChip} ${
-                      d.status === 'today'
-                        ? styles.zoneChipToday
-                        : d.status === 'past'
-                          ? styles.zoneChipPast
-                          : ''
-                    }`}
-                  >
-                    <span className={styles.zoneChipDay}>{d.weekday}</span>
-                    <span className={styles.zoneChipName}>
-                      {open ? DAILY_ZONE_NAMES[d.zone] : '？'}
+              {zoneWeek.days.map((d) => (
+                <li
+                  key={d.dateKey}
+                  className={`${styles.zoneChip} ${
+                    d.status === 'today'
+                      ? styles.zoneChipToday
+                      : d.status === 'past'
+                        ? styles.zoneChipPast
+                        : ''
+                  }`}
+                >
+                  <span className={styles.zoneChipDay}>{d.weekday}</span>
+                  <span className={styles.zoneChipName}>
+                    {d.zone != null ? `領域${d.zone + 1}` : d.status === 'future' ? '？' : '—'}
+                  </span>
+                  {d.status === 'past' && d.cleared != null && (
+                    <span className={styles.zoneChipRange}>
+                      {d.cleared ? '✓' : '✗'}
                     </span>
-                    {range && d.status === 'today' && (
-                      <span className={styles.zoneChipRange}>
-                        {range.min}〜{range.max}
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
+                  )}
+                </li>
+              ))}
             </ul>
           )}
           <p className={styles.distNote}>
             並ぶのは今日ログインした人だけ。名前の横の％は、その回数を引く確率です
-            {zoneWeek
-              ? '（平日はその人の今日の領域の中での確率）'
-              : ''}
+            {zoneWeek ? '（その人の今日の領域の中での確率）' : ''}
             。
             {zoneWeek &&
-              '点線は分布を確率20%ずつに分けた5つの領域で、月〜金に1回ずつ、曜日の順番は人ごとにバラバラに割り当てられます。グレーは今週もう引いた領域。土日は全域から抽選。'}
+              '点線は7つの領域（左端〜ピークを3等分、ピーク〜右端を4等分）。毎日、残っている領域から確率の面積に比例して1つ引きます（下の％が今日の抽選確率）。クリアするとその領域が消え、クリアしないと引いた領域は残って、代わりに残りの一番軽い領域が消えます。グレーは今週もう消えた領域（✓クリア / ✗未クリア）。'}
             目標は {peak}
             {unit} をピークに、大きい側を狭めた分布から一人ひとり抽選されます
             {peakSource === 'best'

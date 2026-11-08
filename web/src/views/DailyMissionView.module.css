@@ -421,7 +421,7 @@
   margin-bottom: var(--sp-4);
 }
 
-/* --- 5つの領域（月〜金で1回ずつ） --- */
+/* --- 7つの領域（月〜日で1つずつ消化） --- */
 .targetZone {
   font-size: 11px;
   font-weight: 800;
@@ -433,7 +433,7 @@
   margin: 8px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
 }
 .zoneChip {

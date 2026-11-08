@@ -56,12 +56,12 @@ export interface DailyMissionState {
   cleared: boolean;
   /** その日に投稿した回数の合計（1回で達成しなくても積み上げられる） */
   totalValue: number;
-  /** 自分の目標を引く確率（0〜1）。平日は今日の領域の中での確率 */
+  /** 自分の目標を引く確率（0〜1）。領域がある日は今日の領域の中での確率 */
   probability: number;
-  /** 今日引いた領域（0〜4）。土日・レイド日などは null */
+  /** 今日引いた領域（0〜6）。領域導入前・レイド日などは null */
   zone?: number | null;
-  /** 今週の月〜金の領域（グラフのグレーアウト用）。領域導入前の週・レイド日は null */
-  zoneWeek?: DailyZoneDay[] | null;
+  /** 今週の領域の消化（グラフのグレーアウト用）。領域導入前の週・レイド日は null */
+  zoneWeek?: DailyZoneWeek | null;
   peak: number;
   bestValue: number;
   peakSource: DailyPeakSource;
@@ -81,9 +81,9 @@ export interface DailyParticipant {
   userId: string;
   userName: string;
   target: number;
-  /** 今日引いた領域（0〜4）。土日など全域から引いた日は null */
+  /** 今日引いた領域（0〜6）。領域導入前の日は null */
   zone: number | null;
-  /** その目標回数を引く確率（0〜1）。平日はその人の今日の領域の中での確率 */
+  /** その目標回数を引く確率（0〜1）。領域がある日はその人の今日の領域の中での確率 */
   probability: number;
   /** その日の合計回数 */
   totalValue: number;
@@ -220,6 +220,7 @@ export function dailyRepsBounds(peak: number): { min: number; max: number } {
 /**
  * ユーザー×日付×種目で決まる目標回数。ピークを最頻値に右へ裾を引く対数正規で、
  * 上側の σ だけ小さくして大きい数字を出にくくしてある。
+ * zone（今日引いた領域）を渡すと、その領域の中だけから引く。
  * シードから毎回同じ値を再計算できるため保存不要（リロードしても変わらない）。
  * app.js: generateDailyMissionTarget
  */
@@ -228,6 +229,7 @@ export function generateDailyMissionTarget(
   dateKey: string,
   exerciseKey: string,
   peak: number = DAILY_REPS_DEFAULT_PEAK,
+  zone: number | null = null,
 ): number {
   const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
   const rand = createSeededRandom(
@@ -235,15 +237,16 @@ export function generateDailyMissionTarget(
   );
   const { min, max } = dailyRepsBounds(p);
 
-  // 平日は今日の領域（累積確率の 1/5 幅）の中だけから引く。
-  // 領域の中では分布の形どおりに出るよう、累積確率を一様に引いて逆算する。
-  const zone = getDailyZone(userId, dateKey);
+  // 領域の中では分布の形どおりに出るよう、領域の累積確率の幅を一様に引いて逆算する
   if (zone != null) {
-    const u = (zone + rand()) / DAILY_ZONE_COUNT;
+    const edges = dailyZoneEdges(p);
+    const ca = dailyTargetCdf(edges[zone], p);
+    const cb = dailyTargetCdf(edges[zone + 1], p);
+    const u = ca + rand() * (cb - ca);
     return Math.min(max, Math.max(min, Math.round(dailyTargetQuantile(u, p))));
   }
 
-  // 週末と、領域を入れる前の日（週報の再計算が当時の表示とズレないよう）は全域から
+  // 領域を入れる前の日（週報の再計算が当時の表示とズレないよう）は全域から
   const center = dailyLogCenter(p);
   // どちら側に振れるかは面積比（σ下:σ上）で決める＝境目で密度が繋がる
   const side = rand();
@@ -256,27 +259,35 @@ export function generateDailyMissionTarget(
 }
 
 // ---------------------------------------------------------------------
-// 5つの領域（月〜金で1回ずつ）
+// 7つの領域（月〜日で1つずつ消化）
 //
-// 分布を累積確率で5等分し（どの領域も引く確率は同じ 20%）、
-// 月〜金の5日で各領域がちょうど1回ずつ出るよう、ユーザー×週ごとに
-// 曜日への割り当てをシャッフルする。重い日と軽い日が週の中で必ず
-// 釣り合うので、運の偏りで「今週ずっと重い」が起きなくなる。
-// 領域の中での回数は従来どおりユーザー×日×種目のシードで決まる。
-// 土日は全域から（従来どおり）。
+// 抽選範囲を、左端〜ピークを等幅で3つ、ピーク〜右端を等幅で4つの計7領域に分ける。
+// 週（月曜始まり）の初めに7領域すべてが「残り」に入り、毎日その中から
+// 1つを、領域の確率の面積（積分値）に比例した重みで引く。面積の小さい両端は
+// 引かれにくい。領域の中での回数は従来どおりユーザー×日×種目のシードで決まる。
+//
+// 1日の終わりに残りから1つ消える:
+//   - クリアした日 → 引いた領域が消える
+//   - クリアしなかった日（開かなかった日も） → 引いた領域は残り、代わりに
+//     残りの中で回数が一番少ない領域が消える（引いた領域自身が一番少なければそれ）
+// サボってきつい領域を飛ばしても、その領域は次の日以降も同じ重みで残る。
+// 7日で7つ消えるので、日曜の夜にちょうど空になる。
+// レイド開催日は抽選も消化もしない（残りはそのまま）。
 // ---------------------------------------------------------------------
 
-/** 領域の数（＝月〜金の日数）。 */
-export const DAILY_ZONE_COUNT = 5;
+/** 左端〜ピークの領域数 */
+export const DAILY_ZONE_LOW_COUNT = 3;
+/** ピーク〜右端の領域数 */
+export const DAILY_ZONE_HIGH_COUNT = 4;
+/** 領域の数（＝1週間の日数）。 */
+export const DAILY_ZONE_COUNT = DAILY_ZONE_LOW_COUNT + DAILY_ZONE_HIGH_COUNT;
 /**
  * 領域を使い始める日（月曜）。これより前の日は従来の全域抽選のまま
  * （週報が過去の目標をシードから再計算するので、当時の表示とズレないように）。
  */
 export const DAILY_ZONE_START_DATE_KEY = '2026-11-09';
-/** 領域の呼び名（軽い順）。 */
-export const DAILY_ZONE_NAMES = ['ゆるめ', '軽め', 'ふつう', '重め', 'ハード'];
-/** 月〜金の曜日名（領域の割り当て順）。 */
-export const DAILY_ZONE_WEEKDAYS = ['月', '火', '水', '木', '金'];
+/** 月〜日の曜日名。 */
+export const DAILY_ZONE_WEEKDAYS = ['月', '火', '水', '木', '金', '土', '日'];
 
 /** 日付キーの曜日（0=日〜6=土）。JST の暦日そのものなのでタイムゾーンに依らない。 */
 export function dateKeyDayOfWeek(dateKey: string): number {
@@ -288,36 +299,6 @@ export function dateKeyDayOfWeek(dateKey: string): number {
 export function dailyZoneWeekStartKey(dateKey: string): string {
   const dow = dateKeyDayOfWeek(dateKey);
   return shiftDateKey(dateKey, -((dow + 6) % 7));
-}
-
-/**
- * その週の、月〜金それぞれに割り当てる領域（0=最も軽い〜4=最も重い）。
- * ユーザー×週のシードで決まる並べ替え（Fisher-Yates）。
- * app.js: dailyZoneOrder
- */
-export function dailyZoneOrder(userId: string, weekStartKey: string): number[] {
-  const rand = createSeededRandom(
-    hashStringToSeed(`daily-zones|${userId}|${weekStartKey}`),
-  );
-  const order = Array.from({ length: DAILY_ZONE_COUNT }, (_, i) => i);
-  for (let i = order.length - 1; i > 0; i--) {
-    const j = Math.min(i, Math.floor(rand() * (i + 1)));
-    const t = order[i];
-    order[i] = order[j];
-    order[j] = t;
-  }
-  return order;
-}
-
-/**
- * その日に引く領域（0〜4）。土日と、領域を入れる前の日は null（全域から抽選）。
- * app.js: getDailyZone
- */
-export function getDailyZone(userId: string, dateKey: string): number | null {
-  if (dateKey < DAILY_ZONE_START_DATE_KEY) return null;
-  const dow = dateKeyDayOfWeek(dateKey);
-  if (dow === 0 || dow === 6) return null;
-  return dailyZoneOrder(userId, dailyZoneWeekStartKey(dateKey))[dow - 1];
 }
 
 /**
@@ -339,15 +320,31 @@ export function dailyTargetQuantile(u: number, peak: number): number {
 }
 
 /**
- * 領域の境目（丸め前の連続値、軽い側から DAILY_ZONE_COUNT-1 本）。グラフの分割線用。
- * app.js: dailyZoneBoundaries
+ * 領域の境目（丸め前の回数、左端から右端まで DAILY_ZONE_COUNT+1 個）。
+ * 左端〜ピークを3等分、ピーク〜右端を4等分。app.js: dailyZoneEdges
  */
-export function dailyZoneBoundaries(peak: number): number[] {
-  const out: number[] = [];
-  for (let k = 1; k < DAILY_ZONE_COUNT; k++) {
-    out.push(dailyTargetQuantile(k / DAILY_ZONE_COUNT, peak));
+export function dailyZoneEdges(peak: number): number[] {
+  const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
+  const { min, max } = dailyRepsBounds(p);
+  // 下限の切り上げ（5回）でピークが左端より左に来る小さい種目もあるので挟み込む
+  const mid = Math.min(max, Math.max(min, p));
+  const edges: number[] = [];
+  for (let k = 0; k <= DAILY_ZONE_LOW_COUNT; k++) {
+    edges.push(min + ((mid - min) * k) / DAILY_ZONE_LOW_COUNT);
   }
-  return out;
+  for (let k = 1; k <= DAILY_ZONE_HIGH_COUNT; k++) {
+    edges.push(mid + ((max - mid) * k) / DAILY_ZONE_HIGH_COUNT);
+  }
+  return edges;
+}
+
+/** 領域の確率の面積（積分値）。app.js: dailyZoneMass */
+export function dailyZoneMass(zone: number, peak: number): number {
+  const edges = dailyZoneEdges(peak);
+  return Math.max(
+    0,
+    dailyTargetCdf(edges[zone + 1], peak) - dailyTargetCdf(edges[zone], peak),
+  );
 }
 
 /**
@@ -360,49 +357,292 @@ export function dailyZoneRepsRange(
 ): { min: number; max: number } {
   const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
   const bounds = dailyRepsBounds(p);
+  const edges = dailyZoneEdges(p);
   const clamp = (v: number) => Math.min(bounds.max, Math.max(bounds.min, v));
-  const lo =
-    zone <= 0
-      ? bounds.min
-      : clamp(Math.round(dailyTargetQuantile(zone / DAILY_ZONE_COUNT, p)));
-  const hi =
-    zone >= DAILY_ZONE_COUNT - 1
-      ? bounds.max
-      : clamp(Math.round(dailyTargetQuantile((zone + 1) / DAILY_ZONE_COUNT, p)));
+  const lo = clamp(Math.round(edges[zone]));
+  const hi = clamp(Math.round(edges[zone + 1]));
   return { min: lo, max: Math.max(lo, hi) };
+}
+
+/**
+ * 残りの領域それぞれを引く確率（面積に比例、合計 1）。pool と同じ並び。
+ * 面積がすべて 0 の（ありえないほど端に寄った）ときは等確率。app.js: dailyZoneDrawWeights
+ */
+export function dailyZoneDrawWeights(pool: number[], peak: number): number[] {
+  const masses = pool.map((z) => dailyZoneMass(z, peak));
+  const total = masses.reduce((s, m) => s + m, 0);
+  if (!(total > 0)) return pool.map(() => 1 / pool.length);
+  return masses.map((m) => m / total);
+}
+
+/**
+ * 残りの領域から今日の領域を引く（重みは面積に比例）。
+ * ユーザー×日付のシードで決まるので、何度開いても同じ領域になる。
+ * app.js: pickDailyZone
+ */
+export function pickDailyZone(
+  userId: string,
+  dateKey: string,
+  pool: number[],
+  peak: number,
+): number | null {
+  if (pool.length === 0) return null;
+  const r = createSeededRandom(hashStringToSeed(`daily-zone|${userId}|${dateKey}`))();
+  const weights = dailyZoneDrawWeights(pool, peak);
+  let acc = 0;
+  for (let i = 0; i < pool.length; i++) {
+    acc += weights[i];
+    if (r < acc) return pool[i];
+  }
+  // 浮動小数の端数で届かなかったときは、重みのある最後の領域
+  for (let i = pool.length - 1; i >= 0; i--) if (weights[i] > 0) return pool[i];
+  return pool[pool.length - 1];
+}
+
+/**
+ * その日の種類。normal = 通常のデイリー / missed = 記録が無い（誰も開かなかった）日
+ * ＝未クリア扱い / paused = レイドなど個人目標の無い日（抽選も消化もしない）
+ */
+export type DailyZoneDayKind = 'normal' | 'missed' | 'paused';
+
+export interface DailyZoneDayInput {
+  dateKey: string;
+  kind: DailyZoneDayKind;
+  /** normal の日の種目とピーク */
+  exerciseKey?: string | null;
+  peak?: number | null;
+}
+
+/** 1日の終わりに領域が消えた理由。clear = 引いてクリア / skip = 未クリアで一番軽い領域が消えた */
+export type DailyZoneRemovedBy = 'clear' | 'skip';
+
+export interface DailyZoneDayResult {
+  dateKey: string;
+  weekday: string;
+  kind: DailyZoneDayKind;
+  /** その日の抽選前に残っていた領域（軽い順） */
+  pool: number[];
+  /** その日に引いた領域（missed / paused は null） */
+  zone: number | null;
+  target: number | null;
+  total: number;
+  cleared: boolean;
+  /** その日の終わりに消えた領域（paused は null） */
+  removed: number | null;
+  removedBy: DailyZoneRemovedBy | null;
+}
+
+/**
+ * 1日ぶんの消化。クリアなら引いた領域、そうでなければ残りの中で一番軽い領域が消える。
+ * app.js: settleDailyZoneDay
+ */
+export function settleDailyZoneDay(
+  pool: number[],
+  zone: number | null,
+  cleared: boolean,
+): { pool: number[]; removed: number | null; removedBy: DailyZoneRemovedBy | null } {
+  if (pool.length === 0) return { pool, removed: null, removedBy: null };
+  const clearedZone = cleared && zone != null && pool.includes(zone);
+  const removed = clearedZone ? (zone as number) : Math.min(...pool);
+  return {
+    pool: pool.filter((z) => z !== removed),
+    removed,
+    removedBy: clearedZone ? 'clear' : 'skip',
+  };
+}
+
+/**
+ * 週の初めから順に、その人の領域の消化をたどる（今日より前の日だけを渡す）。
+ * 各日の目標・クリアはその日の種目・ピーク・合計から再計算するので、保存は要らない。
+ * app.js: replayDailyZoneWeek
+ */
+export function replayDailyZoneWeek(
+  userId: string,
+  days: DailyZoneDayInput[],
+  /** 日付キー → userId → その日のその日の種目の合計回数 */
+  totalsByDay: Record<string, Record<string, number>>,
+): { days: DailyZoneDayResult[]; pool: number[] } {
+  let pool = Array.from({ length: DAILY_ZONE_COUNT }, (_, i) => i);
+  const results: DailyZoneDayResult[] = [];
+  [...days]
+    .sort((a, b) => (a.dateKey < b.dateKey ? -1 : a.dateKey > b.dateKey ? 1 : 0))
+    .forEach((day) => {
+      const weekday = DAILY_ZONE_WEEKDAYS[(dateKeyDayOfWeek(day.dateKey) + 6) % 7];
+      const total = (totalsByDay[day.dateKey] || {})[userId] || 0;
+      const before = pool;
+      if (day.kind === 'paused') {
+        results.push({
+          dateKey: day.dateKey,
+          weekday,
+          kind: day.kind,
+          pool: before,
+          zone: null,
+          target: null,
+          total,
+          cleared: false,
+          removed: null,
+          removedBy: null,
+        });
+        return;
+      }
+      let zone: number | null = null;
+      let target: number | null = null;
+      if (day.kind === 'normal' && day.exerciseKey) {
+        const peak = day.peak && day.peak > 0 ? day.peak : DAILY_REPS_DEFAULT_PEAK;
+        zone = pickDailyZone(userId, day.dateKey, pool, peak);
+        if (zone != null) {
+          target = generateDailyMissionTarget(
+            userId,
+            day.dateKey,
+            day.exerciseKey,
+            peak,
+            zone,
+          );
+        }
+      }
+      const cleared = target != null && total >= target;
+      const settled = settleDailyZoneDay(pool, zone, cleared);
+      pool = settled.pool;
+      results.push({
+        dateKey: day.dateKey,
+        weekday,
+        kind: day.kind,
+        pool: before,
+        zone,
+        target,
+        total,
+        cleared,
+        removed: settled.removed,
+        removedBy: settled.removedBy,
+      });
+    });
+  return { days: results, pool };
 }
 
 export type DailyZoneDayStatus = 'past' | 'today' | 'future';
 
-export interface DailyZoneDay {
+export interface DailyZoneWeekDay {
   dateKey: string;
-  /** 月〜金 */
+  /** 月〜日 */
   weekday: string;
-  zone: number;
   status: DailyZoneDayStatus;
+  /** 引いた領域（先の日・記録の無い日・レイド日は null） */
+  zone: number | null;
+  /** 済んだ日のクリア（今日・先の日は null） */
+  cleared: boolean | null;
+  /** 済んだ日の終わりに消えた領域 */
+  removed: number | null;
+  removedBy: DailyZoneRemovedBy | null;
+}
+
+export interface DailyZoneWeek {
+  /** 月〜日の7日 */
+  days: DailyZoneWeekDay[];
+  /** 今日の抽選前に残っていた領域（軽い順） */
+  pool: number[];
+  /** 今日の抽選での各領域の確率（pool と同じ並び） */
+  weights: number[];
+  /** 今日の領域 */
+  zone: number;
 }
 
 /**
- * 今週の月〜金に割り当てられた領域と、今日から見た状態。
- * 土日は5日とも past（今週の領域は引き終えた）。領域を入れる前の週は null。
+ * 今週のここまでの消化をたどり、今日の領域を引く。
+ * 領域を入れる前の週・残りが空（レイドで週がずれた等）のときは null（全域から抽選）。
  * app.js: buildDailyZoneWeek
  */
 export function buildDailyZoneWeek(
   userId: string,
-  dateKey: string,
-): DailyZoneDay[] | null {
-  const weekStart = dailyZoneWeekStartKey(dateKey);
+  todayKey: string,
+  /** 今週の今日より前の日（月曜から昨日まで。足りない日は missed 扱い） */
+  pastDays: DailyZoneDayInput[],
+  totalsByDay: Record<string, Record<string, number>>,
+  todayPeak: number,
+): DailyZoneWeek | null {
+  const weekStart = dailyZoneWeekStartKey(todayKey);
   if (weekStart < DAILY_ZONE_START_DATE_KEY) return null;
-  const order = dailyZoneOrder(userId, weekStart);
-  return order.map((zone, i) => {
+  const known: Record<string, DailyZoneDayInput> = {};
+  pastDays.forEach((d) => (known[d.dateKey] = d));
+  const inputs: DailyZoneDayInput[] = [];
+  for (let i = 0; i < DAILY_ZONE_COUNT; i++) {
     const key = shiftDateKey(weekStart, i);
+    if (key >= todayKey) break;
+    inputs.push(known[key] || { dateKey: key, kind: 'missed' });
+  }
+  const replay = replayDailyZoneWeek(userId, inputs, totalsByDay);
+  const zone = pickDailyZone(userId, todayKey, replay.pool, todayPeak);
+  if (zone == null) return null;
+  const days: DailyZoneWeekDay[] = DAILY_ZONE_WEEKDAYS.map((weekday, i) => {
+    const key = shiftDateKey(weekStart, i);
+    const past = replay.days.find((d) => d.dateKey === key);
+    if (past) {
+      return {
+        dateKey: key,
+        weekday,
+        status: 'past',
+        zone: past.zone,
+        cleared: past.kind === 'paused' ? null : past.cleared,
+        removed: past.removed,
+        removedBy: past.removedBy,
+      };
+    }
     return {
       dateKey: key,
-      weekday: DAILY_ZONE_WEEKDAYS[i],
-      zone,
-      status: key < dateKey ? 'past' : key === dateKey ? 'today' : 'future',
+      weekday,
+      status: key === todayKey ? 'today' : 'future',
+      zone: key === todayKey ? zone : null,
+      cleared: null,
+      removed: null,
+      removedBy: null,
     };
   });
+  return {
+    days,
+    pool: replay.pool,
+    weights: dailyZoneDrawWeights(replay.pool, todayPeak),
+    zone,
+  };
+}
+
+/**
+ * history.<日付キー> から、その日の消化に要る材料を作る。
+ * 記録の無い日は missed（誰も開かなかった＝未クリア）、レイド日は paused。
+ * ピークが記録されていない日は peak: null（呼び出し側で過去最高から求め直す）。
+ * app.js: dailyZoneDayFromHistory
+ */
+export function dailyZoneDayFromHistory(
+  dateKey: string,
+  entry: unknown,
+): DailyZoneDayInput {
+  if (!entry || typeof entry !== 'object') return { dateKey, kind: 'missed' };
+  const e = entry as Record<string, unknown>;
+  if (typeof e.raidDay === 'number') return { dateKey, kind: 'paused' };
+  if (typeof e.exerciseKey !== 'string' || !e.exerciseKey) {
+    return { dateKey, kind: 'missed' };
+  }
+  const peak = typeof e.peak === 'number' && e.peak > 0 ? e.peak : null;
+  return { dateKey, kind: 'normal', exerciseKey: e.exerciseKey, peak };
+}
+
+/** 今週の今日より前の日付キー（月曜から昨日まで。領域導入前の週は空）。 */
+export function dailyZonePastDateKeys(todayKey: string): string[] {
+  const weekStart = dailyZoneWeekStartKey(todayKey);
+  if (weekStart < DAILY_ZONE_START_DATE_KEY) return [];
+  const keys: string[] = [];
+  for (let i = 0; i < DAILY_ZONE_COUNT; i++) {
+    const key = shiftDateKey(weekStart, i);
+    if (key >= todayKey) break;
+    keys.push(key);
+  }
+  return keys;
+}
+
+/** 抽選確率を短い文字列に（領域ラベル用）。app.js: formatDailyZoneShare */
+export function formatDailyZoneShare(share: number): string {
+  const pct = (Number(share) || 0) * 100;
+  if (pct <= 0) return '0%';
+  if (pct < 1) return '<1%';
+  return `${Math.round(pct)}%`;
 }
 
 // ---------------------------------------------------------------------
@@ -652,7 +892,7 @@ export function dailyTargetCdf(x: number, peak: number): number {
  * その目標回数を引く確率。丸めた結果がその整数になる幅（±0.5）の面積で、
  * 上下限はそこへ丸め込まれる裾ぶんも含める（合計するとちょうど 1 になる）。
  * 領域（zone）を渡すと「その領域の中で引いたときに、その回数になる確率」になる
- * （累積確率の区間と領域の区間が重なる幅 ÷ 領域の幅）。
+ * （丸めてその回数になる区間と領域が重なる確率の面積 ÷ 領域の面積）。
  * app.js: dailyTargetProbability
  */
 export function dailyTargetProbability(
@@ -663,10 +903,16 @@ export function dailyTargetProbability(
   const p = peak > 0 ? peak : DAILY_REPS_DEFAULT_PEAK;
   const { min, max } = dailyRepsBounds(p);
   if (zone != null) {
-    const a = zone / DAILY_ZONE_COUNT;
-    const b = (zone + 1) / DAILY_ZONE_COUNT;
-    const lo = target <= min ? 0 : dailyTargetCdf(target - 0.5, p);
-    const hi = target >= max ? 1 : dailyTargetCdf(target + 0.5, p);
+    const edges = dailyZoneEdges(p);
+    const a = dailyTargetCdf(edges[zone], p);
+    const b = dailyTargetCdf(edges[zone + 1], p);
+    // 幅の無い領域（ありえないほど端に寄った種目）は、その1点に丸まる回数だけ
+    if (!(b > a)) {
+      const only = Math.min(max, Math.max(min, Math.round(edges[zone])));
+      return target === only ? 1 : 0;
+    }
+    const lo = dailyTargetCdf(target - 0.5, p);
+    const hi = dailyTargetCdf(target + 0.5, p);
     const overlap = Math.min(hi, b) - Math.max(lo, a);
     return Math.min(1, Math.max(0, overlap / (b - a)));
   }
@@ -759,6 +1005,8 @@ export interface BuildDailyParticipantsInput {
   totals: Record<string, number>;
   myUserId: string;
   peak: number;
+  /** userId → 今日の領域。載っていない人は全域から（領域導入前の日） */
+  zones?: Record<string, number | null>;
 }
 
 /**
@@ -772,6 +1020,7 @@ export function buildDailyParticipants({
   totals,
   myUserId,
   peak,
+  zones = {},
 }: BuildDailyParticipantsInput): DailyParticipant[] {
   return Object.keys(usersMap || {})
     .filter((userId) =>
@@ -779,14 +1028,15 @@ export function buildDailyParticipants({
     )
     .map((userId) => {
       const u = usersMap[userId] || {};
+      const zone = zones[userId] ?? null;
       const target = generateDailyMissionTarget(
         userId,
         dateKey,
         exerciseKey,
         peak,
+        zone,
       );
       const totalValue = totals[userId] || 0;
-      const zone = getDailyZone(userId, dateKey);
       return {
         userId,
         userName: u.userName || u.email || '名無しさん',

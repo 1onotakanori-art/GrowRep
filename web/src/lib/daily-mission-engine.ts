@@ -22,11 +22,14 @@ import {
   buildDailyParticipants,
   buildDailyZoneWeek,
   buildRaidHistoryEntry,
+  dailyZoneWeekStartKey,
+  DAILY_ZONE_START_DATE_KEY,
   dailyTargetProbability,
   getDailyBoundariesJST,
   getDailyDateKeyJST,
   generateDailyMissionTarget,
-  getDailyZone,
+  dailyZoneDayFromHistory,
+  dailyZonePastDateKeys,
   pickDailyMissionExercise,
   pushRecentMissionKeys,
   isDailyHistoryUpToDate,
@@ -35,6 +38,8 @@ import {
   staleDailyHistoryKeys,
   sumDailyTotals,
   type DailyHistoryEntry,
+  type DailyZoneDayInput,
+  type DailyZoneWeek,
   type DailyMission,
   type DailyMissionState,
 } from './daily-mission';
@@ -501,6 +506,52 @@ export async function getRaidRangeTotals(
   return { cumulative, byDay };
 }
 
+interface DailyZoneContext {
+  pastDays: DailyZoneDayInput[];
+  /** 日付キー → userId → その日の種目の合計回数 */
+  totalsByDay: Record<string, Record<string, number>>;
+}
+
+/**
+ * 今週の今日より前の日（月曜〜昨日）の種目・ピークと、全員の合計を集める。
+ * 種目とピークは history.<日付キー>、合計は期間ぶんの投稿1クエリから。
+ * ピークが記録されていない日だけ、その日より前の過去最高から求め直す。
+ * 領域導入前の週は null。app.js: loadDailyZoneContext
+ */
+async function loadDailyZoneContext(
+  todayKey: string,
+): Promise<DailyZoneContext | null> {
+  if (dailyZoneWeekStartKey(todayKey) < DAILY_ZONE_START_DATE_KEY) return null;
+  const keys = dailyZonePastDateKeys(todayKey);
+  if (keys.length === 0) return { pastDays: [], totalsByDay: {} };
+
+  const snap = await getDoc(doc(db, SETTINGS, MISSION_DOC));
+  const history = ((snap.exists() ? snap.data() : {}) as MissionDoc).history || {};
+  const pastDays = await Promise.all(
+    keys.map(async (key) => {
+      const day = dailyZoneDayFromHistory(key, history[key]);
+      if (day.kind === 'normal' && day.peak == null && day.exerciseKey) {
+        const best = await getExerciseBestValue(
+          day.exerciseKey,
+          getDailyBoundariesJST(key).start,
+        );
+        return { ...day, peak: resolveDailyPeak(best) };
+      }
+      return day;
+    }),
+  );
+
+  const keyByDate: Record<string, string> = {};
+  pastDays.forEach((d) => {
+    if (d.kind === 'normal' && d.exerciseKey) keyByDate[d.dateKey] = d.exerciseKey;
+  });
+  const totalsByDay =
+    Object.keys(keyByDate).length > 0
+      ? (await getRaidRangeTotals(keys[0], keys[keys.length - 1], keyByDate)).byDay
+      : {};
+  return { pastDays, totalsByDay };
+}
+
 /**
  * ミッション本体＋自分の達成状況＋全員の目標をまとめて解決。
  * 目標はシードから決まるので、他ユーザーの回数を保存・取得する必要はない。
@@ -617,11 +668,37 @@ export async function loadDailyMissionState(
     };
   }
 
+  // 今週ここまでの消化から、一人ひとりの今日の領域を決める。
+  // 読めなかったときは全域から（目標が変わりうるので警告だけ残す）
+  let zoneContext: DailyZoneContext | null = null;
+  try {
+    zoneContext = await loadDailyZoneContext(mission.dateKey);
+  } catch (e) {
+    console.warn('[デイリーミッション] 今週の領域の集計に失敗:', e);
+  }
+  const zoneWeekOf = (uid: string): DailyZoneWeek | null =>
+    zoneContext
+      ? buildDailyZoneWeek(
+          uid,
+          mission.dateKey,
+          zoneContext.pastDays,
+          zoneContext.totalsByDay,
+          mission.peak,
+        )
+      : null;
+  const myZoneWeek = zoneWeekOf(userId);
+  const zone = myZoneWeek ? myZoneWeek.zone : null;
+  const zones: Record<string, number | null> = {};
+  Object.keys(usersWithMe).forEach((uid) => {
+    zones[uid] = uid === userId ? zone : zoneWeekOf(uid)?.zone ?? null;
+  });
+
   const target = generateDailyMissionTarget(
     userId,
     mission.dateKey,
     mission.exerciseKey,
     mission.peak,
+    zone,
   );
 
   let totals: Record<string, number> = {};
@@ -638,10 +715,10 @@ export async function loadDailyMissionState(
     totals,
     myUserId: userId,
     peak: mission.peak,
+    zones,
   });
 
   const totalValue = totals[userId] || 0;
-  const zone = getDailyZone(userId, mission.dateKey);
   return {
     dateKey: mission.dateKey,
     exerciseKey: mission.exerciseKey,
@@ -650,7 +727,7 @@ export async function loadDailyMissionState(
     cleared: totalValue >= target,
     probability: dailyTargetProbability(target, mission.peak, zone),
     zone,
-    zoneWeek: buildDailyZoneWeek(userId, mission.dateKey),
+    zoneWeek: myZoneWeek,
     peak: mission.peak,
     bestValue: mission.bestValue,
     peakSource: mission.peakSource,

@@ -6,100 +6,128 @@ import {
   dailyTargetCdf,
   dailyTargetProbability,
   dailyTargetQuantile,
-  dailyZoneBoundaries,
-  dailyZoneOrder,
+  dailyZoneDayFromHistory,
+  dailyZoneDrawWeights,
+  dailyZoneEdges,
+  dailyZoneMass,
+  dailyZonePastDateKeys,
   dailyZoneRepsRange,
   dailyZoneWeekStartKey,
   dateKeyDayOfWeek,
+  formatDailyZoneShare,
   generateDailyMissionTarget,
-  getDailyZone,
+  pickDailyZone,
+  replayDailyZoneWeek,
+  settleDailyZoneDay,
   DAILY_ZONE_COUNT,
   DAILY_ZONE_START_DATE_KEY,
+  type DailyZoneDayInput,
 } from '../daily-mission';
 
 // 2026-11-09 は月曜（領域の初日）
-const WEEK = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'];
-const USERS = Array.from({ length: 40 }, (_, i) => `user${i}`);
+const WEEK = [
+  '2026-11-09',
+  '2026-11-10',
+  '2026-11-11',
+  '2026-11-12',
+  '2026-11-13',
+  '2026-11-14',
+  '2026-11-15',
+];
+const ALL = [0, 1, 2, 3, 4, 5, 6];
+const normal = (dateKey: string, peak = 30): DailyZoneDayInput => ({
+  dateKey,
+  kind: 'normal',
+  exerciseKey: 'free_1',
+  peak,
+});
 
 describe('曜日と週の起点', () => {
   it('領域の初日は月曜', () => {
     expect(dateKeyDayOfWeek(DAILY_ZONE_START_DATE_KEY)).toBe(1);
   });
-  it('日曜は前の月曜の週に入る', () => {
+  it('月曜始まり（日曜は前の月曜の週に入る）', () => {
     expect(dailyZoneWeekStartKey('2026-11-15')).toBe('2026-11-09');
-    expect(dailyZoneWeekStartKey('2026-11-14')).toBe('2026-11-09');
     expect(dailyZoneWeekStartKey('2026-11-09')).toBe('2026-11-09');
     expect(dailyZoneWeekStartKey('2026-11-16')).toBe('2026-11-16');
-    // 月またぎ・年またぎ
     expect(dailyZoneWeekStartKey('2027-01-01')).toBe('2026-12-28');
   });
+  it('今日より前の今週の日付', () => {
+    expect(dailyZonePastDateKeys('2026-11-09')).toEqual([]);
+    expect(dailyZonePastDateKeys('2026-11-11')).toEqual(['2026-11-09', '2026-11-10']);
+    expect(dailyZonePastDateKeys('2026-11-15')).toEqual(WEEK.slice(0, 6));
+    expect(dailyZonePastDateKeys('2026-11-08')).toEqual([]);
+  });
 });
 
-describe('dailyZoneOrder / getDailyZone', () => {
-  it('月〜金で5つの領域がちょうど1回ずつ出る', () => {
-    for (const u of USERS) {
-      const zones = WEEK.map((d) => getDailyZone(u, d));
-      expect([...zones].sort()).toEqual([0, 1, 2, 3, 4]);
+describe('領域の境目と面積', () => {
+  it('左端〜ピークを3等分、ピーク〜右端を4等分', () => {
+    for (const peak of [12, 30, 80, 210]) {
+      const { min, max } = dailyRepsBounds(peak);
+      const e = dailyZoneEdges(peak);
+      expect(e).toHaveLength(DAILY_ZONE_COUNT + 1);
+      expect(e[0]).toBe(min);
+      expect(e[3]).toBeCloseTo(peak, 9);
+      expect(e[7]).toBeCloseTo(max, 9);
+      expect(e[1] - e[0]).toBeCloseTo(e[3] - e[2], 9);
+      expect(e[4] - e[3]).toBeCloseTo(e[7] - e[6], 9);
     }
   });
-  it('同じユーザー×週なら毎回同じ並び', () => {
-    expect(dailyZoneOrder('u1', '2026-11-09')).toEqual(
-      dailyZoneOrder('u1', '2026-11-09'),
+  it('両端の領域ほど面積が小さい', () => {
+    const m = ALL.map((z) => dailyZoneMass(z, 30));
+    expect(m[0]).toBeLessThan(m[1]);
+    expect(m[1]).toBeLessThan(m[2]);
+    expect(m[6]).toBeLessThan(m[5]);
+    expect(m[5]).toBeLessThan(m[4]);
+    // 7つの合計は抽選範囲の面積
+    const { min, max } = dailyRepsBounds(30);
+    expect(m.reduce((s, v) => s + v, 0)).toBeCloseTo(
+      dailyTargetCdf(max, 30) - dailyTargetCdf(min, 30),
+      9,
     );
   });
-  it('並びはユーザーごと・週ごとにバラける', () => {
-    const orders = new Set(USERS.map((u) => dailyZoneOrder(u, '2026-11-09').join()));
-    expect(orders.size).toBeGreaterThan(20);
-    const weeks = new Set(
-      ['2026-11-09', '2026-11-16', '2026-11-23', '2026-11-30'].map((w) =>
-        dailyZoneOrder('u1', w).join(),
-      ),
+  it('ピークが下限に張り付く小さい種目でも壊れない', () => {
+    const e = dailyZoneEdges(5);
+    expect(e[0]).toBe(5);
+    expect(e[3]).toBe(5);
+    const w = dailyZoneDrawWeights(ALL, 5);
+    expect(w.reduce((s, v) => s + v, 0)).toBeCloseTo(1, 9);
+    expect(w[0]).toBe(0);
+  });
+  it('累積分布の逆関数', () => {
+    for (const u of [0.01, 0.3, 0.5, 0.9, 0.99]) {
+      expect(dailyTargetCdf(dailyTargetQuantile(u, 30), 30)).toBeCloseTo(u, 9);
+    }
+  });
+});
+
+describe('今日の領域の抽選（面積に比例）', () => {
+  it('同じユーザー×日付×残りなら毎回同じ', () => {
+    expect(pickDailyZone('u1', '2026-11-10', ALL, 30)).toBe(
+      pickDailyZone('u1', '2026-11-10', ALL, 30),
     );
-    expect(weeks.size).toBeGreaterThan(1);
   });
-  it('どの曜日にどの領域が来るかに偏りがない', () => {
-    // 曜日×領域の出現回数（2000人）。一様なら各マス 400 前後
-    const counts = Array.from({ length: 5 }, () => new Array(5).fill(0));
-    for (let i = 0; i < 2000; i++) {
-      dailyZoneOrder(`x${i}`, '2026-11-09').forEach((z, d) => counts[d][z]++);
+  it('出る頻度が面積の比になる', () => {
+    const weights = dailyZoneDrawWeights(ALL, 30);
+    const counts = new Array(7).fill(0);
+    const N = 20000;
+    for (let i = 0; i < N; i++) counts[pickDailyZone(`p${i}`, '2026-11-10', ALL, 30)!]++;
+    counts.forEach((c, z) => expect(Math.abs(c / N - weights[z])).toBeLessThan(0.012));
+  });
+  it('残っている領域からしか出ない', () => {
+    for (let i = 0; i < 200; i++) {
+      expect([1, 4, 6]).toContain(pickDailyZone(`q${i}`, '2026-11-12', [1, 4, 6], 30));
     }
-    counts.flat().forEach((c) => {
-      expect(c).toBeGreaterThan(320);
-      expect(c).toBeLessThan(480);
-    });
-  });
-  it('土日と、領域を入れる前の日は null（全域から抽選）', () => {
-    expect(getDailyZone('u1', '2026-11-14')).toBeNull();
-    expect(getDailyZone('u1', '2026-11-15')).toBeNull();
-    expect(getDailyZone('u1', '2026-11-06')).toBeNull();
-    expect(getDailyZone('u1', '2026-11-08')).toBeNull();
+    expect(pickDailyZone('u1', '2026-11-12', [], 30)).toBeNull();
   });
 });
 
-describe('dailyTargetQuantile / dailyZoneBoundaries', () => {
-  it('累積分布の逆関数になっている', () => {
-    for (const peak of [5, 12, 30, 80, 210]) {
-      for (const u of [0.01, 0.2, 0.37, 0.5, 0.8, 0.99]) {
-        expect(dailyTargetCdf(dailyTargetQuantile(u, peak), peak)).toBeCloseTo(u, 9);
-      }
-    }
-  });
-  it('境目は4本で昇順、ピークは中央付近の領域にある', () => {
-    const b = dailyZoneBoundaries(30);
-    expect(b).toHaveLength(DAILY_ZONE_COUNT - 1);
-    for (let i = 1; i < b.length; i++) expect(b[i]).toBeGreaterThan(b[i - 1]);
-    expect(b[1]).toBeLessThan(30);
-    expect(b[3]).toBeGreaterThan(30);
-  });
-});
-
-describe('領域つきの目標回数', () => {
-  it('目標はその日の領域の回数範囲に収まる', () => {
-    for (const peak of [5, 12, 30, 80, 210]) {
-      for (const u of USERS) {
-        for (const d of WEEK) {
-          const zone = getDailyZone(u, d)!;
-          const t = generateDailyMissionTarget(u, d, 'free_1', peak);
+describe('領域つきの目標回数と確率', () => {
+  it('目標はその領域の回数範囲に収まる', () => {
+    for (const peak of [8, 12, 30, 80, 210]) {
+      for (let i = 0; i < 60; i++) {
+        for (const zone of ALL) {
+          const t = generateDailyMissionTarget(`u${i}`, '2026-11-10', 'free_1', peak, zone);
           const r = dailyZoneRepsRange(zone, peak);
           expect(t).toBeGreaterThanOrEqual(r.min);
           expect(t).toBeLessThanOrEqual(r.max);
@@ -107,20 +135,29 @@ describe('領域つきの目標回数', () => {
       }
     }
   });
-  it('領域の範囲は軽い順に並び、全体で抽選範囲をちょうど覆う', () => {
-    const peak = 30;
-    const { min, max } = dailyRepsBounds(peak);
-    const ranges = Array.from({ length: 5 }, (_, z) => dailyZoneRepsRange(z, peak));
-    expect(ranges[0].min).toBe(min);
-    expect(ranges[4].max).toBe(max);
-    for (let z = 1; z < 5; z++) {
-      // 境目の回数は両側の領域から出うる（隙間は無い）
-      expect(ranges[z].min).toBeLessThanOrEqual(ranges[z - 1].max + 1);
-      expect(ranges[z].min).toBeGreaterThanOrEqual(ranges[z - 1].min);
+  it('領域ごとに、出うる回数の確率を足すと1', () => {
+    for (const peak of [12, 30, 80]) {
+      const { min, max } = dailyRepsBounds(peak);
+      for (const z of ALL) {
+        let sum = 0;
+        for (let t = min; t <= max; t++) sum += dailyTargetProbability(t, peak, z);
+        expect(sum).toBeCloseTo(1, 9);
+      }
     }
   });
+  it('実際に引いた頻度と一致する', () => {
+    const zone = 4;
+    const counts = new Map<number, number>();
+    const N = 6000;
+    for (let i = 0; i < N; i++) {
+      const t = generateDailyMissionTarget(`m${i}`, '2026-11-10', 'free_1', 30, zone);
+      counts.set(t, (counts.get(t) || 0) + 1);
+    }
+    counts.forEach((c, t) => {
+      expect(Math.abs(c / N - dailyTargetProbability(t, 30, zone))).toBeLessThan(0.03);
+    });
+  });
   it('領域を入れる前の日の目標は従来と同じ（週報の固定値）', () => {
-    // analytics/daily-analytics.test.js の GOLDEN（2026-11-01 に作った値）
     expect(generateDailyMissionTarget('abc', '2026-11-03', 'free_1780545539883', 30)).toBe(21);
     expect(
       generateDailyMissionTarget('QGTsx53W25Wd5scfpBiJ87Q6PoC2', '2026-11-02', 'free_1775234504740', 12),
@@ -128,75 +165,127 @@ describe('領域つきの目標回数', () => {
   });
 });
 
-describe('領域の中での確率', () => {
-  it('領域ごとに、出うる回数の確率を足すと1', () => {
-    for (const peak of [12, 30, 80]) {
-      const { min, max } = dailyRepsBounds(peak);
-      for (let z = 0; z < 5; z++) {
-        let sum = 0;
-        for (let t = min; t <= max; t++) sum += dailyTargetProbability(t, peak, z);
-        expect(sum).toBeCloseTo(1, 9);
-      }
-    }
-  });
-  it('5領域の平均は全域の確率と一致する（週を通すと分布の形は変わらない）', () => {
-    const peak = 30;
-    const { min, max } = dailyRepsBounds(peak);
-    for (let t = min; t <= max; t++) {
-      let avg = 0;
-      for (let z = 0; z < 5; z++) avg += dailyTargetProbability(t, peak, z) / 5;
-      expect(avg).toBeCloseTo(dailyTargetProbability(t, peak), 9);
-    }
-  });
-  it('実際に引いた頻度と一致する', () => {
-    const peak = 30;
-    const zone = 2;
-    const counts = new Map<number, number>();
-    let n = 0;
-    for (let i = 0; i < 20000 && n < 4000; i++) {
-      const u = `m${i}`;
-      for (const d of WEEK) {
-        if (getDailyZone(u, d) !== zone) continue;
-        const t = generateDailyMissionTarget(u, d, 'free_1', peak);
-        counts.set(t, (counts.get(t) || 0) + 1);
-        n++;
-      }
-    }
-    counts.forEach((c, t) => {
-      expect(Math.abs(c / n - dailyTargetProbability(t, peak, zone))).toBeLessThan(0.03);
+describe('1日の消化', () => {
+  it('クリアなら引いた領域が消える', () => {
+    expect(settleDailyZoneDay(ALL, 5, true)).toEqual({
+      pool: [0, 1, 2, 3, 4, 6],
+      removed: 5,
+      removedBy: 'clear',
     });
   });
-  it('領域の外の回数は 0', () => {
-    const r = dailyZoneRepsRange(0, 30);
-    expect(dailyTargetProbability(r.max + 3, 30, 0)).toBe(0);
+  it('未クリアなら引いた領域は残り、一番軽い領域が消える', () => {
+    expect(settleDailyZoneDay([2, 3, 6], 6, false)).toEqual({
+      pool: [3, 6],
+      removed: 2,
+      removedBy: 'skip',
+    });
+  });
+  it('引いた領域自身が一番軽ければそれが消える', () => {
+    expect(settleDailyZoneDay([2, 3, 6], 2, false).pool).toEqual([3, 6]);
+  });
+  it('記録の無い日（引いていない）も一番軽い領域が消える', () => {
+    expect(settleDailyZoneDay([1, 4], null, false).removed).toBe(1);
+  });
+});
+
+describe('週の消化をたどる', () => {
+  it('毎日クリアすると、7日で7つの領域を1回ずつ引く', () => {
+    for (let i = 0; i < 50; i++) {
+      const uid = `w${i}`;
+      // 目標より十分多い合計＝毎日クリア
+      const totals: Record<string, Record<string, number>> = {};
+      WEEK.forEach((d) => (totals[d] = { [uid]: 9999 }));
+      const r = replayDailyZoneWeek(uid, WEEK.map((d) => normal(d)), totals);
+      expect(r.days.map((d) => d.zone).sort()).toEqual(ALL);
+      expect(r.days.every((d) => d.removedBy === 'clear')).toBe(true);
+      expect(r.pool).toEqual([]);
+    }
+  });
+  it('サボってもきつい領域は残り、毎日1つずつ消えて日曜に空になる', () => {
+    for (let i = 0; i < 50; i++) {
+      const uid = `s${i}`;
+      const r = replayDailyZoneWeek(uid, WEEK.map((d) => normal(d)), {});
+      // 一度もクリアしない → 軽い順に消える
+      expect(r.days.map((d) => d.removed)).toEqual(ALL);
+      expect(r.days.every((d) => d.removedBy === 'skip')).toBe(true);
+      expect(r.pool).toEqual([]);
+    }
+  });
+  it('その日の合計と目標でクリアを判定する', () => {
+    const uid = 'judge';
+    const first = replayDailyZoneWeek(uid, [normal(WEEK[0])], {});
+    const target = first.days[0].target!;
+    const just = replayDailyZoneWeek(uid, [normal(WEEK[0])], {
+      [WEEK[0]]: { [uid]: target },
+    });
+    expect(just.days[0].cleared).toBe(true);
+    expect(just.days[0].removed).toBe(just.days[0].zone);
+    const short = replayDailyZoneWeek(uid, [normal(WEEK[0])], {
+      [WEEK[0]]: { [uid]: target - 1 },
+    });
+    expect(short.days[0].cleared).toBe(false);
+    expect(short.days[0].removed).toBe(0);
+  });
+  it('レイド日は抽選も消化もしない', () => {
+    const r = replayDailyZoneWeek('u1', [{ dateKey: WEEK[0], kind: 'paused' }], {});
+    expect(r.pool).toEqual(ALL);
+    expect(r.days[0].removed).toBeNull();
   });
 });
 
 describe('buildDailyZoneWeek', () => {
-  it('今日より前は past、今日は today、先は future', () => {
-    const week = buildDailyZoneWeek('u1', '2026-11-11')!;
-    expect(week.map((d) => d.weekday)).toEqual(['月', '火', '水', '木', '金']);
-    expect(week.map((d) => d.status)).toEqual([
-      'past',
-      'past',
-      'today',
-      'future',
-      'future',
+  it('月曜は7つ全部から引く', () => {
+    const w = buildDailyZoneWeek('u1', WEEK[0], [], {}, 30)!;
+    expect(w.pool).toEqual(ALL);
+    expect(w.zone).toBe(pickDailyZone('u1', WEEK[0], ALL, 30));
+    expect(w.days.map((d) => d.weekday)).toEqual(['月', '火', '水', '木', '金', '土', '日']);
+    expect(w.days.map((d) => d.status)).toEqual([
+      'today', 'future', 'future', 'future', 'future', 'future', 'future',
     ]);
-    expect(week[2].zone).toBe(getDailyZone('u1', '2026-11-11'));
   });
-  it('土日は5日とも past', () => {
-    const week = buildDailyZoneWeek('u1', '2026-11-15')!;
-    expect(week.every((d) => d.status === 'past')).toBe(true);
-    expect(week[0].dateKey).toBe('2026-11-09');
+  it('記録の無い日は未クリア扱い（一番軽い領域が消える）', () => {
+    const w = buildDailyZoneWeek('u1', WEEK[2], [], {}, 30)!;
+    expect(w.pool).toEqual([2, 3, 4, 5, 6]);
+    expect(w.days[0].removed).toBe(0);
+    expect(w.days[1].removed).toBe(1);
+    expect(w.days[0].cleared).toBe(false);
+    expect(w.days[2].status).toBe('today');
+  });
+  it('日曜は残り1つが確定', () => {
+    const w = buildDailyZoneWeek('u1', WEEK[6], WEEK.slice(0, 6).map((d) => normal(d)), {}, 30)!;
+    expect(w.pool).toEqual([6]);
+    expect(w.zone).toBe(6);
+    expect(w.weights).toEqual([1]);
   });
   it('領域を入れる前の週は null', () => {
-    expect(buildDailyZoneWeek('u1', '2026-11-08')).toBeNull();
+    expect(buildDailyZoneWeek('u1', '2026-11-08', [], {}, 30)).toBeNull();
+  });
+});
+
+describe('dailyZoneDayFromHistory', () => {
+  it('記録の種類を見分ける', () => {
+    expect(dailyZoneDayFromHistory('d', undefined).kind).toBe('missed');
+    expect(dailyZoneDayFromHistory('d', { exerciseKey: 'x', raidDay: 2 }).kind).toBe('paused');
+    expect(dailyZoneDayFromHistory('d', { exerciseKey: 'x', peak: 40, raidDay: null })).toEqual({
+      dateKey: 'd',
+      kind: 'normal',
+      exerciseKey: 'x',
+      peak: 40,
+    });
+    expect(dailyZoneDayFromHistory('d', { exerciseKey: 'x', peak: null }).peak).toBeNull();
+  });
+});
+
+describe('表示ヘルパー', () => {
+  it('抽選確率の書式', () => {
+    expect(formatDailyZoneShare(0.234)).toBe('23%');
+    expect(formatDailyZoneShare(0.004)).toBe('<1%');
+    expect(formatDailyZoneShare(0)).toBe('0%');
   });
 });
 
 describe('buildDailyParticipants（領域）', () => {
-  it('参加者ごとに今日の領域と、領域の中での確率が入る', () => {
+  it('渡した領域で目標と確率を出す', () => {
     const list = buildDailyParticipants({
       usersMap: { a: { userName: 'A' }, b: { userName: 'B' } },
       dateKey: '2026-11-10',
@@ -204,10 +293,11 @@ describe('buildDailyParticipants（領域）', () => {
       totals: {},
       myUserId: 'a',
       peak: 30,
+      zones: { a: 6, b: 0 },
     });
-    list.forEach((p) => {
-      expect(p.zone).toBe(getDailyZone(p.userId, '2026-11-10'));
-      expect(p.probability).toBe(dailyTargetProbability(p.target, 30, p.zone));
-    });
+    const a = list.find((p) => p.userId === 'a')!;
+    expect(a.zone).toBe(6);
+    expect(a.target).toBe(generateDailyMissionTarget('a', '2026-11-10', 'free_1', 30, 6));
+    expect(a.probability).toBe(dailyTargetProbability(a.target, 30, 6));
   });
 });
