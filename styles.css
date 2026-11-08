@@ -4196,6 +4196,49 @@ body.dark-mode .dm-me { color: #8fa3ff; }
 body.dark-mode .dm-done { color: #43e97b; }
 body.dark-mode .dm-todo { color: #888; }
 
+/* 5つの領域（月〜金で1回ずつ）。web版 DistributionChart.module.css と同じ見た目 */
+.dm-zone-divider { stroke: #999; stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.7; }
+.dm-zone-past { fill: #eef0f7; fill-opacity: 0.82; }
+.dm-zone-today { fill: rgba(102, 126, 234, 0.12); }
+.dm-zone-label { fill: #999; font-size: 9px; font-weight: 700; text-anchor: middle; }
+.dm-zone-label-today { fill: #667eea; font-size: 9px; font-weight: 900; text-anchor: middle; }
+body.dark-mode .dm-zone-divider { stroke: #888; }
+body.dark-mode .dm-zone-past { fill: #2a2d33; }
+body.dark-mode .dm-zone-today { fill: rgba(143, 163, 255, 0.18); }
+body.dark-mode .dm-zone-label { fill: #888; }
+body.dark-mode .dm-zone-label-today { fill: #8fa3ff; }
+
+.daily-mission-target-zone { font-size: 11px; font-weight: 800; color: #fff; opacity: 0.92; }
+.daily-zone-strip {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+}
+.daily-zone-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 4px 2px;
+    border-radius: 8px;
+    border: 1px solid #e6e8f0;
+    background: #fff;
+    font-size: 10px;
+    color: #5a6274;
+    min-width: 0;
+}
+.daily-zone-chip-day { font-weight: 800; }
+.daily-zone-chip-name { font-weight: 700; white-space: nowrap; }
+.daily-zone-chip-range { font-size: 9px; font-weight: 700; }
+.daily-zone-chip.past { background: #eef0f7; color: #8b93a7; border-color: transparent; }
+.daily-zone-chip.today { background: rgba(102, 126, 234, 0.12); border-color: #667eea; color: #667eea; }
+body.dark-mode .daily-zone-chip { background: #2a2a2a; border-color: #3a3f44; color: #bbb; }
+body.dark-mode .daily-zone-chip.past { background: #24262b; color: #777; border-color: transparent; }
+body.dark-mode .daily-zone-chip.today { background: rgba(143, 163, 255, 0.18); border-color: #8fa3ff; color: #8fa3ff; }
+
 /* --------------------------------------------------------------------
    デイリーミッション：みんなの合計（.daily-dist-card を土台に使う）
    -------------------------------------------------------------------- */

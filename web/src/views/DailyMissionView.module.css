@@ -420,3 +420,53 @@
   margin-top: -6px;
   margin-bottom: var(--sp-4);
 }
+
+/* --- 5つの領域（月〜金で1回ずつ） --- */
+.targetZone {
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  opacity: 0.92;
+}
+.zoneStrip {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+.zoneChip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 2px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 10px;
+  color: var(--text-2);
+  min-width: 0;
+}
+.zoneChipDay {
+  font-weight: 800;
+}
+.zoneChipName {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.zoneChipRange {
+  font-size: 9px;
+  font-weight: 700;
+}
+.zoneChipPast {
+  background: var(--surface-3);
+  color: var(--text-3);
+  border-color: transparent;
+}
+.zoneChipToday {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}

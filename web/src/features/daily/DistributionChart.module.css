@@ -102,3 +102,31 @@
 .todo {
   color: var(--text-3);
 }
+
+/* --- 5つの領域（月〜金で1回ずつ） --- */
+.zoneDivider {
+  stroke: var(--text-3);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.7;
+}
+/* 今週もう引いた領域：カーブごと洗い流してグレーに */
+.zonePast {
+  fill: var(--surface-3);
+  fill-opacity: 0.82;
+}
+.zoneToday {
+  fill: var(--accent-soft);
+}
+.zoneLabel {
+  fill: var(--text-3);
+  font-size: 9px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+.zoneLabelToday {
+  fill: var(--accent);
+  font-size: 9px;
+  font-weight: 900;
+  text-anchor: middle;
+}
