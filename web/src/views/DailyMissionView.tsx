@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { useToast } from '../context/ToastContext';
-import { submitPost } from '../lib/posts';
+import { submitPosts } from '../lib/posts';
+import { RAID_SET_SPLITS, suggestSetSplits, sumSetValues } from '../lib/multi-set';
 import {
   buildDailyTeamProgress,
   dailyContributionRatio,
@@ -26,6 +27,7 @@ import {
   raidContributionRatio,
 } from '../lib/raid-mode';
 import DistributionChart from '../features/daily/DistributionChart';
+import MultiSetInput from '../features/daily/MultiSetInput';
 import { EmptyState, Skeleton, ViewHeader } from '../components/ui';
 import styles from './DailyMissionView.module.css';
 
@@ -50,7 +52,6 @@ export default function DailyMissionView() {
   const { freeExercises, dailyMission, dailyLoading, reloadDailyMission } =
     useData();
   const { toast } = useToast();
-  const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
 
   // 早期 return より前に置く（フックの呼び出し順を固定するため）
@@ -89,24 +90,27 @@ export default function DailyMissionView() {
   const unit = guessExerciseUnit(ex?.name || '');
   const raid = dailyMission?.raid || null;
 
-  /** 記録を投稿して状態を取り直す。通知の文面だけレイドと通常で変える。 */
-  async function handleSubmit() {
-    if (!user || !dailyMission || !exerciseKey) return;
+  /**
+   * 記録を投稿して状態を取り直す。セットごとに1件ずつ投稿する。
+   * 通知の文面だけレイドと通常で変える。投稿できたら true（入力欄を空に戻す）。
+   */
+  async function handleSubmit(values: number[]): Promise<boolean> {
+    if (!user || !dailyMission || !exerciseKey) return false;
     // 画面を開いたまま日付をまたいだ場合などに備え、送信時にも解禁を確認する
     if (raidDateKey && !isRaidInputOpen(raidDateKey)) {
       toast('レイドの入力は7:00からです', 'error');
       await reloadDailyMission();
-      return;
+      return false;
     }
-    const num = parseInt(value, 10);
-    if (!num || num <= 0 || isNaN(num) || num > 10000) {
-      toast(`${unit}数を正しく入力してください（1〜10000）`, 'error');
-      return;
+    if (values.length === 0) {
+      toast(`${unit}数を入力してください`, 'error');
+      return false;
     }
+    const num = sumSetValues(values);
+    const sets = values.length > 1 ? `${values.length}セット・` : '';
     setBusy(true);
     try {
-      await submitPost(user, exerciseKey, num);
-      setValue('');
+      await submitPosts(user, exerciseKey, values);
       if (raid) {
         // 投稿ぶんは確実に増えるので、みんなの合計に足して手元で判定できる
         const nextTotal = raid.totalValue + num;
@@ -114,8 +118,8 @@ export default function DailyMissionView() {
           nextTotal >= raid.goal && !raid.cleared
             ? 'レイド討伐完了！ おつかれさま 🎉'
             : nextTotal >= raid.goal
-              ? `記録しました（みんなの合計 ${formatDailyCount(nextTotal)}${unit}）`
-              : `記録しました（みんなであと ${formatDailyCount(raid.goal - nextTotal)}${unit}）`,
+              ? `${sets}記録しました（みんなの合計 ${formatDailyCount(nextTotal)}${unit}）`
+              : `${sets}記録しました（みんなであと ${formatDailyCount(raid.goal - nextTotal)}${unit}）`,
           nextTotal >= raid.goal ? 'success' : 'info',
         );
       } else {
@@ -127,14 +131,16 @@ export default function DailyMissionView() {
           nowCleared && !cleared
             ? 'ミッション達成！おつかれさま 🎉'
             : nowCleared
-              ? `記録しました（合計 ${nextTotal}${unit}）`
-              : `記録しました（合計 ${nextTotal}${unit} / あと ${target - nextTotal}${unit}）`,
+              ? `${sets}記録しました（合計 ${nextTotal}${unit}）`
+              : `${sets}記録しました（合計 ${nextTotal}${unit} / あと ${target - nextTotal}${unit}）`,
           nowCleared ? 'success' : 'info',
         );
       }
       await reloadDailyMission();
+      return true;
     } catch {
       toast('投稿に失敗しました', 'error');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -160,32 +166,35 @@ export default function DailyMissionView() {
     );
   }
 
-  /** 記録の投稿フォーム（通常・レイド共通）。 */
+  /** 記録の投稿フォーム（通常・レイド共通）。複数セットをまとめて入れられる。 */
   function renderPostCard(note: string) {
+    if (!dailyMission) return null;
+    if (raid) {
+      return (
+        <MultiSetInput
+          unit={unit}
+          splits={RAID_SET_SPLITS}
+          baseTotal={raid.totalValue}
+          goal={raid.goal}
+          goalLabel="討伐"
+          busy={busy}
+          note={note}
+          onSubmit={handleSubmit}
+        />
+      );
+    }
+    const { totalValue, target } = dailyMission;
     return (
-      <div className={styles.postCard}>
-        <h3 className={styles.postTitle}>
-          <i className="fa-solid fa-pen-to-square" /> 記録を投稿
-        </h3>
-        <div className={styles.inputRow}>
-          <input
-            className="field"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={10000}
-            placeholder={`${unit}数`}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          />
-          <span className={styles.unit}>{unit}</span>
-          <button className="btn-primary" disabled={busy} onClick={handleSubmit}>
-            {busy ? <i className="fa-solid fa-circle-notch spin" /> : '投稿'}
-          </button>
-        </div>
-        <p className={styles.note}>{note}</p>
-      </div>
+      <MultiSetInput
+        unit={unit}
+        splits={suggestSetSplits(target - totalValue)}
+        baseTotal={totalValue}
+        goal={target}
+        goalLabel="目標"
+        busy={busy}
+        note={note}
+        onSubmit={handleSubmit}
+      />
     );
   }
 
@@ -454,7 +463,7 @@ export default function DailyMissionView() {
 
         {inputOpen
           ? renderPostCard(
-              `何回かに分けてもOK。投稿するとすぐレイドの${block ? `${block.dayCount}日通算` : '合計'}に加算されます（フリーモードの記録としても集計されます）。`
+              `複数セットはまとめて入れてOK（セットごとに1件ずつ投稿されます）。投稿するとすぐレイドの${block ? `${block.dayCount}日通算` : '合計'}に加算されます（フリーモードの記録としても集計されます）。`
                 + (isRaidInputGatedDay(dailyMission.dateKey)
                   ? ` ${RAID_INPUT_GATE_NOTE}`
                   : ''),
@@ -661,7 +670,9 @@ export default function DailyMissionView() {
         </div>
       )}
 
-      {renderPostCard('この投稿はフリーモードの記録としても集計されます。')}
+      {renderPostCard(
+        '複数セットはセットごとに1件ずつ投稿され、フリーモードの記録としても集計されます。',
+      )}
     </div>
   );
 }

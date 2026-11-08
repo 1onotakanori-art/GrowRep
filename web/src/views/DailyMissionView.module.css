@@ -409,20 +409,6 @@
   color: var(--accent);
   margin-right: 5px;
 }
-.inputRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.inputRow .field {
-  flex: 1;
-  min-width: 0;
-}
-.unit {
-  font-size: 14px;
-  color: var(--text-2);
-  font-weight: 600;
-}
 .note {
   margin-top: 10px;
   font-size: 11px;

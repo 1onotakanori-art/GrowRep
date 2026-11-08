@@ -16,6 +16,7 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
   Timestamp,
   type Query,
 } from 'firebase/firestore';
@@ -208,6 +209,35 @@ export async function submitPost(
     likes: [],
     comments: [],
   });
+}
+
+/**
+ * 複数セットをまとめて投稿する。セットごとに submitPost と同じ形の投稿を1件ずつ作る
+ * （まとまりの情報は持たせない）。途中で失敗して一部だけ残らないよう1つのバッチで書く。
+ */
+export async function submitPosts(
+  user: User,
+  exerciseKey: string,
+  values: number[],
+): Promise<void> {
+  if (values.length === 0) return;
+  if (values.length === 1) {
+    await submitPost(user, exerciseKey, values[0]);
+    return;
+  }
+  const batch = writeBatch(db);
+  for (const value of values) {
+    batch.set(doc(collection(db, COL)), {
+      userId: user.uid,
+      userEmail: user.email,
+      exerciseType: exerciseKey,
+      value,
+      timestamp: serverTimestamp(),
+      likes: [],
+      comments: [],
+    });
+  }
+  await batch.commit();
 }
 
 /** いいねのトグル。app.js: toggleLike */
