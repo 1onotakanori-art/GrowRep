@@ -1,3 +1,19 @@
+.headActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-weight: 700;
+  font-size: 13px;
+}
 .addBtn {
   display: inline-flex;
   align-items: center;
@@ -59,6 +75,18 @@
 .name {
   font-weight: 700;
   font-size: 16px;
+}
+.cardFocus {
+  animation: exerciseFocus 2.4s ease-out;
+}
+@keyframes exerciseFocus {
+  0%,
+  40% {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 .cardFav {
   border-color: var(--accent);

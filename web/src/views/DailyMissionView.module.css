@@ -428,3 +428,9 @@
   font-size: 11px;
   color: var(--text-3);
 }
+
+.exTags {
+  /* 種目名の行の下に詰めて置き、目標の箱との間隔は exRow と同じにする */
+  margin-top: -6px;
+  margin-bottom: var(--sp-4);
+}

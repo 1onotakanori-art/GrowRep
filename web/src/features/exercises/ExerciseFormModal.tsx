@@ -4,6 +4,7 @@ import { ICON_CHOICES } from '../../lib/constants';
 import TagPicker from '../../components/TagPicker';
 import { useData } from '../../context/DataContext';
 import type { TagAddition } from '../../lib/tag-catalog';
+import { DROPSET_TAG, withoutDropsetTag } from '../../lib/dropset';
 import type { FreeExercise } from '../../lib/types';
 import styles from './ExerciseFormModal.module.css';
 
@@ -63,7 +64,8 @@ export default function ExerciseFormModal({
       name: name.trim(),
       rule: rule.trim(),
       icon,
-      tags,
+      // ドロップセット専用タグはフリー種目に付けない
+      tags: withoutDropsetTag(tags),
       newTags: newTags.filter((n) => tags.includes(n.tag)),
       barbarian,
       excludeFromWeekly,
@@ -118,6 +120,7 @@ export default function ExerciseFormModal({
           onChange={setTags}
           newTags={newTags}
           onNewTagsChange={setNewTags}
+          hiddenTags={[DROPSET_TAG]}
         />
 
         <label className={styles.toggle}>

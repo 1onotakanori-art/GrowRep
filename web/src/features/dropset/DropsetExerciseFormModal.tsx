@@ -3,7 +3,7 @@ import Modal from '../../components/Modal';
 import { ICON_CHOICES } from '../../lib/constants';
 import TagPicker from '../../components/TagPicker';
 import { useData } from '../../context/DataContext';
-import type { TagAddition } from '../../lib/tag-catalog';
+import { FORMAT_CATEGORY_ID, type TagAddition } from '../../lib/tag-catalog';
 import {
   DEFAULT_START_WEIGHT,
   DEFAULT_STEP,
@@ -12,7 +12,9 @@ import {
   MIN_STEP,
   MIN_WEIGHT,
   TARGET_REPS,
+  DROPSET_TAG,
   formatWeight,
+  withDropsetTag,
 } from '../../lib/dropset';
 import type { DropsetExercise } from '../../lib/types';
 import styles from '../exercises/ExerciseFormModal.module.css';
@@ -82,7 +84,8 @@ export default function DropsetExerciseFormModal({
       name: name.trim(),
       rule: rule.trim(),
       icon,
-      tags,
+      // 形式は 10-8-6 に決まっているので必ず付ける（選ばせない）
+      tags: withDropsetTag(tags),
       newTags: newTags.filter((n) => tags.includes(n.tag)),
       startWeight: sw,
       step: st,
@@ -187,7 +190,11 @@ export default function DropsetExerciseFormModal({
           onChange={setTags}
           newTags={newTags}
           onNewTagsChange={setNewTags}
+          hiddenCategories={[FORMAT_CATEGORY_ID]}
         />
+        <p className={styles.hint}>
+          形式は「{DROPSET_TAG}」で固定です（自動で付きます）
+        </p>
 
         {err && <p className={styles.err}>{err}</p>}
 

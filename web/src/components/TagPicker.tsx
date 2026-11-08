@@ -20,6 +20,8 @@ export default function TagPicker({
   onChange,
   newTags,
   onNewTagsChange,
+  hiddenTags = [],
+  hiddenCategories = [],
 }: {
   catalog: TagCatalog;
   value: string[];
@@ -27,9 +29,14 @@ export default function TagPicker({
   /** このフォームで新しく作ったタグ（保存時にカタログへ登録する） */
   newTags: TagAddition[];
   onNewTagsChange: (v: TagAddition[]) => void;
+  /** 出さない・付けさせないタグ（フリーの '10-8-6' など）。value に入っていても表示しない */
+  hiddenTags?: string[];
+  /** 出さない・選ばせない属性（ドロップセットの「形式」など） */
+  hiddenCategories?: string[];
 }) {
+  const selectable = catalog.categories.filter((c) => !hiddenCategories.includes(c.id));
   const [input, setInput] = useState('');
-  const [categoryId, setCategoryId] = useState(catalog.categories[0]?.id || '');
+  const [categoryId, setCategoryId] = useState(selectable[0]?.id || '');
   const [note, setNote] = useState('');
 
   // 新しいタグも、選んだ属性の中に並べて見せる
@@ -38,8 +45,11 @@ export default function TagPicker({
     () =>
       groupTags(shown, [...shown.categories.flatMap((c) => c.tags), ...value], {
         includeEmpty: true,
-      }),
-    [shown, value],
+      })
+        .filter((g) => !hiddenCategories.includes(g.id))
+        .map((g) => ({ ...g, tags: g.tags.filter((t) => !hiddenTags.includes(t)) }))
+        .filter((g) => g.id !== OTHER_CATEGORY_ID || g.tags.length > 0),
+    [shown, value, hiddenTags, hiddenCategories],
   );
 
   function toggle(t: string) {
@@ -57,6 +67,10 @@ export default function TagPicker({
     if (!t) return;
     setInput('');
     const existing = categoryIdOfTag(shown, t);
+    if (hiddenTags.includes(t) || hiddenCategories.includes(existing)) {
+      setNote(`「${t}」はここでは付けられないタグです`);
+      return;
+    }
     if (existing !== OTHER_CATEGORY_ID) {
       const label = shown.categories.find((c) => c.id === existing)?.label;
       setNote(`「${t}」は「${label}」にあるタグです`);
@@ -107,7 +121,7 @@ export default function TagPicker({
           onChange={(e) => setCategoryId(e.target.value)}
           aria-label="新しいタグの属性"
         >
-          {catalog.categories.map((c) => (
+          {selectable.map((c) => (
             <option key={c.id} value={c.id}>
               {c.label}
             </option>

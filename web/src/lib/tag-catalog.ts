@@ -20,6 +20,9 @@ export interface TagCatalog {
 export const OTHER_CATEGORY_ID = 'other';
 export const OTHER_CATEGORY_LABEL = 'その他';
 
+/** 「形式」の属性 id。ドロップセットは形式が 10-8-6 に決まっているので、フォームで選ばせない */
+export const FORMAT_CATEGORY_ID = 'format';
+
 /**
  * settings_free/tag_catalog が未作成のときに使う初期値。
  * 2026-11-08 時点で Firestore の種目に付いていたタグをすべて振り分けたもの。
@@ -33,7 +36,8 @@ export const DEFAULT_TAG_CATALOG: TagCatalog = {
     },
     { id: 'load', label: '負荷', tags: ['自重', 'ウェイト'] },
     { id: 'pace', label: 'ペース', tags: ['1秒1回', '2秒1回', '3秒1回', '6秒1回'] },
-    { id: 'format', label: '形式', tags: ['耐久', '1分間', '10-8-6'] },
+    // '10-8-6' は dropset.ts の DROPSET_TAG。ドロップセット種目にだけ自動で付く
+    { id: FORMAT_CATEGORY_ID, label: '形式', tags: ['耐久', '1分間', '10-8-6'] },
     // 'レイド' は raid-mode.ts の RAID_TAG。付けた種目がレイドの候補になる
     { id: 'event', label: 'イベント', tags: ['レイド', 'スペシャル神谷ウィー'] },
   ],

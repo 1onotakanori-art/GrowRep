@@ -1,3 +1,4 @@
+import ExerciseTagsRow from '../components/ExerciseTagsRow';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -317,6 +318,13 @@ export default function DailyMissionView() {
             </span>
             <span className={styles.exName}>{ex?.name || exerciseKey}</span>
           </div>
+          {ex && (
+            <ExerciseTagsRow
+              exerciseKey={exerciseKey}
+              tags={ex.tags || []}
+              className={styles.exTags}
+            />
+          )}
 
           <div className={styles.raidGoalBox}>
             <span className={styles.targetLabel}>
@@ -505,6 +513,13 @@ export default function DailyMissionView() {
           </span>
           <span className={styles.exName}>{ex?.name || exerciseKey}</span>
         </div>
+        {ex && (
+          <ExerciseTagsRow
+            exerciseKey={exerciseKey}
+            tags={ex.tags || []}
+            className={styles.exTags}
+          />
+        )}
 
         <div className={styles.targetBox}>
           <span className={styles.targetLabel}>あなたの目標</span>
