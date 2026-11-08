@@ -13,6 +13,23 @@ import type { DropsetExercise } from './types';
 /** 目標回数。全種目共通で固定（設計 10.）。 */
 export const TARGET_REPS: readonly number[] = [10, 8, 6];
 
+/**
+ * ドロップセット種目に必ず付くタグ（'10-8-6'）。表示・絞り込み用で、クリア判定には使わない
+ * （判定は TARGET_REPS と記録の target）。フリー種目には付けられない。
+ */
+export const DROPSET_TAG = TARGET_REPS.join('-');
+
+/** ドロップセット種目のタグ: DROPSET_TAG を必ず含める（重複なし）。 */
+export function withDropsetTag(tags: readonly string[] | undefined): string[] {
+  const rest = (tags || []).filter((t) => t !== DROPSET_TAG);
+  return [...rest, DROPSET_TAG];
+}
+
+/** フリー種目のタグ: DROPSET_TAG を外す（フリーからドロップセット種目を作らせない）。 */
+export function withoutDropsetTag(tags: readonly string[] | undefined): string[] {
+  return (tags || []).filter((t) => t !== DROPSET_TAG);
+}
+
 /** クリア時の重量の刻み幅(kg)の既定値。種目ごとに変更できる。 */
 export const DEFAULT_STEP = 2.5;
 

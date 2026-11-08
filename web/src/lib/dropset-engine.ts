@@ -23,6 +23,7 @@ import {
   DEFAULT_STEP,
   TARGET_REPS,
   isCleared,
+  withDropsetTag,
   type DropsetAttempt,
 } from './dropset';
 import type {
@@ -84,7 +85,7 @@ export async function addDropsetExercise(
     name: input.name,
     rule: input.rule,
     icon: input.icon || 'fa-dumbbell',
-    tags: input.tags || [],
+    tags: withDropsetTag(input.tags),
     startWeight: input.startWeight,
     step: input.step,
     createdBy: creator.uid,
@@ -112,7 +113,7 @@ export async function editDropsetExercise(
     name: input.name,
     rule: input.rule,
     icon: input.icon || 'fa-dumbbell',
-    tags: input.tags || [],
+    tags: withDropsetTag(input.tags),
     startWeight: input.startWeight,
     step: input.step,
     createdBy: existing.createdBy,

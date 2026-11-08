@@ -1,6 +1,7 @@
 // フリー種目データアクセス（settings_free/exercises）。app.js の free 種目系を移植。
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { withoutDropsetTag } from './dropset';
 import type { FreeExercise, FreeExerciseMap } from './types';
 
 const SETTINGS = 'settings_free';
@@ -58,7 +59,7 @@ export async function addFreeExercise(
     name: input.name,
     rule: input.rule,
     icon: input.icon || 'fa-dumbbell',
-    tags: input.tags || [],
+    tags: withoutDropsetTag(input.tags),
     barbarian: input.barbarian || false,
     excludeFromWeekly: input.excludeFromWeekly || false,
     excludeFromDaily: input.excludeFromDaily || false,
@@ -84,7 +85,7 @@ export async function editFreeExercise(
     name: input.name,
     rule: input.rule,
     icon: input.icon || 'fa-dumbbell',
-    tags: input.tags || [],
+    tags: withoutDropsetTag(input.tags),
     barbarian: input.barbarian || false,
     excludeFromWeekly: input.excludeFromWeekly || false,
     excludeFromDaily: input.excludeFromDaily || false,

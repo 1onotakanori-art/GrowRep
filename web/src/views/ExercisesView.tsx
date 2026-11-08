@@ -59,7 +59,18 @@ import styles from './ExercisesView.module.css';
 type Sort = 'name' | 'rating' | 'new' | 'posts' | 'wc' | 'prob';
 type Tab = 'list' | 'dashboard' | 'archive';
 
-export default function ExercisesView() {
+export default function ExercisesView({
+  focusKey = null,
+  onFocusDone,
+  onBack,
+}: {
+  /** 「種目詳細」から来たとき、表示してハイライトする種目 */
+  focusKey?: string | null;
+  /** focusKey の種目までスクロールし終えたら呼ぶ（親が focusKey を消す） */
+  onFocusDone?: () => void;
+  /** サブページとして開いたときの戻る（フリー以外のモード） */
+  onBack?: () => void;
+} = {}) {
   const { user, userData } = useAuth();
   const { refresh, refreshToken } = useMode();
   const {
@@ -92,6 +103,7 @@ export default function ExercisesView() {
   const [ratingModal, setRatingModal] = useState<string | null>(null);
   const [reviewsModal, setReviewsModal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [highlightKey, setHighlightKey] = useState<string | null>(null);
   // アーカイブ（null = 未読み込み）。タブを開いた時に読む
   const [archive, setArchive] = useState<Record<string, Archived<FreeExercise>> | null>(null);
   const [archiveBusyKey, setArchiveBusyKey] = useState<string | null>(null);
@@ -214,6 +226,30 @@ export default function ExercisesView() {
     return favoritesFirst(entries, ([k]) => k, favorites);
   }, [freeExercises, filter, sort, summaries, insights, estimates, favorites]);
 
+  // 「種目詳細」から来たら、絞り込みを外して一覧タブを出す
+  useEffect(() => {
+    if (!focusKey) return;
+    setTab('list');
+    setFilter(EMPTY_EXERCISE_FILTER);
+  }, [focusKey]);
+
+  // 一覧に該当カードが描かれたらスクロールして少しの間ハイライトする
+  useEffect(() => {
+    if (!focusKey || tab !== 'list') return;
+    if (!list.some(([k]) => k === focusKey)) return; // 種目の読み込み待ち
+    document
+      .getElementById(`exercise-${focusKey}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightKey(focusKey);
+    onFocusDone?.();
+  }, [focusKey, tab, list, onFocusDone]);
+
+  useEffect(() => {
+    if (!highlightKey) return;
+    const id = window.setTimeout(() => setHighlightKey(null), 2400);
+    return () => window.clearTimeout(id);
+  }, [highlightKey]);
+
   async function handleFormSubmit(v: ExerciseFormValue) {
     if (!formModal) return;
     setBusy(true);
@@ -300,12 +336,19 @@ export default function ExercisesView() {
         icon="fa-dumbbell"
         title="種目 & ルール"
         action={
-          <button
-            className={styles.addBtn}
-            onClick={() => setFormModal({ mode: 'add' })}
-          >
-            <i className="fa-solid fa-plus" /> 追加
-          </button>
+          <div className={styles.headActions}>
+            {onBack && (
+              <button className={styles.backBtn} onClick={onBack}>
+                <i className="fa-solid fa-arrow-left" /> 戻る
+              </button>
+            )}
+            <button
+              className={styles.addBtn}
+              onClick={() => setFormModal({ mode: 'add' })}
+            >
+              <i className="fa-solid fa-plus" /> 追加
+            </button>
+          </div>
         }
       />
 
@@ -394,7 +437,14 @@ export default function ExercisesView() {
                 return (
                   <div
                     key={key}
-                    className={fav ? `${styles.card} ${styles.cardFav}` : styles.card}
+                    id={`exercise-${key}`}
+                    className={[
+                      styles.card,
+                      fav && styles.cardFav,
+                      highlightKey === key && styles.cardFocus,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
                   >
                     <div className={styles.cardHead}>
                       <span className={styles.icon}>

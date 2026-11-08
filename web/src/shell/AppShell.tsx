@@ -8,6 +8,7 @@ import {
 } from '../context/SpecialEventContext';
 import Header from './Header';
 import BottomNav, { type NavKey } from './BottomNav';
+import { ExerciseNavProvider } from './ExerciseNav';
 import ProfileModal from '../features/profile/ProfileModal';
 import HomeView from '../views/HomeView';
 import DailyMissionView from '../views/DailyMissionView';
@@ -39,11 +40,18 @@ function ShellInner() {
   const prevNav = useRef<NavKey>('home');
   const setNav = (k: NavKey) => {
     if (k === nav) return;
-    if (k === 'report') prevNav.current = nav;
+    if (k === 'report' || k === 'exercise') prevNav.current = nav;
     setNavState(k);
     window.scrollTo(0, 0);
   };
   const [profileOpen, setProfileOpen] = useState(false);
+  // 「種目詳細」で開く種目。種目一覧が該当カードまでスクロールしたら null に戻す
+  const [focusExercise, setFocusExercise] = useState<string | null>(null);
+  const openExercise = (key: string) => {
+    setFocusExercise(key);
+    // 種目一覧（ExercisesView）が「種目」タブにあるのはフリーだけ。他のモードはサブページで開く
+    setNav(mode === 'free' ? 'center' : 'exercise');
+  };
   const autoNavDone = useRef(false);
 
   // 起動時、今日のデイリーミッションが未クリアならまずその画面を開く。
@@ -58,38 +66,50 @@ function ShellInner() {
     <div className={`app-shell ${styles.shell} mode-${mode}`}>
       <Header onOpenProfile={() => setProfileOpen(true)} />
 
-      <main className={styles.main}>
-        {nav === 'home' &&
-          (mode === 'dropset' ? (
-            <DropsetHomeView onNavigate={setNav} />
-          ) : (
-            <HomeView onNavigate={setNav} />
-          ))}
-        {nav === 'daily' && <DailyMissionView />}
-        {nav === 'timer' && <TimerView />}
-        {nav === 'post' && <PostView onNavigate={setNav} />}
-        {nav === 'ranking' &&
-          (mode === 'dropset' ? <DropsetRanking /> : <RankingView />)}
-        {nav === 'center' &&
-          (mode === 'weekly' ? (
-            <ChallengeView />
-          ) : mode === 'raid' ? (
-            <RaidScoreView />
-          ) : mode === 'dropset' ? (
-            <DropsetExercisesView />
-          ) : (
-            <ExercisesView />
-          ))}
-        {nav === 'mypage' && (
-          <MyPageView
-            onOpenProfile={() => setProfileOpen(true)}
-            onNavigate={setNav}
-          />
-        )}
-        {nav === 'report' && (
-          <WeeklyReportView onBack={() => setNav(prevNav.current)} />
-        )}
-      </main>
+      <ExerciseNavProvider value={openExercise}>
+        <main className={styles.main}>
+          {nav === 'home' &&
+            (mode === 'dropset' ? (
+              <DropsetHomeView onNavigate={setNav} />
+            ) : (
+              <HomeView onNavigate={setNav} />
+            ))}
+          {nav === 'daily' && <DailyMissionView />}
+          {nav === 'timer' && <TimerView />}
+          {nav === 'post' && <PostView onNavigate={setNav} />}
+          {nav === 'ranking' &&
+            (mode === 'dropset' ? <DropsetRanking /> : <RankingView />)}
+          {nav === 'center' &&
+            (mode === 'weekly' ? (
+              <ChallengeView />
+            ) : mode === 'raid' ? (
+              <RaidScoreView />
+            ) : mode === 'dropset' ? (
+              <DropsetExercisesView />
+            ) : (
+              <ExercisesView
+                focusKey={focusExercise}
+                onFocusDone={() => setFocusExercise(null)}
+              />
+            ))}
+          {nav === 'exercise' && (
+            <ExercisesView
+              focusKey={focusExercise}
+              onFocusDone={() => setFocusExercise(null)}
+              onBack={() => setNav(prevNav.current)}
+            />
+          )}
+          {nav === 'mypage' && (
+            <MyPageView
+              onOpenProfile={() => setProfileOpen(true)}
+              onNavigate={setNav}
+            />
+          )}
+          {nav === 'report' && (
+            <WeeklyReportView onBack={() => setNav(prevNav.current)} />
+          )}
+        </main>
+      </ExerciseNavProvider>
 
       <BottomNav
         active={nav}

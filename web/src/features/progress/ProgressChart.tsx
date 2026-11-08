@@ -133,7 +133,7 @@ function renderOptions(
 ) {
   const opt = (k: string) => (
     <option key={k} value={k}>
-      {favorites.has(k) ? `🔖 ${nameOf(k)}` : nameOf(k)}
+      {favorites.has(k) ? `★ ${nameOf(k)}` : nameOf(k)}
     </option>
   );
   const fav = keys.filter((k) => favorites.has(k));

@@ -16,6 +16,7 @@ import {
 } from '../../lib/exercise-filter';
 import { EmptyState, ExerciseIcon, Barbadge } from '../../components/ui';
 import ExerciseSearchBar from '../../components/ExerciseSearchBar';
+import ExerciseTagsRow from '../../components/ExerciseTagsRow';
 import { favoritesFirst } from '../../lib/favorites';
 import { useFavorites } from '../../hooks/useFavorites';
 import type { NavKey } from '../../shell/BottomNav';
@@ -201,6 +202,13 @@ export default function PostComposer({
             </button>
             {ex.rule && !open && (
               <p className={styles.rule}>{ex.rule}</p>
+            )}
+            {searchable && (
+              <ExerciseTagsRow
+                exerciseKey={key}
+                tags={ex.tags || []}
+                className={styles.tagsRow}
+              />
             )}
             {open && (
               <div className={styles.form}>

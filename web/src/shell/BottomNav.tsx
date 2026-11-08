@@ -10,7 +10,9 @@ export type NavKey =
   | 'center'
   | 'mypage'
   /** ボトムナビには出さないサブページ（ホームのバナー／マイページから開く） */
-  | 'report';
+  | 'report'
+  /** 種目一覧のサブページ（フリー以外のモードで「種目詳細」を押したとき） */
+  | 'exercise';
 
 interface Item {
   key: NavKey;
